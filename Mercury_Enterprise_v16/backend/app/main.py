@@ -29,12 +29,14 @@ from .schemas import (
     TimelineEventOut,
 )
 from .security.api_key import require_api_key
+from .timeline import TimelineManager
 from .websocket.manager import manager
 from .routers import connectors_router
 from .connectors.manager import connector_manager
 
 configure_logging()
 logger = logging.getLogger("mercury.api")
+timeline_manager = TimelineManager()
 
 
 def utcnow() -> datetime:
@@ -85,6 +87,13 @@ async def heartbeat() -> None:
 async def lifespan(_: FastAPI):
     Base.metadata.create_all(bind=engine)
     seed_demo()
+    timeline_manager.add_event(
+        event_type="mission.started",
+        severity="info",
+        source="startup",
+        message="Mission timeline initialized",
+        metadata={"environment": settings.environment},
+    )
     await connector_manager.start_all()
     task = asyncio.create_task(heartbeat())
     logger.info("Mercury %s started in %s mode", settings.version, settings.environment)
