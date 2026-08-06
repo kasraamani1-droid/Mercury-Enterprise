@@ -1,0 +1,9 @@
+Mercury Demonstration License
+
+Copyright (c) 2026 Kasra Amani.
+
+This package is supplied for demonstration, evaluation, education, portfolio presentation,
+and internal prototyping only. It is not certified operational aviation, navigation,
+surveillance, security, law-enforcement, defence, emergency-response, or safety software.
+No warranty is provided. Do not connect it to live operational systems without appropriate
+engineering, cybersecurity, legal, privacy, regulatory, and safety reviews.

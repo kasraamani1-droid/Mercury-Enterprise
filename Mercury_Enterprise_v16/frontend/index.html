@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛰️</text></svg>">
+  <title>Mercury v16.0 Enterprise Platform</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/layout.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/responsive.css">
+</head>
+<body>
+<div id="criticalAlert" class="critical-alert hidden"><strong>CRITICAL AIRSPACE ALERT</strong><span id="criticalAlertText">UAV approaching protected runway zone.</span><button id="dismissAlert">Dismiss</button></div>
+<header class="topbar">
+  <div class="brand">Mercury <span>Enterprise Platform — v16.0</span>
+  <nav class="product-nav" aria-label="Mercury workspaces">
+    <button class="product-tab active" data-workspace="command">Command</button>
+    <button class="product-tab" data-workspace="digitalTwin">Digital Twin</button>
+    <button class="product-tab" data-workspace="radar">Radar</button>
+    <button class="product-tab" data-workspace="executive">Executive</button>
+    <button class="product-tab" data-workspace="history">History</button>
+    <button class="product-tab" data-workspace="admin">Admin</button>
+    <button class="product-tab" data-workspace="cloud">Cloud</button>
+    <button class="product-tab" data-workspace="integrations">Integrations</button>
+    <button class="product-tab" data-workspace="compliance">Compliance</button>
+  </nav></div>
+  <div class="system-strip"><button id="notificationButton" class="notification-button" aria-label="Notifications">🔔<span id="notificationCount">0</span></button>
+    <span><i id="backendDot" class="health-dot"></i>Backend</span>
+    <span><i class="health-dot online"></i>AI Engine</span>
+    <span><i class="health-dot online"></i>RF Sensors</span>
+    <span><i class="health-dot online"></i>Cameras</span>
+    <span id="statusText" class="muted">Checking…</span>
+  </div>
+</header><aside id="notificationCenter" class="notification-center hidden"><div class="panel-title"><h3>Notification center</h3><button id="clearNotifications" class="ghost small">Clear</button></div><div id="notificationList"><div class="empty">No notifications.</div></div></aside>
+
+<div id="commandWorkspace" class="workspace-page active"><section class="stats mission-overview" aria-label="Operational statistics">
+  <div class="stat"><div class="label">Mission phase</div><div id="missionPhase" class="value compact-value">DETECTION</div></div>
+  <div class="stat"><div class="label">Active targets</div><div id="activeTargets" class="value">2</div></div>
+  <div class="stat"><div class="label">Current risk</div><div id="currentRisk" class="risk-value high">HIGH</div></div>
+  <div class="stat"><div class="label">Selected confidence</div><div id="selectedConfidence" class="value">—</div></div>
+  <div class="stat"><div class="label">Nearest aircraft</div><div id="nearestAircraft" class="value compact-value">4.2 km</div></div>
+  <div class="stat"><div class="label">Response target</div><div class="value">&lt; 60 s</div></div>
+  <div class="stat weather-stat"><div class="label">Weather</div><div id="weatherSummary" class="value compact-value">18 km/h · 24 km</div><small id="weatherDetails">12°C · 1014 hPa · GPS GOOD</small></div>
+  <div class="stat clock-stat"><div class="label">UTC / Local</div><div class="dual-clock"><strong id="utcClock">--:--:--</strong><span id="localClock">--:--:--</span></div><small>System uptime <b id="systemUptime">00:00</b></small></div>
+</section>
+
+<main class="workspace">
+  <aside class="incidents-column">
+    <div class="section-title-row"><h2>Incidents</h2><button id="simulateButton">＋ Simulate</button></div><div class="airport-row"><select id="airportSelect"><option value="CYUL">CYUL Montréal</option><option value="CYYZ">CYYZ Toronto</option><option value="CYVR">CYVR Vancouver</option></select><span id="ackStatus" class="ack-status">UNACKNOWLEDGED</span></div>
+    <input id="incidentSearch" class="search" placeholder="Search incidents…" aria-label="Search incidents">
+    <div class="filter-row">
+      <select id="severityFilter" aria-label="Severity filter"><option value="all">All severity</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select>
+      <select id="sortFilter" aria-label="Sort incidents"><option value="newest">Newest</option><option value="severity">Severity</option></select>
+    </div>
+    <div id="incidentError"></div>
+    <div id="incidentList"></div>
+  </aside>
+
+  <section class="operations-column">
+    <article class="card map-card">
+      <div id="map"></div><div id="radarSweep" class="radar-sweep" aria-hidden="true"><i></i></div>
+      <div class="map-toolbar">
+        <span id="airportName">CYUL · Montréal–Trudeau · simulated operational picture</span>
+        <div class="playback-controls">
+          <button id="trackingButton" class="ghost">▶ Track</button>
+          <button id="pauseButton" class="ghost">⏸ Pause</button>
+          <button id="resetTrackButton" class="ghost">↺ Reset</button><select id="speedSelect" class="speed-select"><option value="1">1×</option><option value="2">2×</option><option value="4">4×</option></select>
+        </div>
+      </div>
+      <div class="replay-bar"><button id="replayButton" class="ghost">⏮ Replay</button><input id="replaySlider" type="range" min="0" max="100" value="0"><span id="replayTime">00:00 / 03:42</span></div>
+    </article>
+
+    <div class="mission-strip card"><div><span>Mission</span><strong>Unauthorized UAV Interdiction</strong></div><div><span>Operator</span><strong>Kasra / Demo Console</strong></div><div><span>Mission clock</span><strong id="missionClock">00:00</strong></div><div><span>System mode</span><strong id="systemMode">MONITORING</strong></div></div>
+
+    <div class="telemetry-grid">
+      <div class="telemetry"><span>Target</span><strong id="targetCallsign">UAV-01</strong></div>
+      <div class="telemetry"><span>Altitude</span><strong id="targetAltitude">120 m</strong></div>
+      <div class="telemetry"><span>Speed</span><strong id="targetSpeed">38 km/h</strong></div>
+      <div class="telemetry"><span>Heading</span><strong id="targetHeading">124°</strong></div>
+      <div class="telemetry"><span>Runway ETA</span><strong id="targetEta">03:42</strong></div>
+    </div>
+
+    <section class="live-ops-strip"><div class="layer-panel card"><h3>Airspace layers</h3><label><input type="checkbox" data-layer="zones" checked> Protection zones</label><label><input type="checkbox" data-layer="sensors" checked> Sensors</label><label><input type="checkbox" data-layer="aircraft" checked> Aircraft</label><label><input type="checkbox" data-layer="trail" checked> UAV trail</label></div><div class="fusion-panel card"><div class="panel-title"><h3>Sensor fusion</h3><strong><span id="liveThreatScore">92</span>%</strong></div><div id="fusionBars"></div></div><div class="live-timeline-panel card"><h3>Live timeline</h3><div id="liveTimeline"><div class="empty">Start tracking to stream events.</div></div></div></section><section class="threat-matrix card"><div class="panel-title"><h3>Threat matrix</h3><button id="ackButton" class="warning small">Acknowledge</button></div><div class="table-wrap"><table><thead><tr><th>Target</th><th>Priority</th><th>Altitude</th><th>Speed</th><th>Heading</th><th>ETA</th><th>Status</th></tr></thead><tbody id="threatMatrixBody"></tbody></table></div></section><section class="lower-grid">
+      <div id="incidentDetail" class="empty">Select an incident</div>
+      <aside class="event-log card">
+        <div class="panel-title"><h3>Operator Event Log</h3><button id="clearLogButton" class="ghost small">Clear</button></div>
+        <div id="eventLog" class="event-log-list"><div class="empty">No operator activity.</div></div>
+      </aside>
+    </section>
+  </section>
+
+  <aside class="intel-column">
+    <h2>Intelligence</h2>
+    <div class="tabs">
+      <button class="tab active" data-tab="assessment">Assessment</button>
+      <button class="tab" data-tab="evidence">Evidence</button>
+      <button class="tab" data-tab="actions">Actions</button>
+      <button class="tab" data-tab="analytics">Analytics</button>
+    </div>
+    <div id="assessmentTab" class="tab-panel"><div class="empty">No incident selected.</div></div>
+    <div id="evidenceTab" class="tab-panel hidden"><div class="camera-wall"><article class="camera-feed"><div class="camera-overlay"><span>CAM-02 · EO</span><b>LIVE SIM</b></div><div class="reticle"></div><div class="camera-caption">Visual lock · 97%</div></article><article class="camera-feed thermal"><div class="camera-overlay"><span>THERM-01 · IR</span><b>LIVE SIM</b></div><div class="reticle"></div><div class="camera-caption">Thermal signature · 91%</div></article><article class="spectrum-card"><div class="camera-overlay"><span>RF-01 · Spectrum</span><b>SIM</b></div><div class="spectrum-bars"><i style="height:22%"></i><i style="height:48%"></i><i style="height:35%"></i><i style="height:72%"></i><i style="height:55%"></i><i style="height:90%"></i><i style="height:63%"></i><i style="height:40%"></i><i style="height:78%"></i><i style="height:31%"></i><i style="height:66%"></i><i style="height:84%"></i><i style="height:44%"></i><i style="height:58%"></i><i style="height:25%"></i><i style="height:70%"></i><i style="height:49%"></i><i style="height:88%"></i><i style="height:61%"></i><i style="height:38%"></i></div><div class="camera-caption">Control-band anomaly · 92%</div></article></div><div id="evidenceDetails"></div></div>
+    <div id="actionsTab" class="tab-panel hidden">
+      <div class="operator-grid">
+        <button data-action="Airport Operations notified">Notify Operations</button>
+        <button data-action="Security patrol dispatched">Dispatch Patrol</button>
+        <button data-action="Air traffic control notified">Notify ATC</button>
+        <button class="warning" data-action="Runway review requested">Review Runway</button>
+      </div>
+      <button id="resolveButton" class="resolve">✓ Resolve selected incident</button>
+      <button id="reportButton" class="report">Download JSON report</button>
+      <section class="task-board">
+        <div class="panel-title"><h3>Mission assignments</h3><span id="taskProgress">1/4 complete</span></div>
+        <label class="task-item done"><input type="checkbox" checked data-task="ATC notified"> <span><b>ATC notification</b><small>Assigned: Operations</small></span></label>
+        <label class="task-item"><input type="checkbox" data-task="Security patrol dispatched"> <span><b>Dispatch patrol</b><small>Assigned: Security</small></span></label>
+        <label class="task-item"><input type="checkbox" data-task="Runway impact reviewed"> <span><b>Review runway impact</b><small>Assigned: Airside</small></span></label>
+        <label class="task-item"><input type="checkbox" data-task="Evidence package preserved"> <span><b>Preserve evidence</b><small>Assigned: Supervisor</small></span></label>
+      </section>
+    </div>
+    <div id="analyticsTab" class="tab-panel hidden">
+      <div class="analytics-card"><h3>Threat distribution</h3><div id="threatBars"></div></div>
+      <div class="analytics-card"><h3>System readiness</h3><div class="readiness-ring"><strong>94%</strong><span>Operational</span></div></div>
+    </div>
+
+    <div class="copilot card">
+      <div class="copilot-title">Mercury Copilot <span>DEMO</span></div>
+      <div id="copilotAnswer" class="copilot-answer">Select an incident, then ask for an operational summary.</div>
+      <div class="auto-narration-card"><div class="panel-title"><b>Live AI narration</b><button id="muteNarration" class="ghost small">🔊 Alerts</button></div><p id="autoNarration">Mercury is monitoring the operational picture and will issue automatic mission updates.</p></div>
+      <div id="proactiveBrief" class="proactive-brief"><b>Proactive brief</b><span>Monitoring for mission changes…</span></div>
+      <div class="copilot-input"><input id="copilotQuestion" placeholder="Ask: What should we do?"><button id="copilotButton">Ask</button></div>
+    </div>
+  </aside>
+</main></div>
+
+
+<section id="digitalTwinWorkspace" class="workspace-page enterprise-page hidden">
+  <div class="page-heading"><div><span class="eyebrow">AIRPORT DIGITAL TWIN</span><h1>CYUL Integrated Operational Picture</h1><p>Simulated 3D-style airport asset, target and response visualization.</p></div><div class="page-actions"><button id="twinViewToggle">Switch to 3D Perspective</button><button class="ghost" id="centerTwin">Center Airport</button></div></div>
+  <div class="twin-layout">
+    <article class="card twin-stage">
+      <div id="twinMap"></div>
+      <div class="twin-hud"><span>LIVE SIM</span><b id="twinTargetCount">2 TARGETS</b><small>Terrain · Buildings · Runways · Sensors · Patrols</small></div>
+      <div class="altitude-stack"><i style="height:74%"></i><span>UAV-01<br><b id="twinAltitude">120 m</b></span></div>
+    </article>
+    <aside class="twin-sidebar">
+      <article class="card"><h3>Predicted trajectory</h3><div class="prediction-list"><div><span>+30 sec</span><b>Runway buffer</b><em>91%</em></div><div><span>+1 min</span><b>24R approach path</b><em>86%</em></div><div><span>+2 min</span><b>Critical zone</b><em>78%</em></div><div><span>+5 min</span><b>South-east exit</b><em>54%</em></div></div></article>
+      <article class="card"><h3>Airport assets</h3><div class="asset-grid"><span>3 Runways</span><span>8 RF Sensors</span><span>12 Cameras</span><span>4 Patrols</span><span>2 Radar</span><span>27 Aircraft</span></div></article>
+      <article class="card"><h3>Response units</h3><div id="responseUnits" class="presence-list"></div></article>
+    </aside>
+  </div>
+</section>
+
+<section id="radarWorkspace" class="workspace-page enterprise-page hidden">
+  <div class="page-heading"><div><span class="eyebrow">SENSOR OPERATIONS</span><h1>Multi-Sensor Radar Console</h1><p>Correlated simulated radar, RF, EO and ADS-B contacts.</p></div><div class="status-pills"><span class="online-pill">RADAR-01 ONLINE</span><span class="online-pill">RADAR-02 ONLINE</span></div></div>
+  <div class="radar-layout">
+    <article class="card radar-scope-card"><div class="radar-scope"><div class="radar-grid"></div><div class="radar-beam"></div><i class="contact c1"></i><i class="contact c2 friendly"></i><i class="contact c3"></i><i class="contact c4 friendly"></i><div class="scope-center"></div></div><div class="scope-footer"><span>RANGE 10 NM</span><span>SWEEP 12 RPM</span><span>MODE: TRACK-WHILE-SCAN</span></div></article>
+    <aside class="card contact-panel"><h3>Correlated contacts</h3><div id="radarContacts"></div></aside>
+  </div>
+</section>
+
+<section id="executiveWorkspace" class="workspace-page enterprise-page hidden">
+  <div class="page-heading"><div><span class="eyebrow">EXECUTIVE OVERVIEW</span><h1>Operational Readiness & Risk</h1><p>Simulated performance and incident metrics for leadership review.</p></div><button id="exportExecutive">Export Executive JSON</button></div>
+  <div class="executive-kpis"><article class="card"><span>Incidents today</span><b>14</b><small>+3 vs yesterday</small></article><article class="card"><span>Median response</span><b>34 s</b><small>Target &lt; 60 s</small></article><article class="card"><span>Sensor availability</span><b>98.7%</b><small>30-day average</small></article><article class="card"><span>Resolution rate</span><b>92%</b><small>13 of 14 closed</small></article></div>
+  <div class="analytics-grid">
+    <article class="card"><h3>Incidents by hour</h3><div class="bar-chart" id="hourlyChart"></div></article>
+    <article class="card"><h3>Threat mix</h3><div class="donut-wrap"><div class="donut-chart"><b>14</b><span>Total</span></div><div class="legend"><span><i class="red"></i>High 29%</span><span><i class="amber"></i>Medium 43%</span><span><i class="green"></i>Low 28%</span></div></div></article>
+    <article class="card"><h3>System health</h3><div class="health-matrix"><span>Backend<b>100%</b></span><span>AI Engine<b>99.4%</b></span><span>RF Network<b>98.2%</b></span><span>Camera Network<b>97.8%</b></span><span>Radar Network<b>99.1%</b></span><span>Storage<b>91%</b></span></div></article>
+    <article class="card"><h3>Airport risk map</h3><div class="risk-heatmap"><i></i><i></i><i></i><i></i><i></i><i></i></div></article>
+  </div>
+</section>
+
+<section id="historyWorkspace" class="workspace-page enterprise-page hidden">
+  <div class="page-heading"><div><span class="eyebrow">INCIDENT ARCHIVE</span><h1>History, Evidence & Playback</h1><p>Searchable simulated incident records and exportable evidence packages.</p></div><div class="page-actions"><input id="historySearch" placeholder="Search history…"><button id="exportHistory">Export CSV</button></div></div>
+  <article class="card history-card"><table class="enterprise-table"><thead><tr><th>ID</th><th>Airport</th><th>Type</th><th>Severity</th><th>Status</th><th>Detected</th><th>Response</th><th>Operator</th></tr></thead><tbody id="historyBody"></tbody></table></article>
+</section>
+
+<section id="adminWorkspace" class="workspace-page enterprise-page hidden">
+  <div class="page-heading"><div><span class="eyebrow">ENTERPRISE ADMINISTRATION</span><h1>Users, Roles, Integrations & Audit</h1><p>Demonstration controls for a multi-user airport command environment.</p></div><button id="downloadAudit">Download Audit Log</button></div>
+  <div class="admin-grid">
+    <article class="card"><h3>Active operators</h3><div id="operatorPresence" class="presence-list"></div></article>
+    <article class="card"><h3>Role simulation</h3><label>Current role<select id="roleSelect"><option>Commander</option><option>Supervisor</option><option>Operator</option><option>Read Only</option></select></label><div id="permissionSummary" class="permission-summary"></div></article>
+    <article class="card"><h3>Integrations</h3><div class="integration-list"><span><i></i>ADS-B Gateway<b>Connected</b></span><span><i></i>ONVIF Cameras<b>Connected</b></span><span><i></i>RF Fusion Bus<b>Connected</b></span><span><i></i>Weather / METAR<b>Simulated</b></span><span><i></i>SIEM Export<b>Standby</b></span></div></article>
+    <article class="card admin-wide"><h3>Session audit</h3><div id="auditLog" class="audit-log"></div></article>
+  </div>
+</section>
+
+
+<section id="cloudWorkspace" class="workspace-page enterprise-page hidden">
+  <div class="enterprise-header"><div><span class="eyebrow">Enterprise infrastructure</span><h1>Cloud & High Availability</h1><p>Simulated deployment topology, workload health, capacity, and recovery readiness.</p></div><button id="exportCloud" class="ghost">Export topology JSON</button></div>
+  <section class="enterprise-kpis"><article><span>Regions</span><strong>3</strong><small>Montréal · Toronto · Vancouver</small></article><article><span>Service availability</span><strong>99.97%</strong><small>Simulated 30-day SLO</small></article><article><span>API latency</span><strong id="cloudLatency">42 ms</strong><small>p95 simulated</small></article><article><span>Recovery target</span><strong>&lt; 5 min</strong><small>Warm standby</small></article></section>
+  <div class="enterprise-grid"><article class="card admin-wide"><h3>Service topology</h3><div id="cloudTopology" class="integration-list"></div></article><article class="card"><h3>Capacity</h3><div class="health-list"><div><span>API nodes</span><b>6 / 8</b></div><div><span>Workers</span><b>12 / 16</b></div><div><span>Database replicas</span><b>3 healthy</b></div><div><span>Object storage</span><b>38%</b></div></div></article><article class="card"><h3>Recovery readiness</h3><div class="health-list"><div><span>Backups</span><b>Current</b></div><div><span>Failover drill</span><b>Passed</b></div><div><span>Encryption</span><b>AES-256</b></div><div><span>Secrets rotation</span><b>14 days</b></div></div></article></div>
+</section>
+<section id="integrationsWorkspace" class="workspace-page enterprise-page hidden">
+  <div class="enterprise-header"><div><span class="eyebrow">Open platform</span><h1>Integrations & API Marketplace</h1><p>Simulated connectors for airport, security, sensor, messaging, and data systems.</p></div><button id="exportIntegrations" class="ghost">Export integration catalog</button></div>
+  <section class="enterprise-kpis"><article><span>Configured</span><strong>12</strong><small>9 online · 3 sandbox</small></article><article><span>Events processed</span><strong>28.4k</strong><small>Last 24 hours</small></article><article><span>Webhook success</span><strong>99.4%</strong><small>Simulated</small></article><article><span>API keys</span><strong>7</strong><small>2 expire this month</small></article></section>
+  <div class="enterprise-grid"><article class="card admin-wide"><h3>Connector catalog</h3><div id="integrationCatalog" class="integration-list"></div></article><article class="card"><h3>Developer access</h3><div class="health-list"><div><span>REST API</span><b>v16.0</b></div><div><span>WebSocket gateway</span><b>Ready</b></div><div><span>SDK profiles</span><b>Python · JS</b></div><div><span>Sandbox</span><b>Enabled</b></div></div></article><article class="card"><h3>Data governance</h3><div class="health-list"><div><span>Schema validation</span><b>Enabled</b></div><div><span>Rate limits</span><b>Active</b></div><div><span>Audit events</span><b>Retained</b></div><div><span>PII mode</span><b>Restricted</b></div></div></article></div>
+</section>
+<section id="complianceWorkspace" class="workspace-page enterprise-page hidden">
+  <div class="enterprise-header"><div><span class="eyebrow">Governance</span><h1>Security, Compliance & Assurance</h1><p>Demonstration controls dashboard. It does not represent certification or regulatory approval.</p></div><button id="exportCompliance" class="ghost">Export controls JSON</button></div>
+  <section class="enterprise-kpis"><article><span>Control coverage</span><strong>92%</strong><small>Simulated internal baseline</small></article><article><span>Open findings</span><strong>4</strong><small>0 critical</small></article><article><span>Audit readiness</span><strong>High</strong><small>Evidence indexed</small></article><article><span>Retention</span><strong>365 d</strong><small>Demo policy</small></article></section>
+  <div class="enterprise-grid"><article class="card admin-wide"><h3>Control families</h3><div id="complianceControls" class="integration-list"></div></article><article class="card"><h3>Identity & access</h3><div class="health-list"><div><span>Role-based access</span><b>Enabled</b></div><div><span>MFA policy</span><b>Required</b></div><div><span>Session timeout</span><b>15 min</b></div><div><span>Privileged review</span><b>Monthly</b></div></div></article><article class="card"><h3>Data protection</h3><div class="health-list"><div><span>Encryption in transit</span><b>TLS</b></div><div><span>Encryption at rest</span><b>Enabled</b></div><div><span>Evidence integrity</span><b>Hashed</b></div><div><span>Export watermark</span><b>Enabled</b></div></div></article></div>
+</section>
+
+<div id="toast" class="toast" role="status"></div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
