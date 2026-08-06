@@ -13,6 +13,8 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
+from .alerts import AlertManager
+from .ai import ThreatRiskEngine
 from .assessment import generate_assessment
 from .core.config import settings
 from .core.logging import configure_logging
@@ -37,6 +39,8 @@ from .connectors.manager import connector_manager
 configure_logging()
 logger = logging.getLogger("mercury.api")
 timeline_manager = TimelineManager()
+alert_manager = AlertManager()
+threat_engine = ThreatRiskEngine()
 
 
 def utcnow() -> datetime:
@@ -93,6 +97,21 @@ async def lifespan(_: FastAPI):
         source="startup",
         message="Mission timeline initialized",
         metadata={"environment": settings.environment},
+    )
+    alert_manager.create_alert(
+        incident_id=None,
+        severity="info",
+        title="System started",
+        message="Backend services initialized",
+        source="startup",
+        metadata={"environment": settings.environment},
+    )
+    startup_assessment = threat_engine.evaluate(78, 82)
+    logger.info(
+        "Startup AI assessment score=%s confidence=%s level=%s",
+        startup_assessment["score"],
+        startup_assessment["confidence"],
+        startup_assessment["level"],
     )
     await connector_manager.start_all()
     task = asyncio.create_task(heartbeat())
@@ -233,6 +252,19 @@ def incident_report(incident_id: str, db: Session = Depends(get_db)):
 @app.get("/api/v1/platform/status")
 def platform_status():
     return {"version": settings.version, "mode": settings.environment, "services": {"api": "online", "database": "online", "events": "online", "ai": "rule-engine"}, "simulated": True}
+
+
+@app.get("/api/v1/alerts")
+def list_alerts(incident_id: str | None = None, limit: int = 50):
+    return [alert.to_dict() for alert in alert_manager.get_alerts(incident_id=incident_id, limit=limit)]
+
+
+@app.post("/api/v1/alerts/{alert_id}/ack")
+def acknowledge_alert(alert_id: str):
+    alert = alert_manager.acknowledge(alert_id)
+    if alert is None:
+        raise HTTPException(404, "Alert not found")
+    return alert.to_dict()
 
 
 @app.get("/api/v1/integrations")

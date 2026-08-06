@@ -1,6 +1,31 @@
-.venv/
+# Python
 __pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+venv/
+.v/
+
+# Testing
 .pytest_cache/
-*.pyc
-.DS_Store
+
+# VS Code
 .vscode/
+
+# Logs
+*.log
+
+# Database
+*.db
+*.sqlite3
+
+# Environment
+.env
+.env.*
+
+# OS
+.DS_Store
+Thumbs.db
