@@ -22,6 +22,7 @@ from .ops import ResponseOrchestrationEngine
 from .core.config import settings
 from .core.logging import configure_logging
 from .database import Base, SessionLocal, engine, get_db
+from .decision import DecisionEngine
 from .models import Evidence, Incident, TimelineEvent
 from .schemas import (
     EvidenceCreate,
@@ -52,6 +53,15 @@ response_orchestrator = ResponseOrchestrationEngine(
     mission_service=mission_service,
     threat_engine=threat_engine,
     fusion_engine=fusion_engine,
+)
+decision_engine = DecisionEngine(
+    event_bus_instance=None,
+    timeline_manager=None,
+    mission_service=mission_service,
+    threat_engine=threat_engine,
+    fusion_engine=fusion_engine,
+    alert_manager=alert_manager,
+    response_orchestrator=response_orchestrator,
 )
 
 
@@ -128,6 +138,7 @@ async def lifespan(app: FastAPI):
     fusion_engine.clear()
     app.state.mission_service = mission_service
     app.state.response_orchestrator = response_orchestrator
+    app.state.decision_engine = decision_engine
     await connector_manager.start_all()
     task = asyncio.create_task(heartbeat())
     logger.info("Mercury %s started in %s mode", settings.version, settings.environment)

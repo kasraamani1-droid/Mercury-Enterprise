@@ -29,6 +29,12 @@ class EventType(StrEnum):
 
     AI_ALERT = "ai.alert"
 
+    DECISION_REQUESTED = "decision.requested"
+    DECISION_EVALUATED = "decision.evaluated"
+    DECISION_RECOMMENDATION_SELECTED = "decision.recommendation_selected"
+    DECISION_WARNING = "decision.warning"
+    DECISION_ERROR = "decision.error"
+
     WEATHER_UPDATE = "weather.updated"
     NOTAM_UPDATE = "notam.updated"
 
