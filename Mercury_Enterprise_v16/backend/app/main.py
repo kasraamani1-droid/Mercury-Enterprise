@@ -17,6 +17,7 @@ from .alerts import AlertManager
 from .ai import ThreatRiskEngine
 from .assessment import generate_assessment
 from .fusion import FusionEngine
+from .missions import MissionService
 from .core.config import settings
 from .core.logging import configure_logging
 from .database import Base, SessionLocal, engine, get_db
@@ -43,6 +44,7 @@ timeline_manager = TimelineManager()
 alert_manager = AlertManager()
 threat_engine = ThreatRiskEngine()
 fusion_engine = FusionEngine()
+mission_service = MissionService()
 
 
 def utcnow() -> datetime:
@@ -90,7 +92,7 @@ async def heartbeat() -> None:
 
 
 @asynccontextmanager
-async def lifespan(_: FastAPI):
+async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     seed_demo()
     timeline_manager.add_event(
@@ -116,6 +118,7 @@ async def lifespan(_: FastAPI):
         startup_assessment["level"],
     )
     fusion_engine.clear()
+    app.state.mission_service = mission_service
     await connector_manager.start_all()
     task = asyncio.create_task(heartbeat())
     logger.info("Mercury %s started in %s mode", settings.version, settings.environment)
