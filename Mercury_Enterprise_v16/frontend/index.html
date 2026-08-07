@@ -82,6 +82,59 @@
       <div class="telemetry"><span>Runway ETA</span><strong id="targetEta">03:42</strong></div>
     </div>
 
+    <article class="card dashboard-summary">
+      <div class="panel-title"><h3>Operational Dashboard Summary</h3><span id="dashboardStatus" class="muted">Loading…</span></div>
+      <div class="telemetry-grid">
+        <div class="telemetry"><span>Backend</span><strong id="dashboardPlatformStatus">Loading…</strong></div>
+        <div class="telemetry"><span>Active missions</span><strong id="dashboardActiveMissions">—</strong><small class="status-inline"><i id="dashboardMissionDot" class="health-dot"></i><span id="dashboardMissionStatus">Unknown</span></small></div>
+        <div class="telemetry"><span>Active alerts</span><strong id="dashboardActiveAlerts">—</strong><small class="status-inline"><i id="dashboardAlertDot" class="health-dot"></i><span id="dashboardAlertStatus">Unknown</span></small></div>
+        <div class="telemetry"><span>Active tracks</span><strong id="dashboardActiveTracks">—</strong></div>
+        <div class="telemetry"><span>Highest threat</span><strong id="dashboardHighestThreat">—</strong></div>
+        <div class="telemetry"><span>Pending decisions</span><strong id="dashboardPendingDecisions">—</strong><small class="status-inline"><i id="dashboardDecisionDot" class="health-dot"></i><span id="dashboardDecisionStatus">Unknown</span></small></div>
+      </div>
+      <div id="dashboardSummaryMessage" class="muted">Loading summary.</div>
+    </article>
+
+    <article class="card dashboard-summary">
+      <div class="panel-title"><h3>Fleet Status</h3><span class="muted" id="fleetStatusLabel">Loading…</span></div>
+      <div class="telemetry-grid">
+        <div class="telemetry"><span>Aircraft Online</span><strong id="fleetAircraftOnline">—</strong></div>
+        <div class="telemetry"><span>Active Sensors</span><strong id="fleetActiveSensors">—</strong></div>
+        <div class="telemetry"><span>Incidents</span><strong id="fleetIncidents">—</strong></div>
+        <div class="telemetry"><span>AI Confidence</span><strong id="fleetAiConfidence">—</strong></div>
+      </div>
+    </article>
+
+    <article class="card dashboard-summary">
+      <div class="panel-title"><h3>Connector Health</h3><span class="muted"><i id="connectorStatusDot" class="health-dot"></i> <span id="connectorStatusLabel">Read-only aggregation</span></span></div>
+      <div class="telemetry-grid">
+        <div class="telemetry"><span>ADS-B</span><strong id="connectorAdsb">—</strong></div>
+        <div class="telemetry"><span>RF</span><strong id="connectorRf">—</strong></div>
+        <div class="telemetry"><span>Cameras</span><strong id="connectorCameras">—</strong></div>
+        <div class="telemetry"><span>Weather</span><strong id="connectorWeather">—</strong></div>
+        <div class="telemetry"><span>ML Engine</span><strong id="connectorMl">—</strong></div>
+      </div>
+    </article>
+
+    <article class="card dashboard-summary">
+      <div class="panel-title"><h3>Alert Summary</h3><span class="muted">Live advisory only</span></div>
+      <div class="telemetry-grid">
+        <div class="telemetry"><span>Active</span><strong id="alertsActiveTotal">—</strong></div>
+        <div class="telemetry"><span>Critical</span><strong id="alertsCriticalTotal">—</strong></div>
+        <div class="telemetry"><span>Acknowledged</span><strong id="alertsAcknowledgedTotal">—</strong></div>
+        <div class="telemetry"><span>Sensor Online</span><strong id="sensorOnlineTotal">—</strong></div>
+        <div class="telemetry"><span>Sensor Warning</span><strong id="sensorWarningTotal">—</strong></div>
+      </div>
+      <div class="telemetry-grid">
+        <div class="telemetry"><span>Sensor Offline</span><strong id="sensorOfflineTotal">—</strong></div>
+      </div>
+    </article>
+
+    <article class="card dashboard-summary">
+      <div class="panel-title"><h3>Decision Timeline</h3><span class="muted">Operator Decision Support</span></div>
+      <div id="decisionTimelineList" class="event-log-list"><div class="empty">Loading decision timeline…</div></div>
+    </article>
+
     <section class="live-ops-strip"><div class="layer-panel card"><h3>Airspace layers</h3><label><input type="checkbox" data-layer="zones" checked> Protection zones</label><label><input type="checkbox" data-layer="sensors" checked> Sensors</label><label><input type="checkbox" data-layer="aircraft" checked> Aircraft</label><label><input type="checkbox" data-layer="trail" checked> UAV trail</label></div><div class="fusion-panel card"><div class="panel-title"><h3>Sensor fusion</h3><strong><span id="liveThreatScore">92</span>%</strong></div><div id="fusionBars"></div></div><div class="live-timeline-panel card"><h3>Live timeline</h3><div id="liveTimeline"><div class="empty">Start tracking to stream events.</div></div></div></section><section class="threat-matrix card"><div class="panel-title"><h3>Threat matrix</h3><button id="ackButton" class="warning small">Acknowledge</button></div><div class="table-wrap"><table><thead><tr><th>Target</th><th>Priority</th><th>Altitude</th><th>Speed</th><th>Heading</th><th>ETA</th><th>Status</th></tr></thead><tbody id="threatMatrixBody"></tbody></table></div></section><section class="lower-grid">
       <div id="incidentDetail" class="empty">Select an incident</div>
       <aside class="event-log card">

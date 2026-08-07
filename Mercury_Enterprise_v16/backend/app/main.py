@@ -17,7 +17,7 @@ from .alerts import AlertManager
 from .ai import ThreatRiskEngine
 from .assessment import generate_assessment
 from .fusion import FusionEngine
-from .missions import MissionService
+from .missions import MissionService, MissionStatus
 from .ops import ResponseOrchestrationEngine
 from .core.config import settings
 from .core.logging import configure_logging
@@ -39,6 +39,7 @@ from .timeline import TimelineManager
 from .websocket.manager import manager
 from .routers import connectors_router, ops_router
 from .connectors.manager import connector_manager
+from .connectors.models import ConnectorState
 
 configure_logging()
 logger = logging.getLogger("mercury.api")
@@ -302,6 +303,98 @@ def integrations():
 @app.get("/api/v1/compliance")
 def compliance():
     return {"version": settings.version, "control_coverage": 92, "open_findings": 4, "certified": False, "simulated": True}
+
+
+@app.get("/api/v1/dashboard/summary")
+def dashboard_summary(db: Session = Depends(get_db)):
+    platform_services = {"api": "online", "database": "online", "events": "online", "ai": "rule-engine"}
+    connected_services = sum(1 for status in platform_services.values() if status == "online")
+
+    alerts = alert_manager.get_alerts(limit=250)
+    active_alerts = [alert for alert in alerts if not alert.acknowledged]
+    critical_alerts = [alert for alert in active_alerts if str(alert.severity).lower() == "critical"]
+    acknowledged_alerts = [alert for alert in alerts if alert.acknowledged]
+
+    missions = mission_service.list_missions(status=MissionStatus.ACTIVE)
+    incidents = db.scalars(select(Incident)).all()
+
+    timeline_events = timeline_manager.get_events(sort_desc=True)
+    decision_events = [entry for entry in timeline_events if str(entry.event_type).startswith("decision.")]
+    decision_timeline = [
+        {
+            "timestamp": entry.timestamp.isoformat(),
+            "decision": entry.message,
+            "operator_acknowledged": False,
+        }
+        for entry in decision_events[:5]
+    ]
+
+    connector_records = connector_manager.list_records()
+    connectors_by_category = {record.category: record for record in connector_records}
+
+    def connector_state(category: str) -> str:
+        record = connectors_by_category.get(category)
+        if record is None:
+            return ConnectorState.offline.value
+        return record.state.value
+
+    sensor_online = sum(1 for record in connector_records if record.state == ConnectorState.online)
+    sensor_warning = sum(1 for record in connector_records if record.state == ConnectorState.degraded)
+    sensor_offline = sum(1 for record in connector_records if record.state in {ConnectorState.offline, ConnectorState.error})
+
+    mission_status = "active" if missions else "idle"
+    alert_status = "critical" if critical_alerts else "active" if active_alerts else "stable"
+    selected_recommendation = None
+    decision_status = "review_required" if decision_events else "clear"
+    connector_states = {
+        "ads_b": connector_state("aviation"),
+        "rf": ConnectorState.offline.value,
+        "cameras": ConnectorState.offline.value,
+        "weather": connector_state("weather"),
+        "ml_engine": ConnectorState.offline.value,
+    }
+    connector_values = list(connector_states.values())
+    connector_status = "degraded" if ConnectorState.degraded.value in connector_values else "offline" if all(value == ConnectorState.offline.value for value in connector_values) else "online"
+
+    return {
+        "platform": {
+            "version": settings.version,
+            "mode": settings.environment,
+            "status": "online",
+            "connected_services": connected_services,
+            "services": platform_services,
+            "simulated": True,
+        },
+        "timeline": {"events": len(timeline_events)},
+        "services": {"active_tracks": 0},
+        "alerts": {"total": len(alerts), "active": len(active_alerts), "status": alert_status},
+        "missions": {"active": len(missions), "status": mission_status},
+        "decisions": {
+            "pending_human_review": len(decision_events),
+            "highest_threat_level": "unknown",
+            "selected_recommendation": selected_recommendation,
+            "status": decision_status,
+        },
+        "fleet_health": {
+            "aircraft_online": 0,
+            "active_sensors": sensor_online,
+            "incidents": len(incidents),
+            "ai_confidence": 0,
+        },
+        "connector_health": connector_states | {"status": connector_status},
+        "ai_confidence_trends": {"samples": []},
+        "decision_timeline": decision_timeline,
+        "active_alerts_summary": {
+            "active": len(active_alerts),
+            "critical": len(critical_alerts),
+            "acknowledged": len(acknowledged_alerts),
+        },
+        "sensor_health": {
+            "online": sensor_online,
+            "warning": sensor_warning,
+            "offline": sensor_offline,
+        },
+    }
 
 
 @app.websocket("/api/v1/ws")
