@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import secrets
 import time
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 
-from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
@@ -34,7 +36,6 @@ from .schemas import (
     TimelineEventCreate,
     TimelineEventOut,
 )
-from .security.api_key import require_api_key
 from .timeline import TimelineManager
 from .websocket.manager import manager
 from .routers import connectors_router, ops_router
@@ -65,9 +66,65 @@ decision_engine = DecisionEngine(
     response_orchestrator=response_orchestrator,
 )
 
+_sessions: dict[str, dict[str, datetime | str]] = {}
+
+
+class LoginRequest(BaseModel):
+    operator: str
+    password: str
+
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _cleanup_expired_sessions(now: datetime | None = None) -> None:
+    current = now or utcnow()
+    expired = [sid for sid, record in _sessions.items() if record["expires_at"] <= current]
+    for sid in expired:
+        _sessions.pop(sid, None)
+
+
+def _create_session(operator: str) -> tuple[str, datetime]:
+    now = utcnow()
+    session_id = secrets.token_urlsafe(32)
+    expires_at = now + timedelta(seconds=settings.session_ttl_seconds)
+    _sessions[session_id] = {"operator": operator, "created_at": now, "expires_at": expires_at}
+    return session_id, expires_at
+
+
+def _validate_session(session_id: str | None) -> dict[str, datetime | str] | None:
+    if not session_id:
+        return None
+    _cleanup_expired_sessions()
+    session = _sessions.get(session_id)
+    if session is None:
+        return None
+    if session["expires_at"] <= utcnow():
+        _sessions.pop(session_id, None)
+        return None
+    return session
+
+
+def _invalidate_session(session_id: str | None) -> None:
+    if session_id:
+        _sessions.pop(session_id, None)
+
+
+def _request_session_id(request: Request) -> str | None:
+    return request.cookies.get(settings.session_cookie_name)
+
+
+def _websocket_session_id(websocket: WebSocket) -> str | None:
+    return websocket.cookies.get(settings.session_cookie_name)
+
+
+def require_session(request: Request) -> dict[str, datetime | str]:
+    session = _validate_session(_request_session_id(request))
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+    request.state.operator = session["operator"]
+    return session
 
 
 def seed_demo() -> None:
@@ -195,12 +252,44 @@ def ready(db: Session = Depends(get_db)):
     return {"ready": True, "version": settings.version}
 
 
+@app.post("/api/v1/auth/login")
+def login(payload: LoginRequest, response: Response):
+    if payload.operator != settings.auth_operator or payload.password != settings.auth_password:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+    session_id, expires_at = _create_session(payload.operator)
+    response.set_cookie(
+        key=settings.session_cookie_name,
+        value=session_id,
+        max_age=settings.session_ttl_seconds,
+        httponly=True,
+        secure=settings.session_cookie_secure,
+        samesite=settings.session_cookie_samesite,
+        path="/",
+    )
+    return {"authenticated": True, "operator": payload.operator, "expires_at": expires_at.isoformat()}
+
+
+@app.post("/api/v1/auth/logout")
+def logout(response: Response, request: Request):
+    _invalidate_session(_request_session_id(request))
+    response.delete_cookie(key=settings.session_cookie_name, path="/", secure=settings.session_cookie_secure, samesite=settings.session_cookie_samesite)
+    return {"authenticated": False}
+
+
+@app.get("/api/v1/auth/session")
+def session_status(request: Request):
+    session = _validate_session(_request_session_id(request))
+    if session is None:
+        return {"authenticated": False}
+    return {"authenticated": True, "operator": str(session["operator"]), "expires_at": session["expires_at"].isoformat()}
+
+
 @app.get("/api/v1/incidents", response_model=list[IncidentOut])
 def list_incidents(db: Session = Depends(get_db)):
     return db.scalars(select(Incident).order_by(Incident.created_at.desc())).all()
 
 
-@app.post("/api/v1/incidents", response_model=IncidentOut, status_code=201, dependencies=[Depends(require_api_key)])
+@app.post("/api/v1/incidents", response_model=IncidentOut, status_code=201, dependencies=[Depends(require_session)])
 async def create_incident(payload: IncidentCreate, db: Session = Depends(get_db)):
     incident = Incident(**payload.model_dump())
     db.add(incident)
@@ -219,7 +308,7 @@ def get_incident(incident_id: str, db: Session = Depends(get_db)):
     return incident
 
 
-@app.patch("/api/v1/incidents/{incident_id}/status", response_model=IncidentOut, dependencies=[Depends(require_api_key)])
+@app.patch("/api/v1/incidents/{incident_id}/status", response_model=IncidentOut, dependencies=[Depends(require_session)])
 async def update_incident_status(incident_id: str, payload: IncidentStatusUpdate, db: Session = Depends(get_db)):
     incident = db.get(Incident, incident_id)
     if not incident:
@@ -231,7 +320,7 @@ async def update_incident_status(incident_id: str, payload: IncidentStatusUpdate
     return incident
 
 
-@app.post("/api/v1/incidents/{incident_id}/events", response_model=TimelineEventOut, status_code=201, dependencies=[Depends(require_api_key)])
+@app.post("/api/v1/incidents/{incident_id}/events", response_model=TimelineEventOut, status_code=201, dependencies=[Depends(require_session)])
 async def add_event(incident_id: str, payload: TimelineEventCreate, db: Session = Depends(get_db)):
     if not db.get(Incident, incident_id):
         raise HTTPException(404, "Incident not found")
@@ -243,7 +332,7 @@ async def add_event(incident_id: str, payload: TimelineEventCreate, db: Session 
     return event
 
 
-@app.post("/api/v1/incidents/{incident_id}/evidence", response_model=EvidenceOut, status_code=201, dependencies=[Depends(require_api_key)])
+@app.post("/api/v1/incidents/{incident_id}/evidence", response_model=EvidenceOut, status_code=201, dependencies=[Depends(require_session)])
 def add_evidence(incident_id: str, payload: EvidenceCreate, db: Session = Depends(get_db)):
     if not db.get(Incident, incident_id):
         raise HTTPException(404, "Incident not found")
@@ -399,9 +488,13 @@ def dashboard_summary(db: Session = Depends(get_db)):
 
 @app.websocket("/api/v1/ws")
 async def websocket_gateway(websocket: WebSocket):
+    session = _validate_session(_websocket_session_id(websocket))
+    if session is None:
+        await websocket.close(code=1008)
+        return
     await manager.connect(websocket)
     try:
-        await websocket.send_json({"type": "connected", "version": settings.version, "simulated": True})
+        await websocket.send_json({"type": "connected", "version": settings.version, "simulated": True, "operator": session["operator"]})
         while True:
             message = await websocket.receive_text()
             if message.lower() == "ping":

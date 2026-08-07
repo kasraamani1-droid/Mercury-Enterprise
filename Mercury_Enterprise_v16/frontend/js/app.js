@@ -1,5 +1,5 @@
 import { el } from "./utils.js";
-import { getHealth, getDashboardSummary } from "./api.js";
+import { getHealth, getDashboardSummary, getSessionStatus, login } from "./api.js";
 import { initializeMap, toggleTracking, pauseTracking, resetTracking, setSimulationSpeed, toggleLayer, changeAirport, seekReplay } from "./map.js";
 import { loadIncidents, renderIncidentList, loadIncident, showTab, simulateIncident, performOperatorAction, resolveSelected, generateSelectedReport } from "./incidents.js";
 import { askCopilot } from "./copilot.js";
@@ -126,5 +126,14 @@ async function loadDashboardSummary(){
     renderDashboardError(`Dashboard unavailable: ${error.message}`);
   }
 }
-async function initialize(){initializeMap();bindEvents();initializeMissionOps();initializeCommandCenter();initializeRealtimeConsole();initializeEnterprise();initializeEnterprise8();initializeWebSocket();updateFusion();updateThreatMatrix();await checkHealth();await loadDashboardSummary();await loadIncidents();setInterval(checkHealth,5000);setInterval(loadDashboardSummary,15000);setInterval(loadIncidents,10000)}
+
+async function ensureSession(){
+  let session = await getSessionStatus();
+  if (!session.authenticated) {
+    session = await login({ operator: "operator", password: "mercury-demo" });
+  }
+  return session;
+}
+
+async function initialize(){initializeMap();bindEvents();initializeMissionOps();initializeCommandCenter();initializeRealtimeConsole();initializeEnterprise();initializeEnterprise8();await ensureSession();initializeWebSocket();updateFusion();updateThreatMatrix();await checkHealth();await loadDashboardSummary();await loadIncidents();setInterval(checkHealth,5000);setInterval(loadDashboardSummary,15000);setInterval(loadIncidents,10000)}
 initialize();

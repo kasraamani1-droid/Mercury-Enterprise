@@ -3,6 +3,11 @@ from app.main import app
 
 client = TestClient(app)
 
+
+def login_client():
+    response = client.post('/api/v1/auth/login', json={'operator': 'operator', 'password': 'mercury-demo'})
+    assert response.status_code == 200
+
 def test_health():
     response = client.get('/api/v1/health')
     assert response.status_code == 200
@@ -61,7 +66,39 @@ def test_dashboard_summary():
     assert isinstance(payload['sensor_health']['offline'], int)
 
 
+def test_login_failure():
+    response = client.post('/api/v1/auth/login', json={'operator': 'operator', 'password': 'wrong'})
+    assert response.status_code == 401
+
+
+def test_session_status_and_logout():
+    login_client()
+    session = client.get('/api/v1/auth/session')
+    assert session.status_code == 200
+    assert session.json()['authenticated'] is True
+    assert session.json()['operator'] == 'operator'
+
+    logout = client.post('/api/v1/auth/logout')
+    assert logout.status_code == 200
+    assert logout.json()['authenticated'] is False
+
+    session_after = client.get('/api/v1/auth/session')
+    assert session_after.status_code == 200
+    assert session_after.json()['authenticated'] is False
+
+
+def test_protected_incident_write_requires_session():
+    client.post('/api/v1/auth/logout')
+    unauthorized = client.post('/api/v1/incidents', json={'title': 'Auth test incident', 'severity': 'low', 'summary': 'session required'})
+    assert unauthorized.status_code == 401
+
+    login_client()
+    authorized = client.post('/api/v1/incidents', json={'title': 'Auth test incident', 'severity': 'low', 'summary': 'session required'})
+    assert authorized.status_code == 201
+
+
 def test_websocket_connects():
+    login_client()
     with client.websocket_connect('/api/v1/ws') as websocket:
         first = websocket.receive_json()
         assert first['type'] == 'connected'

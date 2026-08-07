@@ -11,6 +11,7 @@ async function request(path, options = {}) {
 
   try {
     const response = await fetch(`${API_BASE}${path}`, {
+      credentials: "include",
       ...options,
       signal: controller.signal,
     });
@@ -43,6 +44,30 @@ async function request(path, options = {}) {
 
 export async function getHealth() {
   return (await request("/health")).json();
+}
+
+export async function login(payload) {
+  return (
+    await request("/auth/login", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    })
+  ).json();
+}
+
+export async function logout() {
+  return (
+    await request("/auth/logout", {
+      method: "POST",
+    })
+  ).json();
+}
+
+export async function getSessionStatus() {
+  return (await request("/auth/session")).json();
 }
 
 export async function getIncidents() {
