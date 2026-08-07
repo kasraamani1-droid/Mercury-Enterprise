@@ -18,6 +18,7 @@ from .ai import ThreatRiskEngine
 from .assessment import generate_assessment
 from .fusion import FusionEngine
 from .missions import MissionService
+from .ops import ResponseOrchestrationEngine
 from .core.config import settings
 from .core.logging import configure_logging
 from .database import Base, SessionLocal, engine, get_db
@@ -35,7 +36,7 @@ from .schemas import (
 from .security.api_key import require_api_key
 from .timeline import TimelineManager
 from .websocket.manager import manager
-from .routers import connectors_router
+from .routers import connectors_router, ops_router
 from .connectors.manager import connector_manager
 
 configure_logging()
@@ -45,6 +46,13 @@ alert_manager = AlertManager()
 threat_engine = ThreatRiskEngine()
 fusion_engine = FusionEngine()
 mission_service = MissionService()
+response_orchestrator = ResponseOrchestrationEngine(
+    event_bus_instance=None,
+    timeline_manager=None,
+    mission_service=mission_service,
+    threat_engine=threat_engine,
+    fusion_engine=fusion_engine,
+)
 
 
 def utcnow() -> datetime:
@@ -119,6 +127,7 @@ async def lifespan(app: FastAPI):
     )
     fusion_engine.clear()
     app.state.mission_service = mission_service
+    app.state.response_orchestrator = response_orchestrator
     await connector_manager.start_all()
     task = asyncio.create_task(heartbeat())
     logger.info("Mercury %s started in %s mode", settings.version, settings.environment)
@@ -137,6 +146,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.include_router(connectors_router)
+app.include_router(ops_router)
 
 app.add_middleware(
     CORSMiddleware,
