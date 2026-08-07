@@ -8,6 +8,12 @@ def login_client():
     response = client.post('/api/v1/auth/login', json={'operator': 'operator', 'password': 'mercury-demo'})
     assert response.status_code == 200
 
+
+def login_as(operator: str):
+    response = client.post('/api/v1/auth/login', json={'operator': operator, 'password': 'mercury-demo'})
+    assert response.status_code == 200
+    return response.json()
+
 def test_health():
     response = client.get('/api/v1/health')
     assert response.status_code == 200
@@ -77,6 +83,7 @@ def test_session_status_and_logout():
     assert session.status_code == 200
     assert session.json()['authenticated'] is True
     assert session.json()['operator'] == 'operator'
+    assert session.json()['role'] == 'Operator'
 
     logout = client.post('/api/v1/auth/logout')
     assert logout.status_code == 200
@@ -102,6 +109,38 @@ def test_websocket_connects():
     with client.websocket_connect('/api/v1/ws') as websocket:
         first = websocket.receive_json()
         assert first['type'] == 'connected'
+        assert first['operator'] == 'operator'
         websocket.send_text('ping')
         pong = websocket.receive_json()
         assert pong['type'] == 'pong'
+
+
+def test_role_enforcement_viewer_cannot_create_incident():
+    login_as('viewer')
+    denied = client.post('/api/v1/incidents', json={'title': 'Viewer denied', 'severity': 'low', 'summary': 'rbac'})
+    assert denied.status_code == 403
+
+
+def test_role_enforcement_operator_can_create_incident():
+    login_as('operator')
+    allowed = client.post('/api/v1/incidents', json={'title': 'Operator allowed', 'severity': 'low', 'summary': 'rbac'})
+    assert allowed.status_code == 201
+
+
+def test_approval_flow_operator_request_reviewer_approve():
+    login_as('operator')
+    req = client.post('/api/v1/approvals', json={'action': 'incident.resolve', 'target_id': 'INC-TEST', 'reason': 'Need review'})
+    assert req.status_code == 200
+    approval_id = req.json()['approval_id']
+
+    pending_for_operator = client.get('/api/v1/approvals')
+    assert pending_for_operator.status_code == 403
+
+    login_as('reviewer')
+    listing = client.get('/api/v1/approvals?status_filter=pending')
+    assert listing.status_code == 200
+    assert any(item['approval_id'] == approval_id for item in listing.json())
+
+    approved = client.post(f'/api/v1/approvals/{approval_id}/approve')
+    assert approved.status_code == 200
+    assert approved.json()['status'] == 'approved'

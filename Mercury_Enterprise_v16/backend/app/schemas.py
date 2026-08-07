@@ -45,3 +45,4 @@ class IncidentDetail(IncidentOut):
 
 class IncidentStatusUpdate(BaseModel):
     status: str
+    approval_id: str | None = None

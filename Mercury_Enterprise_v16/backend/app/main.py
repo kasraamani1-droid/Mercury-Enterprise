@@ -36,6 +36,7 @@ from .schemas import (
     TimelineEventCreate,
     TimelineEventOut,
 )
+from .security.authorization import Role, has_permissions
 from .timeline import TimelineManager
 from .websocket.manager import manager
 from .routers import connectors_router, ops_router
@@ -67,11 +68,25 @@ decision_engine = DecisionEngine(
 )
 
 _sessions: dict[str, dict[str, datetime | str]] = {}
+_approvals: dict[str, dict[str, datetime | str | bool | None]] = {}
+
+_ROLE_BY_OPERATOR = {
+    "admin": Role.ADMINISTRATOR.value,
+    settings.auth_operator: Role.OPERATOR.value,
+    "reviewer": Role.REVIEWER.value,
+    "viewer": Role.VIEWER.value,
+}
 
 
 class LoginRequest(BaseModel):
     operator: str
     password: str
+
+
+class ApprovalRequestPayload(BaseModel):
+    action: str
+    target_id: str | None = None
+    reason: str = ""
 
 
 def utcnow() -> datetime:
@@ -85,11 +100,11 @@ def _cleanup_expired_sessions(now: datetime | None = None) -> None:
         _sessions.pop(sid, None)
 
 
-def _create_session(operator: str) -> tuple[str, datetime]:
+def _create_session(operator: str, role: str) -> tuple[str, datetime]:
     now = utcnow()
     session_id = secrets.token_urlsafe(32)
     expires_at = now + timedelta(seconds=settings.session_ttl_seconds)
-    _sessions[session_id] = {"operator": operator, "created_at": now, "expires_at": expires_at}
+    _sessions[session_id] = {"operator": operator, "role": role, "created_at": now, "expires_at": expires_at}
     return session_id, expires_at
 
 
@@ -124,7 +139,64 @@ def require_session(request: Request) -> dict[str, datetime | str]:
     if session is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
     request.state.operator = session["operator"]
+    request.state.role = session["role"]
     return session
+
+
+def require_permissions(*required: str):
+    def dependency(session: dict[str, datetime | str] = Depends(require_session)) -> dict[str, datetime | str]:
+        role = str(session.get("role", ""))
+        if not has_permissions(role, required):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+        return session
+
+    return dependency
+
+
+def _create_approval(action: str, target_id: str | None, reason: str, session: dict[str, datetime | str]) -> dict[str, datetime | str | bool | None]:
+    approval_id = secrets.token_urlsafe(16)
+    record: dict[str, datetime | str | bool | None] = {
+        "approval_id": approval_id,
+        "action": action,
+        "target_id": target_id,
+        "reason": reason,
+        "status": "pending",
+        "requested_by": str(session["operator"]),
+        "requested_role": str(session["role"]),
+        "created_at": utcnow(),
+        "reviewed_by": None,
+        "reviewed_at": None,
+        "consumed": False,
+    }
+    _approvals[approval_id] = record
+    return record
+
+
+def _approve_request(approval_id: str, reviewer: str) -> dict[str, datetime | str | bool | None]:
+    record = _approvals.get(approval_id)
+    if record is None:
+        raise HTTPException(404, "Approval request not found")
+    record["status"] = "approved"
+    record["reviewed_by"] = reviewer
+    record["reviewed_at"] = utcnow()
+    return record
+
+
+def _require_approved_action(approval_id: str | None, *, action: str, target_id: str) -> None:
+    if not approval_id:
+        raise HTTPException(status_code=400, detail="Approval required")
+    record = _approvals.get(approval_id)
+    if record is None:
+        raise HTTPException(404, "Approval request not found")
+    if bool(record.get("consumed")):
+        raise HTTPException(409, "Approval already used")
+    if str(record.get("status")) != "approved":
+        raise HTTPException(409, "Approval is not approved")
+    if str(record.get("action")) != action:
+        raise HTTPException(409, "Approval action mismatch")
+    if str(record.get("target_id") or "") != target_id:
+        raise HTTPException(409, "Approval target mismatch")
+    record["consumed"] = True
 
 
 def seed_demo() -> None:
@@ -254,9 +326,10 @@ def ready(db: Session = Depends(get_db)):
 
 @app.post("/api/v1/auth/login")
 def login(payload: LoginRequest, response: Response):
-    if payload.operator != settings.auth_operator or payload.password != settings.auth_password:
+    role = _ROLE_BY_OPERATOR.get(payload.operator)
+    if role is None or payload.password != settings.auth_password:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
-    session_id, expires_at = _create_session(payload.operator)
+    session_id, expires_at = _create_session(payload.operator, role)
     response.set_cookie(
         key=settings.session_cookie_name,
         value=session_id,
@@ -266,7 +339,7 @@ def login(payload: LoginRequest, response: Response):
         samesite=settings.session_cookie_samesite,
         path="/",
     )
-    return {"authenticated": True, "operator": payload.operator, "expires_at": expires_at.isoformat()}
+    return {"authenticated": True, "operator": payload.operator, "role": role, "expires_at": expires_at.isoformat()}
 
 
 @app.post("/api/v1/auth/logout")
@@ -281,7 +354,52 @@ def session_status(request: Request):
     session = _validate_session(_request_session_id(request))
     if session is None:
         return {"authenticated": False}
-    return {"authenticated": True, "operator": str(session["operator"]), "expires_at": session["expires_at"].isoformat()}
+    return {"authenticated": True, "operator": str(session["operator"]), "role": str(session["role"]), "expires_at": session["expires_at"].isoformat()}
+
+
+@app.post("/api/v1/approvals", dependencies=[Depends(require_permissions("approval.request"))])
+def create_approval_request(payload: ApprovalRequestPayload, session: dict[str, datetime | str] = Depends(require_session)):
+    record = _create_approval(payload.action, payload.target_id, payload.reason, session)
+    return {
+        "approval_id": str(record["approval_id"]),
+        "status": str(record["status"]),
+        "action": str(record["action"]),
+        "target_id": record["target_id"],
+        "requested_by": str(record["requested_by"]),
+        "requested_role": str(record["requested_role"]),
+        "created_at": record["created_at"].isoformat(),
+    }
+
+
+@app.get("/api/v1/approvals", dependencies=[Depends(require_permissions("approval.review"))])
+def list_approvals(status_filter: str | None = None):
+    records = list(_approvals.values())
+    if status_filter:
+        records = [item for item in records if str(item.get("status")) == status_filter]
+    return [
+        {
+            "approval_id": str(item["approval_id"]),
+            "status": str(item["status"]),
+            "action": str(item["action"]),
+            "target_id": item["target_id"],
+            "requested_by": str(item["requested_by"]),
+            "requested_role": str(item["requested_role"]),
+            "reviewed_by": item["reviewed_by"],
+            "consumed": bool(item["consumed"]),
+        }
+        for item in records
+    ]
+
+
+@app.post("/api/v1/approvals/{approval_id}/approve", dependencies=[Depends(require_permissions("approval.review"))])
+def approve_request(approval_id: str, session: dict[str, datetime | str] = Depends(require_session)):
+    record = _approve_request(approval_id, str(session["operator"]))
+    return {
+        "approval_id": str(record["approval_id"]),
+        "status": str(record["status"]),
+        "reviewed_by": str(record["reviewed_by"]),
+        "reviewed_at": record["reviewed_at"].isoformat(),
+    }
 
 
 @app.get("/api/v1/incidents", response_model=list[IncidentOut])
@@ -289,7 +407,7 @@ def list_incidents(db: Session = Depends(get_db)):
     return db.scalars(select(Incident).order_by(Incident.created_at.desc())).all()
 
 
-@app.post("/api/v1/incidents", response_model=IncidentOut, status_code=201, dependencies=[Depends(require_session)])
+@app.post("/api/v1/incidents", response_model=IncidentOut, status_code=201, dependencies=[Depends(require_permissions("incident.create"))])
 async def create_incident(payload: IncidentCreate, db: Session = Depends(get_db)):
     incident = Incident(**payload.model_dump())
     db.add(incident)
@@ -308,11 +426,14 @@ def get_incident(incident_id: str, db: Session = Depends(get_db)):
     return incident
 
 
-@app.patch("/api/v1/incidents/{incident_id}/status", response_model=IncidentOut, dependencies=[Depends(require_session)])
-async def update_incident_status(incident_id: str, payload: IncidentStatusUpdate, db: Session = Depends(get_db)):
+@app.patch("/api/v1/incidents/{incident_id}/status", response_model=IncidentOut, dependencies=[Depends(require_permissions("incident.update"))])
+async def update_incident_status(incident_id: str, payload: IncidentStatusUpdate, db: Session = Depends(get_db), session: dict[str, datetime | str] = Depends(require_session)):
     incident = db.get(Incident, incident_id)
     if not incident:
         raise HTTPException(404, "Incident not found")
+    status_value = str(payload.status).lower()
+    if status_value in {"resolved", "closed"} and str(session.get("role")) != Role.ADMINISTRATOR.value:
+        _require_approved_action(payload.approval_id, action="incident.resolve", target_id=incident_id)
     incident.status = payload.status
     db.commit()
     db.refresh(incident)
@@ -320,7 +441,7 @@ async def update_incident_status(incident_id: str, payload: IncidentStatusUpdate
     return incident
 
 
-@app.post("/api/v1/incidents/{incident_id}/events", response_model=TimelineEventOut, status_code=201, dependencies=[Depends(require_session)])
+@app.post("/api/v1/incidents/{incident_id}/events", response_model=TimelineEventOut, status_code=201, dependencies=[Depends(require_permissions("incident.event"))])
 async def add_event(incident_id: str, payload: TimelineEventCreate, db: Session = Depends(get_db)):
     if not db.get(Incident, incident_id):
         raise HTTPException(404, "Incident not found")
@@ -332,7 +453,7 @@ async def add_event(incident_id: str, payload: TimelineEventCreate, db: Session 
     return event
 
 
-@app.post("/api/v1/incidents/{incident_id}/evidence", response_model=EvidenceOut, status_code=201, dependencies=[Depends(require_session)])
+@app.post("/api/v1/incidents/{incident_id}/evidence", response_model=EvidenceOut, status_code=201, dependencies=[Depends(require_permissions("incident.evidence"))])
 def add_evidence(incident_id: str, payload: EvidenceCreate, db: Session = Depends(get_db)):
     if not db.get(Incident, incident_id):
         raise HTTPException(404, "Incident not found")
@@ -377,7 +498,7 @@ def list_alerts(incident_id: str | None = None, limit: int = 50):
 
 
 @app.post("/api/v1/alerts/{alert_id}/ack")
-def acknowledge_alert(alert_id: str):
+def acknowledge_alert(alert_id: str, _: dict[str, datetime | str] = Depends(require_permissions("alerts.ack"))):
     alert = alert_manager.acknowledge(alert_id)
     if alert is None:
         raise HTTPException(404, "Alert not found")

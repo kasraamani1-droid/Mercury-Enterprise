@@ -70,6 +70,31 @@ export async function getSessionStatus() {
   return (await request("/auth/session")).json();
 }
 
+export async function requestApproval(payload) {
+  return (
+    await request("/approvals", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    })
+  ).json();
+}
+
+export async function listApprovals(statusFilter) {
+  const suffix = statusFilter ? `?status_filter=${encodeURIComponent(statusFilter)}` : "";
+  return (await request(`/approvals${suffix}`)).json();
+}
+
+export async function approveRequest(approvalId) {
+  return (
+    await request(`/approvals/${approvalId}/approve`, {
+      method: "POST",
+    })
+  ).json();
+}
+
 export async function getIncidents() {
   return (await request("/incidents")).json();
 }
@@ -106,16 +131,20 @@ export async function addEvent(id, payload) {
   ).json();
 }
 
-export async function resolveIncident(id) {
+export async function resolveIncident(id, approvalId = null) {
+  const payload = {
+    status: "resolved",
+  };
+  if (approvalId) {
+    payload.approval_id = approvalId;
+  }
   return (
     await request(`/incidents/${id}/status`, {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        status: "resolved",
-      }),
+      body: JSON.stringify(payload),
     })
   ).json();
 }

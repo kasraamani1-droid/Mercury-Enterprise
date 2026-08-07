@@ -11,6 +11,8 @@ import { initializeRealtimeConsole } from "./realtimeConsole.js";
 import { initializeEnterprise } from "./enterprise.js";
 import { initializeEnterprise8 } from "./enterprise8.js";
 import { initializeWebSocket } from "./websocket.js";
+let currentSession = null;
+
 async function checkHealth(){try{const health=await getHealth();el("statusText").textContent=`API v${health.version}`;el("backendDot").classList.add("online")}catch{el("statusText").textContent="Backend offline";el("backendDot").classList.remove("online")}}
 function bindEvents(){
   el("incidentSearch").addEventListener("input",renderIncidentList);el("severityFilter").addEventListener("change",renderIncidentList);el("sortFilter").addEventListener("change",renderIncidentList);el("simulateButton").addEventListener("click",simulateIncident);
@@ -132,8 +134,26 @@ async function ensureSession(){
   if (!session.authenticated) {
     session = await login({ operator: "operator", password: "mercury-demo" });
   }
+  currentSession = session;
   return session;
 }
 
-async function initialize(){initializeMap();bindEvents();initializeMissionOps();initializeCommandCenter();initializeRealtimeConsole();initializeEnterprise();initializeEnterprise8();await ensureSession();initializeWebSocket();updateFusion();updateThreatMatrix();await checkHealth();await loadDashboardSummary();await loadIncidents();setInterval(checkHealth,5000);setInterval(loadDashboardSummary,15000);setInterval(loadIncidents,10000)}
+function applyRoleAccess(){
+  const role = String(currentSession?.role || "Viewer");
+  const isViewer = role === "Viewer";
+  const isReviewer = role === "Reviewer";
+  const disableOperate = isViewer || isReviewer;
+
+  const simulateButton = el("simulateButton");
+  if (simulateButton) simulateButton.disabled = disableOperate;
+
+  const resolveButton = el("resolveButton");
+  if (resolveButton) resolveButton.disabled = disableOperate;
+
+  document.querySelectorAll("[data-action]").forEach(button => {
+    button.disabled = disableOperate;
+  });
+}
+
+async function initialize(){initializeMap();bindEvents();initializeMissionOps();initializeCommandCenter();initializeRealtimeConsole();initializeEnterprise();initializeEnterprise8();await ensureSession();applyRoleAccess();initializeWebSocket();updateFusion();updateThreatMatrix();await checkHealth();await loadDashboardSummary();await loadIncidents();setInterval(checkHealth,5000);setInterval(loadDashboardSummary,15000);setInterval(loadIncidents,10000)}
 initialize();
