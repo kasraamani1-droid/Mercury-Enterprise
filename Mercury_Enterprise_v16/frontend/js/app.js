@@ -1,5 +1,16 @@
 import { el } from "./utils.js";
-import { getHealth, getDashboardSummary, getSessionStatus, getSessionContext, updateSessionContext, login, listConnectors } from "./api.js";
+import {
+  getHealth,
+  getDashboardSummary,
+  getSessionStatus,
+  getSessionContext,
+  updateSessionContext,
+  login,
+  listConnectors,
+  evaluateDecision,
+  getDecision,
+  reviewDecision,
+} from "./api.js";
 import { initializeMap, toggleTracking, pauseTracking, resetTracking, setSimulationSpeed, toggleLayer, changeAirport, seekReplay } from "./map.js";
 import { loadIncidents, renderIncidentList, loadIncident, showTab, simulateIncident, performOperatorAction, resolveSelected, generateSelectedReport } from "./incidents.js";
 import { askCopilot } from "./copilot.js";
@@ -14,6 +25,7 @@ import { initializeWebSocket } from "./websocket.js";
 let currentSession = null;
 let currentContext = null;
 let latestConnectors = [];
+let selectedDecisionId = null;
 
 async function checkHealth(){try{const health=await getHealth();el("statusText").textContent=`API v${health.version}`;el("backendDot").classList.add("online")}catch{el("statusText").textContent="Backend offline";el("backendDot").classList.remove("online")}}
 function bindEvents(){
@@ -27,6 +39,22 @@ function bindEvents(){
   const organizationSelect = el("organizationSelect");
   if (organizationSelect) {
     organizationSelect.addEventListener("change", onOrganizationChange);
+  }
+  const evaluateButton = el("decisionEvaluateButton");
+  if (evaluateButton) evaluateButton.addEventListener("click", evaluateDecisionFromUi);
+  const reviewSubmit = el("decisionReviewSubmit");
+  if (reviewSubmit) reviewSubmit.addEventListener("click", () => submitDecisionReview("acknowledged"));
+  const reviewCommentBtn = el("decisionReviewCommentBtn");
+  if (reviewCommentBtn) reviewCommentBtn.addEventListener("click", () => submitDecisionReview("commented"));
+  const reviewRejectBtn = el("decisionReviewRejectBtn");
+  if (reviewRejectBtn) reviewRejectBtn.addEventListener("click", () => submitDecisionReview("rejected_advisory"));
+  const timeline = el("decisionTimelineList");
+  if (timeline) {
+    timeline.addEventListener("click", event => {
+      const row = event.target.closest("[data-decision-id]");
+      if (!row || !row.dataset.decisionId) return;
+      loadDecisionDetail(row.dataset.decisionId);
+    });
   }
   const siteSelect = el("siteSelect");
   if (siteSelect) {
@@ -144,14 +172,145 @@ function renderDashboardSummary(summary){
 
   el("decisionTimelineList").innerHTML = decisionTimeline.length
     ? decisionTimeline
-      .map(item => `<div class="log-entry"><span>${item.timestamp || "Unknown time"}</span><strong>${item.decision || "Decision update"}</strong><small>${item.operator_acknowledged ? "Acknowledged by operator" : "Operator acknowledgement pending"}</small></div>`)
+      .map(item => {
+        const decisionId = item.decision_id ? String(item.decision_id) : "";
+        const reviewState = item.review_state || (item.operator_acknowledged ? "acknowledged" : "pending");
+        const selectedName = item.selected_name || "Decision update";
+        const warnings = item.warning_count ?? 0;
+        return `<div class="log-entry" data-decision-id="${decisionId}" style="cursor:${decisionId ? "pointer" : "default"}">
+          <span>${item.timestamp || "Unknown time"}</span>
+          <strong>${selectedName}</strong>
+          <small>${reviewState} · warnings ${warnings}${item.operator_acknowledged ? " · acknowledged" : " · review pending"}</small>
+        </div>`;
+      })
       .join("")
     : '<div class="empty">No decision timeline entries yet. Operator review required.</div>';
 
   if (decisions.selected_recommendation && decisions.selected_recommendation.name) {
-    el("dashboardSummaryMessage").textContent = `Recommended: ${decisions.selected_recommendation.name}. Operator review required.`;
+    el("dashboardSummaryMessage").textContent = `Advisory recommended: ${decisions.selected_recommendation.name}. Human review required.`;
   } else {
-    el("dashboardSummaryMessage").textContent = "No active recommendation. Operator review pending.";
+    el("dashboardSummaryMessage").textContent = "No active advisory recommendation. Operator review pending.";
+  }
+
+  if (decisions.latest_decision_id && !selectedDecisionId) {
+    loadDecisionDetail(decisions.latest_decision_id);
+  } else if (selectedDecisionId) {
+    loadDecisionDetail(selectedDecisionId);
+  }
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+function renderDecisionExplain(decision) {
+  if (!decision) {
+    if (el("decisionReviewState")) el("decisionReviewState").textContent = "—";
+    if (el("decisionFactorsList")) {
+      el("decisionFactorsList").innerHTML = '<div class="empty">Select a decision to inspect factors, warnings, assumptions, and uncertainty.</div>';
+    }
+    if (el("decisionAlternativesList")) {
+      el("decisionAlternativesList").innerHTML = '<div class="empty">No alternatives selected.</div>';
+    }
+    return;
+  }
+  selectedDecisionId = decision.decision_id || selectedDecisionId;
+  const review = decision.review || {};
+  if (el("decisionReviewState")) {
+    el("decisionReviewState").textContent = `${review.state || "pending"}${review.reviewed_by ? ` · ${review.reviewed_by}` : ""}`;
+  }
+
+  const factorRows = [];
+  factorRows.push(`<div class="log-entry"><strong>Reasoning</strong><small>${escapeHtml(decision.reasoning || "")}</small></div>`);
+  (decision.warnings || []).forEach(item => {
+    factorRows.push(`<div class="log-entry"><strong>Warning</strong><small>${escapeHtml(item)}</small></div>`);
+  });
+  (decision.assumptions || []).forEach(item => {
+    factorRows.push(`<div class="log-entry"><strong>Assumption</strong><small>${escapeHtml(item)}</small></div>`);
+  });
+  (decision.uncertainty || []).forEach(item => {
+    factorRows.push(`<div class="log-entry"><strong>Uncertainty</strong><small>${escapeHtml(item)}</small></div>`);
+  });
+  (decision.factor_breakdown || []).forEach(item => {
+    factorRows.push(
+      `<div class="log-entry"><strong>${escapeHtml(item.name || "factor")}</strong><small>${escapeHtml(item.detail || "")} · ${escapeHtml(item.weight_or_score)}</small></div>`
+    );
+  });
+  const connector = decision.connector_context || {};
+  if ((connector.degraded || []).length || (connector.error || []).length) {
+    factorRows.push(
+      `<div class="log-entry"><strong>Connector trust</strong><small>degraded=${escapeHtml((connector.degraded || []).join(", ") || "none")}; error=${escapeHtml((connector.error || []).join(", ") || "none")}</small></div>`
+    );
+  }
+  if (el("decisionFactorsList")) {
+    el("decisionFactorsList").innerHTML = factorRows.length
+      ? factorRows.join("")
+      : '<div class="empty">No explanation factors available.</div>';
+  }
+
+  const alternatives = decision.ranked_actions || [];
+  if (el("decisionAlternativesList")) {
+    el("decisionAlternativesList").innerHTML = alternatives.length
+      ? alternatives
+          .map(
+            (item, index) =>
+              `<div class="log-entry"><span>#${index + 1}</span><strong>${escapeHtml(item.name)}</strong><small>score ${escapeHtml(item.overall_score)} · confidence ${escapeHtml(item.confidence)}</small></div>`
+          )
+          .join("")
+      : '<div class="empty">No alternatives available.</div>';
+  }
+}
+
+async function loadDecisionDetail(decisionId) {
+  if (!decisionId) return;
+  try {
+    const decision = await getDecision(decisionId);
+    renderDecisionExplain(decision);
+  } catch (error) {
+    if (el("decisionFactorsList")) {
+      el("decisionFactorsList").innerHTML = `<div class="empty">Decision detail unavailable: ${escapeHtml(error.message)}</div>`;
+    }
+  }
+}
+
+async function evaluateDecisionFromUi() {
+  try {
+    const decision = await evaluateDecision({
+      mission_id: "mission-command-1",
+      track_id: `track-command-${Date.now()}`,
+      threat_level: "high",
+      threat_score: 80,
+      response_recommendations: ["Dispatch patrol", "Escalate to operations", "Monitor current state"],
+      operator_constraints: ["human_review_required"],
+    });
+    selectedDecisionId = decision.decision_id;
+    renderDecisionExplain(decision);
+    addLog(`Advisory decision evaluated: ${decision.selected_recommendation?.name || decision.decision_id}`);
+    await loadDashboardSummary();
+    try { await refreshEnterpriseAudit(); } catch { /* optional admin refresh */ }
+  } catch (error) {
+    addLog(`Decision evaluate failed: ${error.message}`);
+  }
+}
+
+async function submitDecisionReview(state) {
+  if (!selectedDecisionId) {
+    addLog("Select or evaluate a decision before review.");
+    return;
+  }
+  const comment = el("decisionReviewComment")?.value || "";
+  try {
+    const decision = await reviewDecision(selectedDecisionId, { state, comment: comment || null });
+    renderDecisionExplain(decision);
+    addLog(`Decision review ${state}: ${selectedDecisionId}`);
+    await loadDashboardSummary();
+    try { await refreshEnterpriseAudit(); } catch { /* optional admin refresh */ }
+  } catch (error) {
+    addLog(`Decision review failed: ${error.message}`);
   }
 }
 
@@ -185,6 +344,7 @@ function renderDashboardError(message){
   el("sensorWarningTotal").textContent = "—";
   el("sensorOfflineTotal").textContent = "—";
   el("decisionTimelineList").innerHTML = '<div class="empty">Decision timeline unavailable.</div>';
+  renderDecisionExplain(null);
 }
 
 async function loadDashboardSummary(){
@@ -226,6 +386,12 @@ function applyRoleAccess(){
 
   document.querySelectorAll("[data-action]").forEach(button => {
     button.disabled = disableOperate;
+  });
+
+  const canReview = !(isViewer);
+  ["decisionReviewSubmit", "decisionReviewCommentBtn", "decisionReviewRejectBtn"].forEach(id => {
+    const node = el(id);
+    if (node) node.disabled = !canReview;
   });
 }
 

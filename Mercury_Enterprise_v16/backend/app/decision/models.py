@@ -6,6 +6,15 @@ from typing import Any
 from uuid import uuid4
 
 
+def _default_review() -> dict[str, Any]:
+    return {
+        "state": "pending",
+        "comment": None,
+        "reviewed_by": None,
+        "reviewed_at": None,
+    }
+
+
 @dataclass(slots=True)
 class DecisionCandidate:
     action_id: str = field(default_factory=lambda: str(uuid4()))
@@ -56,8 +65,17 @@ class DecisionResult:
     confidence: float = 0.0
     reasoning: str = ""
     warnings: list[str] = field(default_factory=list)
+    assumptions: list[str] = field(default_factory=list)
+    uncertainty: list[str] = field(default_factory=list)
+    factor_breakdown: list[dict[str, Any]] = field(default_factory=list)
+    evidence_links: list[dict[str, str]] = field(default_factory=list)
+    connector_context: dict[str, Any] = field(default_factory=lambda: {"degraded": [], "error": [], "online": 0, "total": 0})
+    organization_id: str | None = None
+    site_id: str | None = None
+    review: dict[str, Any] = field(default_factory=_default_review)
     requires_human_approval: bool = True
     metadata: dict[str, Any] = field(default_factory=dict)
+    disclaimer: str = "Advisory decision support only. Human operator remains in full control."
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -71,6 +89,15 @@ class DecisionResult:
             "confidence": round(self.confidence, 2),
             "reasoning": self.reasoning,
             "warnings": self.warnings,
+            "assumptions": self.assumptions,
+            "uncertainty": self.uncertainty,
+            "factor_breakdown": self.factor_breakdown,
+            "evidence_links": self.evidence_links,
+            "connector_context": self.connector_context,
+            "organization_id": self.organization_id,
+            "site_id": self.site_id,
+            "review": self.review,
             "requires_human_approval": self.requires_human_approval,
             "metadata": self.metadata,
+            "disclaimer": self.disclaimer,
         }

@@ -134,7 +134,23 @@
 
     <article class="card dashboard-summary">
       <div class="panel-title"><h3>Decision Timeline</h3><span class="muted">Operator Decision Support</span></div>
+      <div id="decisionAdvisoryBanner" class="muted">Advisory only — human operator remains in full control. No autonomous execution.</div>
+      <div class="page-actions" style="margin:0.5rem 0;">
+        <button id="decisionEvaluateButton" class="ghost small" type="button">Evaluate advisory decision</button>
+      </div>
       <div id="decisionTimelineList" class="event-log-list"><div class="empty">Loading decision timeline…</div></div>
+      <div id="decisionExplainPanel" class="muted" style="margin-top:0.75rem;">
+        <div><strong>Review state:</strong> <span id="decisionReviewState">—</span></div>
+        <div id="decisionFactorsList" class="event-log-list"><div class="empty">Select a decision to inspect factors, warnings, assumptions, and uncertainty.</div></div>
+        <div id="decisionAlternativesList" class="event-log-list"><div class="empty">No alternatives selected.</div></div>
+        <label for="decisionReviewComment">Review comment</label>
+        <textarea id="decisionReviewComment" rows="2" placeholder="Optional comment (required for commented state)"></textarea>
+        <div class="page-actions" style="margin-top:0.5rem;">
+          <button id="decisionReviewSubmit" class="small" type="button" data-state="acknowledged">Acknowledge</button>
+          <button id="decisionReviewCommentBtn" class="ghost small" type="button" data-state="commented">Comment</button>
+          <button id="decisionReviewRejectBtn" class="ghost small warning" type="button" data-state="rejected_advisory">Reject advisory</button>
+        </div>
+      </div>
     </article>
 
     <section class="live-ops-strip"><div class="layer-panel card"><h3>Airspace layers</h3><label><input type="checkbox" data-layer="zones" checked> Protection zones</label><label><input type="checkbox" data-layer="sensors" checked> Sensors</label><label><input type="checkbox" data-layer="aircraft" checked> Aircraft</label><label><input type="checkbox" data-layer="trail" checked> UAV trail</label></div><div class="fusion-panel card"><div class="panel-title"><h3>Sensor fusion</h3><strong><span id="liveThreatScore">92</span>%</strong></div><div id="fusionBars"></div></div><div class="live-timeline-panel card"><h3>Live timeline</h3><div id="liveTimeline"><div class="empty">Start tracking to stream events.</div></div></div></section><section class="threat-matrix card"><div class="panel-title"><h3>Threat matrix</h3><button id="ackButton" class="warning small">Acknowledge</button></div><div class="table-wrap"><table><thead><tr><th>Target</th><th>Priority</th><th>Altitude</th><th>Speed</th><th>Heading</th><th>ETA</th><th>Status</th></tr></thead><tbody id="threatMatrixBody"></tbody></table></div></section><section class="lower-grid">

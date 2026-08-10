@@ -30,6 +30,8 @@ from .models import Evidence, Incident, TimelineEvent
 from .reporting import build_report_history, build_report_summary
 from .schemas import (
     AuditEventOut,
+    DecisionEvaluateRequest,
+    DecisionReviewRequest,
     EvidenceCreate,
     EvidenceOut,
     IncidentCreate,
@@ -71,6 +73,7 @@ decision_engine = DecisionEngine(
     fusion_engine=fusion_engine,
     alert_manager=alert_manager,
     response_orchestrator=response_orchestrator,
+    connector_manager=connector_manager,
 )
 
 _sessions: dict[str, dict[str, datetime | str]] = {}
@@ -280,54 +283,62 @@ def seed_demo() -> None:
         if legacy:
             db.commit()
 
-        if db.scalar(select(Incident).limit(1)):
+        existing_seed_evidence = db.scalar(select(Evidence).where(Evidence.created_by == "seed").limit(1))
+        existing_incident = db.scalar(select(Incident).limit(1))
+        if existing_incident and existing_seed_evidence:
             return
-        incident = Incident(
-            title="Drone intrusion detected at Montréal–Trudeau Airport",
-            status="open",
-            severity="high",
-            summary="Simulated demonstration incident for Mercury Enterprise.",
-            organization_id="org-aviation-east",
-            site_id="site-cyul",
-        )
-        db.add(incident)
-        db.flush()
-        t0 = utcnow() - timedelta(minutes=8)
-        db.add_all(
-            [
-                TimelineEvent(incident_id=incident.id, occurred_at=t0, event_type="observation", source="Camera-01", description="Small airborne object detected near the north perimeter.", confidence=62),
-                TimelineEvent(incident_id=incident.id, occurred_at=t0 + timedelta(minutes=2), event_type="correlation", source="Mercury Fusion", description="RF and electro-optical observations correlated.", confidence=78),
-                TimelineEvent(incident_id=incident.id, occurred_at=t0 + timedelta(minutes=5), event_type="operator_note", source="Operator A", description="Target remained inside the protected operating area.", confidence=90),
-            ]
-        )
-        db.add_all(
-            [
-                Evidence(
-                    incident_id=incident.id,
-                    evidence_type="image",
-                    source="Camera-01",
-                    title="North perimeter frame",
-                    content="Simulated evidence reference: frame-001.jpg",
-                    confidence=62,
-                    provenance="simulated",
-                    created_by="seed",
-                    organization_id="org-aviation-east",
-                    site_id="site-cyul",
-                ),
-                Evidence(
-                    incident_id=incident.id,
-                    evidence_type="operator_note",
-                    source="Operator A",
-                    title="Visual review",
-                    content="Object appears consistent with a small civilian UAV; identity unconfirmed.",
-                    confidence=74,
-                    provenance="simulated",
-                    created_by="seed",
-                    organization_id="org-aviation-east",
-                    site_id="site-cyul",
-                ),
-            ]
-        )
+
+        if existing_incident is None:
+            incident = Incident(
+                title="Drone intrusion detected at Montréal–Trudeau Airport",
+                status="open",
+                severity="high",
+                summary="Simulated demonstration incident for Mercury Enterprise.",
+                organization_id="org-aviation-east",
+                site_id="site-cyul",
+            )
+            db.add(incident)
+            db.flush()
+            t0 = utcnow() - timedelta(minutes=8)
+            db.add_all(
+                [
+                    TimelineEvent(incident_id=incident.id, occurred_at=t0, event_type="observation", source="Camera-01", description="Small airborne object detected near the north perimeter.", confidence=62),
+                    TimelineEvent(incident_id=incident.id, occurred_at=t0 + timedelta(minutes=2), event_type="correlation", source="Mercury Fusion", description="RF and electro-optical observations correlated.", confidence=78),
+                    TimelineEvent(incident_id=incident.id, occurred_at=t0 + timedelta(minutes=5), event_type="operator_note", source="Operator A", description="Target remained inside the protected operating area.", confidence=90),
+                ]
+            )
+        else:
+            incident = existing_incident
+
+        if existing_seed_evidence is None:
+            db.add_all(
+                [
+                    Evidence(
+                        incident_id=incident.id,
+                        evidence_type="image",
+                        source="Camera-01",
+                        title="North perimeter frame",
+                        content="Simulated evidence reference: frame-001.jpg",
+                        confidence=62,
+                        provenance="simulated",
+                        created_by="seed",
+                        organization_id=incident.organization_id or "org-aviation-east",
+                        site_id=incident.site_id or "site-cyul",
+                    ),
+                    Evidence(
+                        incident_id=incident.id,
+                        evidence_type="operator_note",
+                        source="Operator A",
+                        title="Visual review",
+                        content="Object appears consistent with a small civilian UAV; identity unconfirmed.",
+                        confidence=74,
+                        provenance="simulated",
+                        created_by="seed",
+                        organization_id=incident.organization_id or "org-aviation-east",
+                        site_id=incident.site_id or "site-cyul",
+                    ),
+                ]
+            )
         db.commit()
     finally:
         db.close()
@@ -948,9 +959,122 @@ def compliance():
     return {"version": settings.version, "control_coverage": 92, "open_findings": 4, "certified": False, "simulated": True}
 
 
+@app.post("/api/v1/decisions/evaluate", dependencies=[Depends(require_permissions("decisions.read"))])
+def evaluate_decision(
+    payload: DecisionEvaluateRequest,
+    db: Session = Depends(get_db),
+    session: dict[str, datetime | str] = Depends(require_session),
+):
+    if payload.threat_score is None and not payload.threat_level:
+        raise HTTPException(status_code=422, detail="threat_score or threat_level is required")
+    active_alerts: list | bool | None = payload.active_alerts
+    if isinstance(active_alerts, bool):
+        active_alerts = [{"title": "operator_flagged_alert"}] if active_alerts else []
+    context = {
+        "mission_id": payload.mission_id,
+        "track_id": payload.track_id,
+        "threat_level": payload.threat_level,
+        "threat_score": payload.threat_score,
+        "active_alerts": active_alerts or [],
+        "operator_constraints": payload.operator_constraints or [],
+        "response_recommendations": payload.response_recommendations or [],
+        "organization_id": str(session["organization_id"]),
+        "site_id": str(session["site_id"]),
+    }
+    try:
+        result = decision_engine.evaluate(context)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    record_audit(
+        db,
+        action="decision.evaluate",
+        actor=str(session["operator"]),
+        actor_role=str(session["role"]),
+        organization_id=str(session["organization_id"]),
+        site_id=str(session["site_id"]),
+        target_type="decision",
+        target_id=str(result.get("decision_id") or ""),
+        source="api",
+        outcome="success",
+        origin="operator",
+        details=f"Advisory evaluation for mission {payload.mission_id}",
+    )
+    db.commit()
+    return result
+
+
+@app.get("/api/v1/decisions", dependencies=[Depends(require_permissions("decisions.read"))])
+def list_decisions(
+    limit: int = 20,
+    session: dict[str, datetime | str] = Depends(require_session),
+):
+    return decision_engine.list_decisions(
+        organization_id=str(session["organization_id"]),
+        site_id=str(session["site_id"]),
+        limit=limit,
+    )
+
+
+@app.get("/api/v1/decisions/{decision_id}", dependencies=[Depends(require_permissions("decisions.read"))])
+def get_decision(
+    decision_id: str,
+    session: dict[str, datetime | str] = Depends(require_session),
+):
+    result = decision_engine.get_decision(
+        decision_id,
+        organization_id=str(session["organization_id"]),
+        site_id=str(session["site_id"]),
+    )
+    if result is None:
+        raise HTTPException(status_code=404, detail="Decision not found")
+    return result
+
+
+@app.post("/api/v1/decisions/{decision_id}/review", dependencies=[Depends(require_permissions("decisions.review"))])
+def review_decision(
+    decision_id: str,
+    payload: DecisionReviewRequest,
+    db: Session = Depends(get_db),
+    session: dict[str, datetime | str] = Depends(require_session),
+):
+    try:
+        result = decision_engine.apply_review(
+            decision_id=decision_id,
+            state=payload.state,
+            comment=payload.comment,
+            actor=str(session["operator"]),
+            organization_id=str(session["organization_id"]),
+            site_id=str(session["site_id"]),
+        )
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Decision not found") from None
+    except ValueError as exc:
+        detail = str(exc)
+        if detail == "comment_required":
+            raise HTTPException(status_code=422, detail="comment is required when state=commented") from exc
+        raise HTTPException(status_code=409, detail="Invalid review transition") from exc
+    record_audit(
+        db,
+        action="decision.review",
+        actor=str(session["operator"]),
+        actor_role=str(session["role"]),
+        organization_id=str(session["organization_id"]),
+        site_id=str(session["site_id"]),
+        target_type="decision",
+        target_id=decision_id,
+        source="api",
+        outcome="success",
+        origin="operator",
+        details=f"Review state={payload.state}",
+    )
+    db.commit()
+    return result
+
+
 @app.get("/api/v1/dashboard/summary")
-def dashboard_summary(db: Session = Depends(get_db)):
-    platform_services = {"api": "online", "database": "online", "events": "online", "ai": "rule-engine"}
+def dashboard_summary(request: Request, db: Session = Depends(get_db)):
+    session = _validate_session(_request_session_id(request))
+    platform_services = {"api": "online", "database": "online", "events": "online", "ai": "decision_engine_advisory"}
     connected_services = sum(1 for status in platform_services.values() if status == "online")
 
     alerts = alert_manager.get_alerts(limit=250)
@@ -961,16 +1085,54 @@ def dashboard_summary(db: Session = Depends(get_db)):
     missions = mission_service.list_missions(status=MissionStatus.ACTIVE)
     incidents = db.scalars(select(Incident)).all()
 
+    org_id = str(session["organization_id"]) if session else None
+    site_id = str(session["site_id"]) if session else None
+    stored_decisions = decision_engine.list_decisions(organization_id=org_id, site_id=site_id, limit=20)
+    pending_reviews = sum(1 for item in stored_decisions if str((item.get("review") or {}).get("state") or "") == "pending")
+    latest = stored_decisions[0] if stored_decisions else None
+    selected_recommendation = (latest or {}).get("selected_recommendation")
+    latest_threat = str(((latest or {}).get("metadata") or {}).get("threat_level") or "unknown")
+    warning_count = len((latest or {}).get("warnings") or []) if latest else 0
+    alternative_count = len((latest or {}).get("ranked_actions") or []) if latest else 0
+    latest_review_state = ((latest or {}).get("review") or {}).get("state") if latest else None
+    decision_status = "review_required" if pending_reviews else "clear"
+
+    decision_timeline = []
+    for item in stored_decisions[:5]:
+        review_state = str((item.get("review") or {}).get("state") or "pending")
+        selected_name = ((item.get("selected_recommendation") or {}) or {}).get("name")
+        decision_timeline.append(
+            {
+                "timestamp": item.get("created_at"),
+                "decision": item.get("reasoning") or item.get("context_summary") or "Decision update",
+                "operator_acknowledged": review_state in {"acknowledged", "commented"},
+                "decision_id": item.get("decision_id"),
+                "review_state": review_state,
+                "selected_name": selected_name,
+                "warning_count": len(item.get("warnings") or []),
+            }
+        )
+
+    if not decision_timeline:
+        timeline_events = timeline_manager.get_events(sort_desc=True)
+        decision_events = [entry for entry in timeline_events if str(entry.event_type).startswith("decision.")]
+        decision_timeline = [
+            {
+                "timestamp": entry.timestamp.isoformat(),
+                "decision": entry.message,
+                "operator_acknowledged": False,
+                "decision_id": None,
+                "review_state": None,
+                "selected_name": None,
+                "warning_count": 0,
+            }
+            for entry in decision_events[:5]
+        ]
+        if decision_events and pending_reviews == 0 and latest is None:
+            pending_reviews = len(decision_events)
+            decision_status = "review_required"
+
     timeline_events = timeline_manager.get_events(sort_desc=True)
-    decision_events = [entry for entry in timeline_events if str(entry.event_type).startswith("decision.")]
-    decision_timeline = [
-        {
-            "timestamp": entry.timestamp.isoformat(),
-            "decision": entry.message,
-            "operator_acknowledged": False,
-        }
-        for entry in decision_events[:5]
-    ]
 
     connector_records = connector_manager.list_records()
     connectors_by_category = {record.category: record for record in connector_records}
@@ -987,8 +1149,6 @@ def dashboard_summary(db: Session = Depends(get_db)):
 
     mission_status = "active" if missions else "idle"
     alert_status = "critical" if critical_alerts else "active" if active_alerts else "stable"
-    selected_recommendation = None
-    decision_status = "review_required" if decision_events else "clear"
     connector_states = {
         "ads_b": connector_state("aviation"),
         "rf": ConnectorState.offline.value,
@@ -1013,10 +1173,15 @@ def dashboard_summary(db: Session = Depends(get_db)):
         "alerts": {"total": len(alerts), "active": len(active_alerts), "status": alert_status},
         "missions": {"active": len(missions), "status": mission_status},
         "decisions": {
-            "pending_human_review": len(decision_events),
-            "highest_threat_level": "unknown",
+            "pending_human_review": pending_reviews,
+            "highest_threat_level": latest_threat,
             "selected_recommendation": selected_recommendation,
             "status": decision_status,
+            "warning_count": warning_count,
+            "alternative_count": alternative_count,
+            "latest_decision_id": (latest or {}).get("decision_id"),
+            "latest_review_state": latest_review_state,
+            "advisory_only": True,
         },
         "fleet_health": {
             "aircraft_online": 0,

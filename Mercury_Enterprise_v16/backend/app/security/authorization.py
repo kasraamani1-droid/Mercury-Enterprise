@@ -22,6 +22,8 @@ PERMISSIONS_BY_ROLE: dict[Role, set[str]] = {
         "reports.read",
         "connectors.read",
         "connectors.manage",
+        "decisions.read",
+        "decisions.review",
     },
     Role.REVIEWER: {
         "approval.review",
@@ -29,10 +31,13 @@ PERMISSIONS_BY_ROLE: dict[Role, set[str]] = {
         "audit.read",
         "reports.read",
         "connectors.read",
+        "decisions.read",
+        "decisions.review",
     },
     Role.VIEWER: {
         "reports.read",
         "connectors.read",
+        "decisions.read",
     },
 }
 

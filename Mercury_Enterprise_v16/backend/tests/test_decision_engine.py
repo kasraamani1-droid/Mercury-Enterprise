@@ -37,6 +37,8 @@ def test_valid_decision_evaluation_and_ranking():
             "operator_constraints": ["avoid overreaction"],
             "environmental_context": {"weather": "clear"},
             "metadata": {"source": "pytest"},
+            "organization_id": "org-test",
+            "site_id": "site-test",
         }
     )
 
@@ -44,6 +46,38 @@ def test_valid_decision_evaluation_and_ranking():
     assert result["ranked_actions"]
     assert result["selected_recommendation"]["name"]
     assert result["ranked_actions"][0]["overall_score"] >= result["ranked_actions"][-1]["overall_score"]
+    assert isinstance(result["assumptions"], list) and result["assumptions"]
+    assert isinstance(result["uncertainty"], list)
+    assert isinstance(result["factor_breakdown"], list) and result["factor_breakdown"]
+    assert isinstance(result["warnings"], list)
+    assert result["metadata"]["automatic_execution"] is False
+    assert result["metadata"]["advisory_only"] is True
+    assert result["review"]["state"] == "pending"
+    assert engine.get_decision(result["decision_id"], organization_id="org-test", site_id="site-test")
+
+
+def test_review_transitions_on_engine_store():
+    engine, _ = _build_engine()
+    result = engine.evaluate(
+        {
+            "mission_id": "1",
+            "track_id": "track-review",
+            "threat_score": 70,
+            "threat_level": "medium",
+            "organization_id": "org-test",
+            "site_id": "site-test",
+            "response_recommendations": ["Monitor", "Dispatch patrol"],
+        }
+    )
+    decision_id = result["decision_id"]
+    reviewed = engine.apply_review(decision_id, "acknowledged", "ok", "operator", "org-test", "site-test")
+    assert reviewed["review"]["state"] == "acknowledged"
+    try:
+        engine.apply_review(decision_id, "rejected_advisory", None, "operator", "org-test", "site-test")
+    except ValueError:
+        assert True
+    else:
+        raise AssertionError("Expected invalid transition")
 
 
 def test_deterministic_scoring_and_human_approval():

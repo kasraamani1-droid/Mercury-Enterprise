@@ -224,3 +224,27 @@ export async function recoverConnector(id) {
 export async function pollConnector(id) {
   return (await request(`/connectors/${id}/poll`, { method: "POST" })).json();
 }
+
+export async function evaluateDecision(payload) {
+  return (await request("/decisions/evaluate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  })).json();
+}
+
+export async function listDecisions(limit = 20) {
+  return (await request(`/decisions?limit=${limit}`)).json();
+}
+
+export async function getDecision(decisionId) {
+  return (await request(`/decisions/${decisionId}`)).json();
+}
+
+export async function reviewDecision(decisionId, payload) {
+  return (await request(`/decisions/${decisionId}/review`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  })).json();
+}

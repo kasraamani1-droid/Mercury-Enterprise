@@ -91,3 +91,18 @@ class AuditEventOut(BaseModel):
     outcome: str
     origin: str
     details: str
+
+
+class DecisionEvaluateRequest(BaseModel):
+    mission_id: str
+    track_id: str
+    threat_level: str | None = None
+    threat_score: float | None = None
+    active_alerts: list[dict] | bool | None = None
+    operator_constraints: list[str] | None = None
+    response_recommendations: list[str] | None = None
+
+
+class DecisionReviewRequest(BaseModel):
+    state: str
+    comment: str | None = None

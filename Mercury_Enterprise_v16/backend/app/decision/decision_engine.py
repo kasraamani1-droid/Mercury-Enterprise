@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections import OrderedDict
 from copy import deepcopy
+from datetime import datetime, timezone
 from typing import Any
 
 from ..ai import ThreatRiskEngine
 from ..alerts import AlertManager
 from ..core.event_bus import EventBus, event_bus
 from ..fusion import FusionEngine
-from ..missions import MissionPriority, MissionService
+from ..missions import MissionService
 from ..ops import ResponseOrchestrationEngine
 from ..timeline import TimelineManager
 from .explanations import DecisionExplanationEngine
@@ -17,6 +19,41 @@ from .models import DecisionCandidate, DecisionResult
 from .scoring import DecisionScoringEngine
 
 logger = logging.getLogger("mercury.decision.engine")
+
+_REVIEW_TRANSITIONS: dict[str, set[str]] = {
+    "pending": {"acknowledged", "commented", "rejected_advisory"},
+    "commented": {"acknowledged"},
+}
+
+_TERMINAL_REVIEW_STATES = {"acknowledged", "rejected_advisory"}
+_MAX_DECISION_STORE = 200
+
+
+def build_connector_context(connector_manager: Any | None) -> dict[str, Any]:
+    if connector_manager is None:
+        return {"degraded": [], "error": [], "online": 0, "total": 0}
+    try:
+        records = list(connector_manager.list_records())
+    except Exception:
+        return {"degraded": [], "error": [], "online": 0, "total": 0}
+    degraded: list[str] = []
+    error: list[str] = []
+    online = 0
+    for record in records:
+        state = str(getattr(getattr(record, "state", None), "value", getattr(record, "state", "")) or "").lower()
+        connector_id = str(getattr(record, "id", "") or "")
+        if state == "online":
+            online += 1
+        elif state == "degraded" and connector_id:
+            degraded.append(connector_id)
+        elif state == "error" and connector_id:
+            error.append(connector_id)
+    return {
+        "degraded": degraded,
+        "error": error,
+        "online": online,
+        "total": len(records),
+    }
 
 
 class DecisionEngine:
@@ -31,6 +68,8 @@ class DecisionEngine:
         fusion_engine: FusionEngine | None = None,
         alert_manager: AlertManager | None = None,
         response_orchestrator: ResponseOrchestrationEngine | None = None,
+        connector_manager: Any | None = None,
+        max_store: int = _MAX_DECISION_STORE,
     ) -> None:
         self._event_bus = event_bus_instance or event_bus
         self._timeline_manager = timeline_manager or TimelineManager(event_bus_instance=self._event_bus)
@@ -47,6 +86,9 @@ class DecisionEngine:
         )
         self._scoring_engine = DecisionScoringEngine()
         self._explanation_engine = DecisionExplanationEngine()
+        self._connector_manager = connector_manager
+        self._max_store = max(1, int(max_store))
+        self._decision_store: OrderedDict[str, dict[str, Any]] = OrderedDict()
 
     def evaluate(self, context: dict[str, Any]) -> dict[str, Any]:
         normalized_context = self._normalize_context(context)
@@ -69,7 +111,17 @@ class DecisionEngine:
         ranked_actions.sort(key=lambda item: item.overall_score, reverse=True)
 
         selected = ranked_actions[0] if ranked_actions else self._fallback_candidate(enriched_context)
-        reasoning, warnings = self._explanation_engine.explain(enriched_context, [action.to_dict() for action in ranked_actions], selected.to_dict())
+        explanation = self._explanation_engine.explain(
+            enriched_context,
+            [action.to_dict() for action in ranked_actions],
+            selected.to_dict(),
+        )
+        connector_context = build_connector_context(self._connector_manager)
+        if connector_context.get("degraded") or connector_context.get("error"):
+            explanation["warnings"] = list(explanation.get("warnings") or [])
+            explanation["warnings"].append(
+                "One or more connectors are degraded or in error; interpret recommendations with reduced trust."
+            )
 
         result = DecisionResult(
             mission_id=enriched_context.get("mission_id"),
@@ -78,21 +130,98 @@ class DecisionEngine:
             ranked_actions=ranked_actions,
             selected_recommendation=selected,
             confidence=self._calculate_confidence(ranked_actions, selected),
-            reasoning=reasoning,
-            warnings=warnings,
+            reasoning=str(explanation.get("reasoning") or ""),
+            warnings=list(explanation.get("warnings") or []),
+            assumptions=list(explanation.get("assumptions") or []),
+            uncertainty=list(explanation.get("uncertainty") or []),
+            factor_breakdown=list(explanation.get("factor_breakdown") or []),
+            evidence_links=list(explanation.get("evidence_links") or []),
+            connector_context=connector_context,
+            organization_id=enriched_context.get("organization_id"),
+            site_id=enriched_context.get("site_id"),
             requires_human_approval=True,
             metadata={
                 "automatic_execution": False,
+                "advisory_only": True,
                 "source": "decision_engine",
                 "threat_level": enriched_context.get("threat_level"),
                 "mission_priority": enriched_context.get("mission_priority"),
             },
         )
 
-        self._publish_event("decision.evaluated", result.to_dict())
-        self._publish_event("decision.recommendation_selected", result.to_dict())
+        payload = result.to_dict()
+        self._store_decision(payload)
+        self._publish_event("decision.evaluated", payload)
+        self._publish_event("decision.recommendation_selected", payload)
+        return payload
 
-        return result.to_dict()
+    def get_decision(self, decision_id: str, organization_id: str | None = None, site_id: str | None = None) -> dict[str, Any] | None:
+        payload = self._decision_store.get(decision_id)
+        if payload is None:
+            return None
+        if organization_id is not None and payload.get("organization_id") != organization_id:
+            return None
+        if site_id is not None and payload.get("site_id") != site_id:
+            return None
+        return deepcopy(payload)
+
+    def list_decisions(
+        self,
+        organization_id: str | None = None,
+        site_id: str | None = None,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        capped = max(1, min(int(limit), 100))
+        items: list[dict[str, Any]] = []
+        for payload in reversed(list(self._decision_store.values())):
+            if organization_id is not None and payload.get("organization_id") != organization_id:
+                continue
+            if site_id is not None and payload.get("site_id") != site_id:
+                continue
+            items.append(deepcopy(payload))
+            if len(items) >= capped:
+                break
+        return items
+
+    def apply_review(
+        self,
+        decision_id: str,
+        state: str,
+        comment: str | None,
+        actor: str,
+        organization_id: str | None = None,
+        site_id: str | None = None,
+    ) -> dict[str, Any]:
+        payload = self.get_decision(decision_id, organization_id=organization_id, site_id=site_id)
+        if payload is None:
+            raise KeyError("decision_not_found")
+
+        current_state = str((payload.get("review") or {}).get("state") or "pending")
+        next_state = str(state or "").strip().lower()
+        allowed = _REVIEW_TRANSITIONS.get(current_state, set())
+        if next_state not in allowed:
+            raise ValueError("invalid_review_transition")
+        if next_state == "commented" and not str(comment or "").strip():
+            raise ValueError("comment_required")
+
+        review = {
+            "state": next_state,
+            "comment": (str(comment).strip() if comment is not None and str(comment).strip() else None),
+            "reviewed_by": actor,
+            "reviewed_at": datetime.now(timezone.utc).isoformat(),
+        }
+        payload["review"] = review
+        self._decision_store[decision_id] = payload
+        self._decision_store.move_to_end(decision_id)
+        self._publish_event("decision.reviewed", payload)
+        return deepcopy(payload)
+
+    def pending_review_count(self, organization_id: str | None = None, site_id: str | None = None) -> int:
+        return sum(
+            1
+            for item in self.list_decisions(organization_id=organization_id, site_id=site_id, limit=100)
+            if str((item.get("review") or {}).get("state") or "") == "pending"
+        )
 
     def rank_actions(self, context: dict[str, Any]) -> list[dict[str, Any]]:
         normalized_context = self._normalize_context(context)
@@ -111,8 +240,16 @@ class DecisionEngine:
         self.validate_context(normalized_context)
         ranked = self.rank_actions(normalized_context)
         selected = self.select_recommendation(normalized_context)
-        reasoning, warnings = self._explanation_engine.explain(normalized_context, ranked, selected)
-        return {"reasoning": reasoning, "warnings": warnings, "selected_recommendation": selected}
+        explanation = self._explanation_engine.explain(normalized_context, ranked, selected)
+        return {
+            "reasoning": explanation.get("reasoning"),
+            "warnings": explanation.get("warnings"),
+            "assumptions": explanation.get("assumptions"),
+            "uncertainty": explanation.get("uncertainty"),
+            "factor_breakdown": explanation.get("factor_breakdown"),
+            "evidence_links": explanation.get("evidence_links"),
+            "selected_recommendation": selected,
+        }
 
     def validate_context(self, context: dict[str, Any]) -> None:
         if not isinstance(context, dict):
@@ -124,12 +261,23 @@ class DecisionEngine:
         if not context.get("threat_score") and not context.get("threat_level"):
             raise ValueError("threat_score or threat_level is required")
 
+    def _store_decision(self, payload: dict[str, Any]) -> None:
+        decision_id = str(payload.get("decision_id") or "")
+        if not decision_id:
+            return
+        self._decision_store[decision_id] = deepcopy(payload)
+        self._decision_store.move_to_end(decision_id)
+        while len(self._decision_store) > self._max_store:
+            self._decision_store.popitem(last=False)
+
     def _normalize_context(self, context: dict[str, Any]) -> dict[str, Any]:
         normalized = dict(context or {})
         normalized.setdefault("mission_id", None)
         normalized.setdefault("track_id", None)
-        normalized.setdefault("threat_score", 0.0)
-        normalized.setdefault("threat_level", "low")
+        if normalized.get("threat_score") is None:
+            normalized["threat_score"] = 0.0
+        if not normalized.get("threat_level"):
+            normalized["threat_level"] = "low"
         normalized.setdefault("threat_confidence", normalized.get("fused_confidence", 0.0))
         normalized.setdefault("mission_status", "active")
         normalized.setdefault("mission_priority", "normal")
@@ -140,6 +288,8 @@ class DecisionEngine:
         normalized.setdefault("operator_constraints", [])
         normalized.setdefault("environmental_context", {})
         normalized.setdefault("metadata", {})
+        normalized.setdefault("organization_id", None)
+        normalized.setdefault("site_id", None)
         normalized["mission_priority"] = str(normalized.get("mission_priority") or "normal").lower()
         normalized["threat_level"] = str(normalized.get("threat_level") or "low").lower()
         return normalized
