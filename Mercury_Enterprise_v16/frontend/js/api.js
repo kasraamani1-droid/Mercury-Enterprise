@@ -70,6 +70,22 @@ export async function getSessionStatus() {
   return (await request("/auth/session")).json();
 }
 
+export async function getSessionContext() {
+  return (await request("/auth/context")).json();
+}
+
+export async function updateSessionContext(payload) {
+  return (
+    await request("/auth/context", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    })
+  ).json();
+}
+
 export async function requestApproval(payload) {
   return (
     await request("/approvals", {

@@ -84,6 +84,8 @@ def test_session_status_and_logout():
     assert session.json()['authenticated'] is True
     assert session.json()['operator'] == 'operator'
     assert session.json()['role'] == 'Operator'
+    assert isinstance(session.json()['organization_id'], str)
+    assert isinstance(session.json()['site_id'], str)
 
     logout = client.post('/api/v1/auth/logout')
     assert logout.status_code == 200
@@ -110,9 +112,37 @@ def test_websocket_connects():
         first = websocket.receive_json()
         assert first['type'] == 'connected'
         assert first['operator'] == 'operator'
+        assert isinstance(first['organization']['organization_id'], str)
+        assert isinstance(first['site']['site_id'], str)
         websocket.send_text('ping')
         pong = websocket.receive_json()
         assert pong['type'] == 'pong'
+
+
+def test_session_context_get_and_update():
+    login_as('operator')
+
+    context = client.get('/api/v1/auth/context')
+    assert context.status_code == 200
+    payload = context.json()
+    assert payload['operator'] == 'operator'
+    assert payload['role'] == 'Operator'
+    assert isinstance(payload['organizations'], list)
+    assert len(payload['organizations']) >= 1
+    assert isinstance(payload['sites'], list)
+    assert len(payload['sites']) >= 1
+
+    organization_id = payload['organization']['organization_id']
+    sites = payload['sites']
+    if len(sites) >= 2:
+        next_site = sites[1]['site_id']
+    else:
+        next_site = sites[0]['site_id']
+
+    updated = client.post('/api/v1/auth/context', json={'organization_id': organization_id, 'site_id': next_site})
+    assert updated.status_code == 200
+    assert updated.json()['organization']['organization_id'] == organization_id
+    assert updated.json()['site']['site_id'] == next_site
 
 
 def test_role_enforcement_viewer_cannot_create_incident():

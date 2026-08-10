@@ -33,6 +33,9 @@ from .schemas import (
     IncidentDetail,
     IncidentOut,
     IncidentStatusUpdate,
+    SessionContextUpdate,
+    SiteOut,
+    OrganizationOut,
     TimelineEventCreate,
     TimelineEventOut,
 )
@@ -70,6 +73,20 @@ decision_engine = DecisionEngine(
 _sessions: dict[str, dict[str, datetime | str]] = {}
 _approvals: dict[str, dict[str, datetime | str | bool | None]] = {}
 
+_organizations: dict[str, OrganizationOut] = {
+    "org-aviation-east": OrganizationOut(organization_id="org-aviation-east", name="Mercury Aviation East"),
+    "org-aviation-west": OrganizationOut(organization_id="org-aviation-west", name="Mercury Aviation West"),
+}
+_sites_by_organization: dict[str, list[SiteOut]] = {
+    "org-aviation-east": [
+        SiteOut(site_id="site-cyul", organization_id="org-aviation-east", name="CYUL Montréal"),
+        SiteOut(site_id="site-cyyz", organization_id="org-aviation-east", name="CYYZ Toronto"),
+    ],
+    "org-aviation-west": [
+        SiteOut(site_id="site-cyvr", organization_id="org-aviation-west", name="CYVR Vancouver"),
+    ],
+}
+
 _ROLE_BY_OPERATOR = {
     "admin": Role.ADMINISTRATOR.value,
     settings.auth_operator: Role.OPERATOR.value,
@@ -104,7 +121,16 @@ def _create_session(operator: str, role: str) -> tuple[str, datetime]:
     now = utcnow()
     session_id = secrets.token_urlsafe(32)
     expires_at = now + timedelta(seconds=settings.session_ttl_seconds)
-    _sessions[session_id] = {"operator": operator, "role": role, "created_at": now, "expires_at": expires_at}
+    default_organization = next(iter(_organizations.values()))
+    default_site = _sites_by_organization[default_organization.organization_id][0]
+    _sessions[session_id] = {
+        "operator": operator,
+        "role": role,
+        "organization_id": default_organization.organization_id,
+        "site_id": default_site.site_id,
+        "created_at": now,
+        "expires_at": expires_at,
+    }
     return session_id, expires_at
 
 
@@ -140,7 +166,36 @@ def require_session(request: Request) -> dict[str, datetime | str]:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
     request.state.operator = session["operator"]
     request.state.role = session["role"]
+    request.state.organization_id = session["organization_id"]
+    request.state.site_id = session["site_id"]
     return session
+
+
+def _get_organization(organization_id: str) -> OrganizationOut:
+    organization = _organizations.get(organization_id)
+    if organization is None:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    return organization
+
+
+def _get_site_for_organization(organization_id: str, site_id: str) -> SiteOut:
+    for site in _sites_by_organization.get(organization_id, []):
+        if site.site_id == site_id:
+            return site
+    raise HTTPException(status_code=404, detail="Site not found")
+
+
+def _session_context_payload(session: dict[str, datetime | str]) -> dict[str, object]:
+    organization_id = str(session["organization_id"])
+    site_id = str(session["site_id"])
+    organization = _get_organization(organization_id)
+    site = _get_site_for_organization(organization_id, site_id)
+    return {
+        "organization": organization.model_dump(),
+        "site": site.model_dump(),
+        "organizations": [item.model_dump() for item in _organizations.values()],
+        "sites": [item.model_dump() for item in _sites_by_organization.get(organization_id, [])],
+    }
 
 
 def require_permissions(*required: str):
@@ -354,7 +409,56 @@ def session_status(request: Request):
     session = _validate_session(_request_session_id(request))
     if session is None:
         return {"authenticated": False}
-    return {"authenticated": True, "operator": str(session["operator"]), "role": str(session["role"]), "expires_at": session["expires_at"].isoformat()}
+    return {
+        "authenticated": True,
+        "operator": str(session["operator"]),
+        "role": str(session["role"]),
+        "organization_id": str(session["organization_id"]),
+        "site_id": str(session["site_id"]),
+        "expires_at": session["expires_at"].isoformat(),
+    }
+
+
+@app.get("/api/v1/auth/context")
+def get_session_context(session: dict[str, datetime | str] = Depends(require_session)):
+    return {
+        "operator": str(session["operator"]),
+        "role": str(session["role"]),
+        **_session_context_payload(session),
+    }
+
+
+@app.post("/api/v1/auth/context")
+def update_session_context(payload: SessionContextUpdate, session: dict[str, datetime | str] = Depends(require_session)):
+    current_organization_id = str(session["organization_id"])
+    next_organization_id = payload.organization_id or current_organization_id
+    _get_organization(next_organization_id)
+
+    available_sites = _sites_by_organization.get(next_organization_id, [])
+    if not available_sites:
+        raise HTTPException(status_code=409, detail="Organization has no configured sites")
+
+    if payload.site_id:
+        _get_site_for_organization(next_organization_id, payload.site_id)
+        next_site_id = payload.site_id
+    elif payload.organization_id and payload.organization_id != current_organization_id:
+        next_site_id = available_sites[0].site_id
+    else:
+        current_site_id = str(session["site_id"])
+        try:
+            _get_site_for_organization(next_organization_id, current_site_id)
+            next_site_id = current_site_id
+        except HTTPException:
+            next_site_id = available_sites[0].site_id
+
+    session["organization_id"] = next_organization_id
+    session["site_id"] = next_site_id
+
+    return {
+        "operator": str(session["operator"]),
+        "role": str(session["role"]),
+        **_session_context_payload(session),
+    }
 
 
 @app.post("/api/v1/approvals", dependencies=[Depends(require_permissions("approval.request"))])
@@ -615,7 +719,18 @@ async def websocket_gateway(websocket: WebSocket):
         return
     await manager.connect(websocket)
     try:
-        await websocket.send_json({"type": "connected", "version": settings.version, "simulated": True, "operator": session["operator"]})
+        context = _session_context_payload(session)
+        await websocket.send_json(
+            {
+                "type": "connected",
+                "version": settings.version,
+                "simulated": True,
+                "operator": session["operator"],
+                "role": session["role"],
+                "organization": context["organization"],
+                "site": context["site"],
+            }
+        )
         while True:
             message = await websocket.receive_text()
             if message.lower() == "ping":

@@ -46,3 +46,19 @@ class IncidentDetail(IncidentOut):
 class IncidentStatusUpdate(BaseModel):
     status: str
     approval_id: str | None = None
+
+
+class OrganizationOut(BaseModel):
+    organization_id: str
+    name: str
+
+
+class SiteOut(BaseModel):
+    site_id: str
+    organization_id: str
+    name: str
+
+
+class SessionContextUpdate(BaseModel):
+    organization_id: str | None = None
+    site_id: str | None = None

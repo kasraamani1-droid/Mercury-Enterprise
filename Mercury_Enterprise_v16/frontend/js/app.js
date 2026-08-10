@@ -1,5 +1,5 @@
 import { el } from "./utils.js";
-import { getHealth, getDashboardSummary, getSessionStatus, login } from "./api.js";
+import { getHealth, getDashboardSummary, getSessionStatus, getSessionContext, updateSessionContext, login } from "./api.js";
 import { initializeMap, toggleTracking, pauseTracking, resetTracking, setSimulationSpeed, toggleLayer, changeAirport, seekReplay } from "./map.js";
 import { loadIncidents, renderIncidentList, loadIncident, showTab, simulateIncident, performOperatorAction, resolveSelected, generateSelectedReport } from "./incidents.js";
 import { askCopilot } from "./copilot.js";
@@ -12,6 +12,7 @@ import { initializeEnterprise } from "./enterprise.js";
 import { initializeEnterprise8 } from "./enterprise8.js";
 import { initializeWebSocket } from "./websocket.js";
 let currentSession = null;
+let currentContext = null;
 
 async function checkHealth(){try{const health=await getHealth();el("statusText").textContent=`API v${health.version}`;el("backendDot").classList.add("online")}catch{el("statusText").textContent="Backend offline";el("backendDot").classList.remove("online")}}
 function bindEvents(){
@@ -22,6 +23,54 @@ function bindEvents(){
   el("trackingButton").addEventListener("click",()=>toggleTracking(onTrackingTick));el("pauseButton").addEventListener("click",pauseTracking);el("resetTrackButton").addEventListener("click",resetTracking);el("clearLogButton").addEventListener("click",clearLog);
   el("speedSelect").addEventListener("change",e=>setSimulationSpeed(e.target.value,onTrackingTick));el("airportSelect").addEventListener("change",e=>changeAirport(e.target.value));el("ackButton").addEventListener("click",acknowledgeThreat);el("dismissAlert").addEventListener("click",()=>el("criticalAlert").classList.add("hidden"));el("replaySlider").addEventListener("input",e=>seekReplay(e.target.value,onTrackingTick));el("replayButton").addEventListener("click",()=>{pauseTracking();seekReplay(0,onTrackingTick);});
   document.querySelectorAll("[data-layer]").forEach(x=>x.addEventListener("change",()=>toggleLayer(x.dataset.layer,x.checked)));
+  const organizationSelect = el("organizationSelect");
+  if (organizationSelect) {
+    organizationSelect.addEventListener("change", onOrganizationChange);
+  }
+  const siteSelect = el("siteSelect");
+  if (siteSelect) {
+    siteSelect.addEventListener("change", onSiteChange);
+  }
+}
+
+function renderOrgSiteSelectors(context){
+  const organizationSelect = el("organizationSelect");
+  const siteSelect = el("siteSelect");
+  if (!organizationSelect || !siteSelect) return;
+
+  const organizations = Array.isArray(context.organizations) ? context.organizations : [];
+  const sites = Array.isArray(context.sites) ? context.sites : [];
+
+  organizationSelect.innerHTML = organizations
+    .map(item => `<option value="${item.organization_id}">${item.name}</option>`)
+    .join("");
+  siteSelect.innerHTML = sites
+    .map(item => `<option value="${item.site_id}">${item.name}</option>`)
+    .join("");
+
+  if (context.organization?.organization_id) {
+    organizationSelect.value = context.organization.organization_id;
+  }
+  if (context.site?.site_id) {
+    siteSelect.value = context.site.site_id;
+  }
+}
+
+async function loadSessionContext(){
+  currentContext = await getSessionContext();
+  renderOrgSiteSelectors(currentContext);
+}
+
+async function onOrganizationChange(event){
+  const organization_id = event.target.value;
+  currentContext = await updateSessionContext({ organization_id });
+  renderOrgSiteSelectors(currentContext);
+}
+
+async function onSiteChange(event){
+  const site_id = event.target.value;
+  currentContext = await updateSessionContext({ site_id });
+  renderOrgSiteSelectors(currentContext);
 }
 
 function setStatusIndicator(dotId, labelId, status, text){
@@ -155,5 +204,5 @@ function applyRoleAccess(){
   });
 }
 
-async function initialize(){initializeMap();bindEvents();initializeMissionOps();initializeCommandCenter();initializeRealtimeConsole();initializeEnterprise();initializeEnterprise8();await ensureSession();applyRoleAccess();initializeWebSocket();updateFusion();updateThreatMatrix();await checkHealth();await loadDashboardSummary();await loadIncidents();setInterval(checkHealth,5000);setInterval(loadDashboardSummary,15000);setInterval(loadIncidents,10000)}
+async function initialize(){initializeMap();bindEvents();initializeMissionOps();initializeCommandCenter();initializeRealtimeConsole();initializeEnterprise();initializeEnterprise8();await ensureSession();await loadSessionContext();applyRoleAccess();initializeWebSocket();updateFusion();updateThreatMatrix();await checkHealth();await loadDashboardSummary();await loadIncidents();setInterval(checkHealth,5000);setInterval(loadDashboardSummary,15000);setInterval(loadIncidents,10000)}
 initialize();
