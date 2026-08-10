@@ -23,10 +23,12 @@ from .missions import MissionService, MissionStatus
 from .ops import ResponseOrchestrationEngine
 from .core.config import settings
 from .core.logging import configure_logging
-from .database import Base, SessionLocal, engine, get_db
+from .audit import list_audit_events, normalize_provenance, record_audit
+from .database import SessionLocal, ensure_schema, get_db
 from .decision import DecisionEngine
 from .models import Evidence, Incident, TimelineEvent
 from .schemas import (
+    AuditEventOut,
     EvidenceCreate,
     EvidenceOut,
     IncidentCreate,
@@ -218,6 +220,8 @@ def _create_approval(action: str, target_id: str | None, reason: str, session: d
         "status": "pending",
         "requested_by": str(session["operator"]),
         "requested_role": str(session["role"]),
+        "organization_id": str(session["organization_id"]),
+        "site_id": str(session["site_id"]),
         "created_at": utcnow(),
         "reviewed_by": None,
         "reviewed_at": None,
@@ -225,6 +229,14 @@ def _create_approval(action: str, target_id: str | None, reason: str, session: d
     }
     _approvals[approval_id] = record
     return record
+
+
+def _safe_commit_audit(db: Session) -> None:
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception("Failed to persist audit event")
 
 
 def _approve_request(approval_id: str, reviewer: str) -> dict[str, datetime | str | bool | None]:
@@ -279,8 +291,30 @@ def seed_demo() -> None:
         )
         db.add_all(
             [
-                Evidence(incident_id=incident.id, evidence_type="image", source="Camera-01", title="North perimeter frame", content="Simulated evidence reference: frame-001.jpg", confidence=62),
-                Evidence(incident_id=incident.id, evidence_type="operator_note", source="Operator A", title="Visual review", content="Object appears consistent with a small civilian UAV; identity unconfirmed.", confidence=74),
+                Evidence(
+                    incident_id=incident.id,
+                    evidence_type="image",
+                    source="Camera-01",
+                    title="North perimeter frame",
+                    content="Simulated evidence reference: frame-001.jpg",
+                    confidence=62,
+                    provenance="simulated",
+                    created_by="seed",
+                    organization_id="org-aviation-east",
+                    site_id="site-cyul",
+                ),
+                Evidence(
+                    incident_id=incident.id,
+                    evidence_type="operator_note",
+                    source="Operator A",
+                    title="Visual review",
+                    content="Object appears consistent with a small civilian UAV; identity unconfirmed.",
+                    confidence=74,
+                    provenance="simulated",
+                    created_by="seed",
+                    organization_id="org-aviation-east",
+                    site_id="site-cyul",
+                ),
             ]
         )
         db.commit()
@@ -296,7 +330,7 @@ async def heartbeat() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    Base.metadata.create_all(bind=engine)
+    ensure_schema()
     seed_demo()
     timeline_manager.add_event(
         event_type="mission.started",
@@ -380,7 +414,7 @@ def ready(db: Session = Depends(get_db)):
 
 
 @app.post("/api/v1/auth/login")
-def login(payload: LoginRequest, response: Response):
+def login(payload: LoginRequest, response: Response, db: Session = Depends(get_db)):
     role = _ROLE_BY_OPERATOR.get(payload.operator)
     if role is None or payload.password != settings.auth_password:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
@@ -394,11 +428,50 @@ def login(payload: LoginRequest, response: Response):
         samesite=settings.session_cookie_samesite,
         path="/",
     )
+    try:
+        session = _sessions[session_id]
+        record_audit(
+            db,
+            action="auth.login",
+            actor=payload.operator,
+            actor_role=role,
+            organization_id=str(session["organization_id"]),
+            site_id=str(session["site_id"]),
+            target_type="session",
+            target_id=session_id,
+            source="api",
+            outcome="success",
+            origin="operator",
+            details="",
+        )
+        _safe_commit_audit(db)
+    except Exception:
+        logger.exception("Failed to record auth.login audit")
     return {"authenticated": True, "operator": payload.operator, "role": role, "expires_at": expires_at.isoformat()}
 
 
 @app.post("/api/v1/auth/logout")
-def logout(response: Response, request: Request):
+def logout(response: Response, request: Request, db: Session = Depends(get_db)):
+    session = _validate_session(_request_session_id(request))
+    if session is not None:
+        try:
+            record_audit(
+                db,
+                action="auth.logout",
+                actor=str(session["operator"]),
+                actor_role=str(session["role"]),
+                organization_id=str(session["organization_id"]),
+                site_id=str(session["site_id"]),
+                target_type="session",
+                target_id=_request_session_id(request),
+                source="api",
+                outcome="success",
+                origin="operator",
+                details="",
+            )
+            _safe_commit_audit(db)
+        except Exception:
+            logger.exception("Failed to record auth.logout audit")
     _invalidate_session(_request_session_id(request))
     response.delete_cookie(key=settings.session_cookie_name, path="/", secure=settings.session_cookie_secure, samesite=settings.session_cookie_samesite)
     return {"authenticated": False}
@@ -429,8 +502,14 @@ def get_session_context(session: dict[str, datetime | str] = Depends(require_ses
 
 
 @app.post("/api/v1/auth/context")
-def update_session_context(payload: SessionContextUpdate, session: dict[str, datetime | str] = Depends(require_session)):
-    current_organization_id = str(session["organization_id"])
+def update_session_context(
+    payload: SessionContextUpdate,
+    session: dict[str, datetime | str] = Depends(require_session),
+    db: Session = Depends(get_db),
+):
+    old_organization_id = str(session["organization_id"])
+    old_site_id = str(session["site_id"])
+    current_organization_id = old_organization_id
     next_organization_id = payload.organization_id or current_organization_id
     _get_organization(next_organization_id)
 
@@ -454,6 +533,25 @@ def update_session_context(payload: SessionContextUpdate, session: dict[str, dat
     session["organization_id"] = next_organization_id
     session["site_id"] = next_site_id
 
+    try:
+        record_audit(
+            db,
+            action="auth.context",
+            actor=str(session["operator"]),
+            actor_role=str(session["role"]),
+            organization_id=str(next_organization_id),
+            site_id=str(next_site_id),
+            target_type="session",
+            target_id=None,
+            source="api",
+            outcome="success",
+            origin="operator",
+            details=f"{old_organization_id}/{old_site_id}->{next_organization_id}/{next_site_id}",
+        )
+        _safe_commit_audit(db)
+    except Exception:
+        logger.exception("Failed to record auth.context audit")
+
     return {
         "operator": str(session["operator"]),
         "role": str(session["role"]),
@@ -462,8 +560,27 @@ def update_session_context(payload: SessionContextUpdate, session: dict[str, dat
 
 
 @app.post("/api/v1/approvals", dependencies=[Depends(require_permissions("approval.request"))])
-def create_approval_request(payload: ApprovalRequestPayload, session: dict[str, datetime | str] = Depends(require_session)):
+def create_approval_request(
+    payload: ApprovalRequestPayload,
+    session: dict[str, datetime | str] = Depends(require_session),
+    db: Session = Depends(get_db),
+):
     record = _create_approval(payload.action, payload.target_id, payload.reason, session)
+    record_audit(
+        db,
+        action="approval.request",
+        actor=str(session["operator"]),
+        actor_role=str(session["role"]),
+        organization_id=str(session["organization_id"]),
+        site_id=str(session["site_id"]),
+        target_type="approval",
+        target_id=str(record["approval_id"]),
+        source="api",
+        outcome="success",
+        origin="operator",
+        details=payload.reason or payload.action,
+    )
+    db.commit()
     return {
         "approval_id": str(record["approval_id"]),
         "status": str(record["status"]),
@@ -496,8 +613,29 @@ def list_approvals(status_filter: str | None = None):
 
 
 @app.post("/api/v1/approvals/{approval_id}/approve", dependencies=[Depends(require_permissions("approval.review"))])
-def approve_request(approval_id: str, session: dict[str, datetime | str] = Depends(require_session)):
+def approve_request(
+    approval_id: str,
+    session: dict[str, datetime | str] = Depends(require_session),
+    db: Session = Depends(get_db),
+):
     record = _approve_request(approval_id, str(session["operator"]))
+    organization_id = str(record.get("organization_id") or session["organization_id"])
+    site_id = str(record.get("site_id") or session["site_id"])
+    record_audit(
+        db,
+        action="approval.approve",
+        actor=str(session["operator"]),
+        actor_role=str(session["role"]),
+        organization_id=organization_id,
+        site_id=site_id,
+        target_type="approval",
+        target_id=approval_id,
+        source="api",
+        outcome="success",
+        origin="operator",
+        details="",
+    )
+    db.commit()
     return {
         "approval_id": str(record["approval_id"]),
         "status": str(record["status"]),
@@ -511,10 +649,29 @@ def list_incidents(db: Session = Depends(get_db)):
     return db.scalars(select(Incident).order_by(Incident.created_at.desc())).all()
 
 
-@app.post("/api/v1/incidents", response_model=IncidentOut, status_code=201, dependencies=[Depends(require_permissions("incident.create"))])
-async def create_incident(payload: IncidentCreate, db: Session = Depends(get_db)):
+@app.post("/api/v1/incidents", response_model=IncidentOut, status_code=201)
+async def create_incident(
+    payload: IncidentCreate,
+    db: Session = Depends(get_db),
+    session: dict[str, datetime | str] = Depends(require_permissions("incident.create")),
+):
     incident = Incident(**payload.model_dump())
     db.add(incident)
+    db.flush()
+    record_audit(
+        db,
+        action="incident.create",
+        actor=str(session["operator"]),
+        actor_role=str(session["role"]),
+        organization_id=str(session["organization_id"]),
+        site_id=str(session["site_id"]),
+        target_type="incident",
+        target_id=incident.id,
+        source="api",
+        outcome="success",
+        origin="operator",
+        details=payload.title,
+    )
     db.commit()
     db.refresh(incident)
     await manager.broadcast({"type": "incident.created", "incident_id": incident.id, "severity": incident.severity})
@@ -531,38 +688,129 @@ def get_incident(incident_id: str, db: Session = Depends(get_db)):
 
 
 @app.patch("/api/v1/incidents/{incident_id}/status", response_model=IncidentOut, dependencies=[Depends(require_permissions("incident.update"))])
-async def update_incident_status(incident_id: str, payload: IncidentStatusUpdate, db: Session = Depends(get_db), session: dict[str, datetime | str] = Depends(require_session)):
+async def update_incident_status(
+    incident_id: str,
+    payload: IncidentStatusUpdate,
+    db: Session = Depends(get_db),
+    session: dict[str, datetime | str] = Depends(require_session),
+):
     incident = db.get(Incident, incident_id)
     if not incident:
         raise HTTPException(404, "Incident not found")
     status_value = str(payload.status).lower()
+    consumed_approval = False
     if status_value in {"resolved", "closed"} and str(session.get("role")) != Role.ADMINISTRATOR.value:
         _require_approved_action(payload.approval_id, action="incident.resolve", target_id=incident_id)
+        consumed_approval = True
     incident.status = payload.status
+    if consumed_approval:
+        approval_record = _approvals.get(str(payload.approval_id or ""))
+        record_audit(
+            db,
+            action="approval.consume",
+            actor=str(session["operator"]),
+            actor_role=str(session["role"]),
+            organization_id=str(
+                (approval_record or {}).get("organization_id") or session["organization_id"]
+            ),
+            site_id=str((approval_record or {}).get("site_id") or session["site_id"]),
+            target_type="approval",
+            target_id=str(payload.approval_id),
+            source="api",
+            outcome="success",
+            origin="operator",
+            details=f"incident.resolve:{incident_id}",
+        )
+    record_audit(
+        db,
+        action="incident.status",
+        actor=str(session["operator"]),
+        actor_role=str(session["role"]),
+        organization_id=str(session["organization_id"]),
+        site_id=str(session["site_id"]),
+        target_type="incident",
+        target_id=incident_id,
+        source="api",
+        outcome="success",
+        origin="operator",
+        details=f"status={payload.status}",
+    )
     db.commit()
     db.refresh(incident)
     await manager.broadcast({"type": "incident.status", "incident_id": incident.id, "status": incident.status})
     return incident
 
 
-@app.post("/api/v1/incidents/{incident_id}/events", response_model=TimelineEventOut, status_code=201, dependencies=[Depends(require_permissions("incident.event"))])
-async def add_event(incident_id: str, payload: TimelineEventCreate, db: Session = Depends(get_db)):
+@app.post("/api/v1/incidents/{incident_id}/events", response_model=TimelineEventOut, status_code=201)
+async def add_event(
+    incident_id: str,
+    payload: TimelineEventCreate,
+    db: Session = Depends(get_db),
+    session: dict[str, datetime | str] = Depends(require_permissions("incident.event")),
+):
     if not db.get(Incident, incident_id):
         raise HTTPException(404, "Incident not found")
     event = TimelineEvent(incident_id=incident_id, **payload.model_dump())
     db.add(event)
+    db.flush()
+    record_audit(
+        db,
+        action="incident.event",
+        actor=str(session["operator"]),
+        actor_role=str(session["role"]),
+        organization_id=str(session["organization_id"]),
+        site_id=str(session["site_id"]),
+        target_type="incident",
+        target_id=incident_id,
+        source="api",
+        outcome="success",
+        origin="operator",
+        details=payload.event_type,
+    )
     db.commit()
     db.refresh(event)
     await manager.broadcast({"type": "timeline.event", "incident_id": incident_id, "event_type": event.event_type})
     return event
 
 
-@app.post("/api/v1/incidents/{incident_id}/evidence", response_model=EvidenceOut, status_code=201, dependencies=[Depends(require_permissions("incident.evidence"))])
-def add_evidence(incident_id: str, payload: EvidenceCreate, db: Session = Depends(get_db)):
+@app.post("/api/v1/incidents/{incident_id}/evidence", response_model=EvidenceOut, status_code=201)
+def add_evidence(
+    incident_id: str,
+    payload: EvidenceCreate,
+    db: Session = Depends(get_db),
+    session: dict[str, datetime | str] = Depends(require_permissions("incident.evidence")),
+):
     if not db.get(Incident, incident_id):
         raise HTTPException(404, "Incident not found")
-    evidence = Evidence(incident_id=incident_id, **payload.model_dump())
+    provenance = normalize_provenance(payload.provenance, default="operator_entered")
+    evidence = Evidence(
+        incident_id=incident_id,
+        evidence_type=payload.evidence_type,
+        source=payload.source,
+        title=payload.title,
+        content=payload.content,
+        confidence=payload.confidence,
+        provenance=provenance,
+        created_by=str(session["operator"]),
+        organization_id=str(session["organization_id"]),
+        site_id=str(session["site_id"]),
+    )
     db.add(evidence)
+    db.flush()
+    record_audit(
+        db,
+        action="incident.evidence",
+        actor=str(session["operator"]),
+        actor_role=str(session["role"]),
+        organization_id=str(session["organization_id"]),
+        site_id=str(session["site_id"]),
+        target_type="evidence",
+        target_id=evidence.id,
+        source="api",
+        outcome="success",
+        origin="operator",
+        details=provenance,
+    )
     db.commit()
     db.refresh(evidence)
     return evidence
@@ -585,10 +833,42 @@ def incident_report(incident_id: str, db: Session = Depends(get_db)):
         "schema_version": "1.0",
         "incident": {"id": incident.id, "title": incident.title, "status": incident.status, "severity": incident.severity, "summary": incident.summary},
         "timeline": [{"time": event.occurred_at.isoformat(), "type": event.event_type, "source": event.source, "description": event.description, "confidence": event.confidence} for event in sorted(incident.events, key=lambda item: item.occurred_at)],
-        "evidence": [{"type": item.evidence_type, "source": item.source, "title": item.title, "content": item.content, "confidence": item.confidence} for item in incident.evidence],
+        "evidence": [
+            {
+                "type": item.evidence_type,
+                "source": item.source,
+                "title": item.title,
+                "content": item.content,
+                "confidence": item.confidence,
+                "provenance": item.provenance,
+                "created_by": item.created_by,
+                "organization_id": item.organization_id,
+                "site_id": item.site_id,
+            }
+            for item in incident.evidence
+        ],
         "generated_at": utcnow().isoformat(),
         "simulated": True,
     }
+
+
+@app.get("/api/v1/audit", response_model=list[AuditEventOut])
+def list_audit(
+    action: str | None = None,
+    target_id: str | None = None,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    session: dict[str, datetime | str] = Depends(require_permissions("audit.read")),
+):
+    return list_audit_events(
+        db,
+        organization_id=str(session["organization_id"]),
+        site_id=str(session["site_id"]),
+        action=action,
+        target_id=target_id,
+        limit=limit,
+        retention_days=settings.audit_retention_days,
+    )
 
 
 @app.get("/api/v1/platform/status")

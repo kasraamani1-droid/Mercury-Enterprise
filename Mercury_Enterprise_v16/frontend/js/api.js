@@ -171,3 +171,12 @@ export async function downloadReport(id) {
 export async function getDashboardSummary() {
     return (await request("/dashboard/summary")).json();
 }
+
+export async function listAudit({ action, target_id, limit } = {}) {
+  const params = new URLSearchParams();
+  if (action) params.set("action", action);
+  if (target_id) params.set("target_id", target_id);
+  if (limit != null) params.set("limit", String(limit));
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return (await request(`/audit${suffix}`)).json();
+}

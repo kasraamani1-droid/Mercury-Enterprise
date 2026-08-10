@@ -52,7 +52,13 @@ export async function loadIncident(id){
   }catch(error){el("incidentDetail").innerHTML=`<div class="error">${esc(error.message)}</div>`}
 }
 function renderEvidence(evidence){
-  el("evidenceDetails").innerHTML=evidence.length?evidence.map(item=>`<article class="evidence-item"><h3>${esc(item.title)}</h3><p>${esc(item.content)}</p><div class="meta">${esc(item.evidence_type)} · ${esc(item.source)} · ${Math.round(Number(item.confidence)||0)}%</div></article>`).join(""):'<div class="empty">No database evidence available for this incident.</div>';
+  el("evidenceDetails").innerHTML=evidence.length?evidence.map(item=>{
+    const meta=[item.provenance,item.created_by,item.site_id,item.evidence_type,item.source,`${Math.round(Number(item.confidence)||0)}%`]
+      .filter(value=>value!=null&&String(value).trim()!=="")
+      .map(value=>esc(String(value)))
+      .join(" · ");
+    return `<article class="evidence-item"><h3>${esc(item.title)}</h3><p>${esc(item.content)}</p><div class="meta">${meta}</div></article>`;
+  }).join(""):'<div class="empty">No database evidence available for this incident.</div>';
 }
 export function showTab(name){
   ["assessment","evidence","actions","analytics"].forEach(tab=>{

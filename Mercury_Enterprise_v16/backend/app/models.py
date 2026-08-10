@@ -41,4 +41,25 @@ class Evidence(Base):
     content: Mapped[str] = mapped_column(Text)
     confidence: Mapped[float] = mapped_column(Float, default=0.5)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    provenance: Mapped[str] = mapped_column(String(40), default="operator_entered")
+    created_by: Mapped[str] = mapped_column(String(120), default="")
+    organization_id: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
+    site_id: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
     incident: Mapped[Incident] = relationship(back_populates="evidence")
+
+
+class AuditEvent(Base):
+    __tablename__ = "audit_events"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=uid)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    action: Mapped[str] = mapped_column(String(80), index=True)
+    actor: Mapped[str] = mapped_column(String(120))
+    actor_role: Mapped[str] = mapped_column(String(40), default="")
+    organization_id: Mapped[str] = mapped_column(String(80), index=True)
+    site_id: Mapped[str] = mapped_column(String(80), index=True)
+    target_type: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    target_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    source: Mapped[str] = mapped_column(String(80), default="api")
+    outcome: Mapped[str] = mapped_column(String(40), default="success")
+    origin: Mapped[str] = mapped_column(String(40), default="operator")
+    details: Mapped[str] = mapped_column(Text, default="")
