@@ -27,7 +27,32 @@ let currentContext = null;
 let latestConnectors = [];
 let selectedDecisionId = null;
 
-async function checkHealth(){try{const health=await getHealth();el("statusText").textContent=`API v${health.version}`;el("backendDot").classList.add("online")}catch{el("statusText").textContent="Backend offline";el("backendDot").classList.remove("online")}}
+async function checkHealth(){
+  try{
+    const health=await getHealth();
+    const db = health.database || "unknown";
+    const connectors = health.connectors || {};
+    const degraded = Number(connectors.degraded || 0) + Number(connectors.error || 0);
+    const statusLabel = health.status === "ok" && !degraded
+      ? `API v${health.version}`
+      : `API v${health.version} · ${String(health.status || "degraded").toUpperCase()}${degraded ? ` · connectors ${degraded} degraded/error` : ""}`;
+    el("statusText").textContent = statusLabel;
+    if (health.status === "ok" && db === "online") {
+      el("backendDot").classList.add("online");
+      el("backendDot").classList.remove("degraded");
+    } else {
+      el("backendDot").classList.remove("online");
+      el("backendDot").classList.add("degraded");
+    }
+    if (el("dashboardPlatformStatus") && !el("dashboardPlatformStatus").textContent) {
+      el("dashboardPlatformStatus").textContent = String(health.status || "UNKNOWN").toUpperCase();
+    }
+  }catch{
+    el("statusText").textContent="Backend offline";
+    el("backendDot").classList.remove("online");
+    el("backendDot").classList.remove("degraded");
+  }
+}
 function bindEvents(){
   el("incidentSearch").addEventListener("input",renderIncidentList);el("severityFilter").addEventListener("change",renderIncidentList);el("sortFilter").addEventListener("change",renderIncidentList);el("simulateButton").addEventListener("click",simulateIncident);
   el("incidentList").addEventListener("click",event=>{const card=event.target.closest("[data-incident-id]");if(card)loadIncident(card.dataset.incidentId).then(()=>{updateFusion();updateThreatMatrix()})});

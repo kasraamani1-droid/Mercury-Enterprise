@@ -12,7 +12,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response, WebSocke
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .alerts import AlertManager
@@ -22,6 +22,7 @@ from .fusion import FusionEngine
 from .missions import MissionService, MissionStatus
 from .ops import ResponseOrchestrationEngine
 from .core.config import settings
+from .core.health import build_health_payload, build_ops_health, build_platform_status, build_ready_payload
 from .core.logging import configure_logging
 from .audit import list_audit_events, normalize_provenance, record_audit
 from .database import SessionLocal, ensure_schema, get_db
@@ -416,23 +417,35 @@ async def request_context(request: Request, call_next):
     try:
         response = await call_next(request)
     except Exception as exc:
-        logger.exception("Unhandled request error request_id=%s", request_id)
+        logger.exception("Unhandled request error request_id=%s path=%s", request_id, request.url.path)
         return JSONResponse(status_code=500, content={"detail": "Internal server error", "request_id": request_id})
+    elapsed_ms = (time.perf_counter() - started) * 1000
     response.headers["x-request-id"] = request_id
-    response.headers["x-response-time-ms"] = f"{(time.perf_counter() - started) * 1000:.1f}"
+    response.headers["x-response-time-ms"] = f"{elapsed_ms:.1f}"
+    logger.info(
+        "request method=%s path=%s status=%s request_id=%s duration_ms=%.1f",
+        request.method,
+        request.url.path,
+        response.status_code,
+        request_id,
+        elapsed_ms,
+    )
     return response
 
 
 @app.get("/api/v1/health")
 def health(db: Session = Depends(get_db)):
-    db.execute(text("SELECT 1"))
-    return {"status": "ok", "version": settings.version, "environment": settings.environment, "database": "online", "simulated": True}
+    return build_health_payload(db, connector_manager)
 
 
 @app.get("/api/v1/ready")
 def ready(db: Session = Depends(get_db)):
-    db.execute(text("SELECT 1"))
-    return {"ready": True, "version": settings.version}
+    return build_ready_payload(db)
+
+
+@app.get("/api/v1/platform/status")
+def platform_status(db: Session = Depends(get_db)):
+    return build_platform_status(db, connector_manager)
 
 
 @app.post("/api/v1/auth/login")
@@ -929,11 +942,6 @@ def report_history(
         end=end,
         limit=limit,
     )
-
-
-@app.get("/api/v1/platform/status")
-def platform_status():
-    return {"version": settings.version, "mode": settings.environment, "services": {"api": "online", "database": "online", "events": "online", "ai": "rule-engine"}, "simulated": True}
 
 
 @app.get("/api/v1/alerts")

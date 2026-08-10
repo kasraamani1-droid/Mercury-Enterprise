@@ -41,6 +41,8 @@ class Settings:
     session_ttl_seconds: int = _int("MERCURY_SESSION_TTL_SECONDS", 3600)
     session_cookie_secure: bool = _bool("MERCURY_SESSION_COOKIE_SECURE", False)
     audit_retention_days: int = _int("MERCURY_AUDIT_RETENTION_DAYS", 365)
+    log_json: bool = _bool("MERCURY_LOG_JSON", False)
+    metrics_enabled: bool = _bool("MERCURY_METRICS_ENABLED", False)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "cors_origins", _csv("MERCURY_CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"))
