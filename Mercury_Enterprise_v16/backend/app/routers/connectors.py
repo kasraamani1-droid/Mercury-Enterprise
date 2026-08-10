@@ -86,7 +86,6 @@ def connector_health_history(
 @router.post("/connectors/{connector_id}/start", response_model=ConnectorRecord)
 async def start_connector(
     connector_id: str,
-    request: Request,
     db: Session = Depends(get_db),
     session: dict = Depends(require_connectors_manage),
 ):

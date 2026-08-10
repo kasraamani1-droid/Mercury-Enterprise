@@ -1,4 +1,4 @@
-import { el, toast } from "./utils.js";
+import { el, toast, esc, download } from "./utils.js";
 import { state } from "./state.js";
 import { listAudit, getReportSummary, getReportHistory } from "./api.js";
 import { refreshIntegrations } from "./enterprise8.js";
@@ -35,7 +35,7 @@ function renderAudit(){
     const when=item.occurred_at?new Date(item.occurred_at).toLocaleString():"";
     const actor=item.actor_role?`${item.actor} (${item.actor_role})`:item.actor;
     const detail=[item.action,item.site_id,item.origin,item.details].filter(Boolean).join(" · ");
-    return `<div class="audit-entry"><time>${when}</time><b>${actor||"—"}</b><span>${detail}</span></div>`;
+    return `<div class="audit-entry"><time>${esc(when)}</time><b>${esc(actor||"—")}</b><span>${esc(detail)}</span></div>`;
   }).join("");
 }
 
@@ -52,7 +52,7 @@ async function loadServerAudit(){
       if(/insufficient|403|forbidden/i.test(message)){
         node.innerHTML='<div class="empty">Insufficient permissions for audit review.</div>';
       }else{
-        node.innerHTML=`<div class="empty">${message}</div>`;
+        node.innerHTML=`<div class="empty">${esc(message)}</div>`;
       }
     }
   }
@@ -61,9 +61,6 @@ async function loadServerAudit(){
 export async function refreshEnterpriseAudit(){
   await loadServerAudit();
 }
-
-function download(name,data,type="application/json"){const blob=new Blob([data],{type});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=name;a.click();URL.revokeObjectURL(url)}
-
 function renderExecutive(summary){
   latestSummary=summary;
   const kpis=summary?.kpis||{};
@@ -100,15 +97,16 @@ function renderHistory(filter=""){
   const rows=historyRows.filter(r=>Object.values(r).join(" ").toLowerCase().includes(q));
   el("historyBody").innerHTML=rows.length?rows.map(r=>{
     const severity=String(r.severity||"").toLowerCase();
+    const provenance=r.provenance?` · ${r.provenance}`:"";
     return `<tr>
-      <td>${r.id||""}</td>
-      <td>${r.site_id||""}</td>
-      <td>${r.type||r.title||""}</td>
-      <td><span class="severity ${severity}">${r.severity||""}</span></td>
-      <td>${r.status||""}</td>
-      <td>${r.detected_at?new Date(r.detected_at).toLocaleString():""}</td>
-      <td>${r.response_seconds!=null?`${r.response_seconds} s`:""}</td>
-      <td>${r.operator||""}${r.provenance?` · ${r.provenance}`:""}</td>
+      <td>${esc(r.id||"")}</td>
+      <td>${esc(r.site_id||"")}</td>
+      <td>${esc(r.type||r.title||"")}</td>
+      <td><span class="severity ${esc(severity)}">${esc(r.severity||"")}</span></td>
+      <td>${esc(r.status||"")}</td>
+      <td>${esc(r.detected_at?new Date(r.detected_at).toLocaleString():"")}</td>
+      <td>${esc(r.response_seconds!=null?`${r.response_seconds} s`:"")}</td>
+      <td>${esc((r.operator||"")+provenance)}</td>
     </tr>`;
   }).join(""):'<tr><td colspan="8">No historical records for current site/window.</td></tr>';
 }
@@ -120,7 +118,7 @@ async function loadHistory(){
     renderHistory(el("historySearch")?.value||"");
   }catch(error){
     historyRows=[];
-    el("historyBody").innerHTML=`<tr><td colspan="8">${error.message||"Unable to load history"}</td></tr>`;
+    el("historyBody").innerHTML=`<tr><td colspan="8">${esc(error.message||"Unable to load history")}</td></tr>`;
   }
 }
 

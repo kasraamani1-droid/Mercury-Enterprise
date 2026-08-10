@@ -3,8 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- Optional: <meta name="mercury-api-base" content="http://127.0.0.1:8000/api/v1"> for dual-process local demos -->
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛰️</text></svg>">
-  <title>Mercury v16.0 Enterprise Platform</title>
+  <title>Mercury Enterprise V2.0 (16.0.0)</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="css/base.css">
   <link rel="stylesheet" href="css/layout.css">
@@ -14,7 +15,7 @@
 <body>
 <div id="criticalAlert" class="critical-alert hidden"><strong>CRITICAL AIRSPACE ALERT</strong><span id="criticalAlertText">UAV approaching protected runway zone.</span><button id="dismissAlert">Dismiss</button></div>
 <header class="topbar">
-  <div class="brand">Mercury <span>Enterprise Platform — v16.0</span>
+  <div class="brand">Mercury <span>Enterprise V2.0 — 16.0.0</span>
   <nav class="product-nav" aria-label="Mercury workspaces">
     <button class="product-tab active" data-workspace="command">Command</button>
     <button class="product-tab" data-workspace="digitalTwin">Digital Twin</button>
@@ -264,7 +265,7 @@
 <section id="integrationsWorkspace" class="workspace-page enterprise-page hidden">
   <div class="enterprise-header"><div><span class="eyebrow">Open platform</span><h1>Integrations & API Marketplace</h1><p>Simulated connectors for airport, security, sensor, messaging, and data systems.</p></div><button id="exportIntegrations" class="ghost">Export integration catalog</button></div>
   <section class="enterprise-kpis"><article><span>Configured</span><strong>12</strong><small>9 online · 3 sandbox</small></article><article><span>Events processed</span><strong>28.4k</strong><small>Last 24 hours</small></article><article><span>Webhook success</span><strong>99.4%</strong><small>Simulated</small></article><article><span>API keys</span><strong>7</strong><small>2 expire this month</small></article></section>
-  <div class="enterprise-grid"><article class="card admin-wide"><h3>Connector catalog</h3><div id="integrationCatalog" class="integration-list"></div></article><article class="card"><h3>Developer access</h3><div class="health-list"><div><span>REST API</span><b>v16.0</b></div><div><span>WebSocket gateway</span><b>Ready</b></div><div><span>SDK profiles</span><b>Python · JS</b></div><div><span>Sandbox</span><b>Enabled</b></div></div></article><article class="card"><h3>Data governance</h3><div class="health-list"><div><span>Schema validation</span><b>Enabled</b></div><div><span>Rate limits</span><b>Active</b></div><div><span>Audit events</span><b>Retained</b></div><div><span>PII mode</span><b>Restricted</b></div></div></article></div>
+  <div class="enterprise-grid"><article class="card admin-wide"><h3>Connector catalog</h3><div id="integrationCatalog" class="integration-list"></div></article><article class="card"><h3>Developer access</h3><div class="health-list"><div><span>REST API</span><b>16.0.0</b></div><div><span>WebSocket gateway</span><b>Ready</b></div><div><span>SDK profiles</span><b>Python · JS</b></div><div><span>Sandbox</span><b>Enabled</b></div></div></article><article class="card"><h3>Data governance</h3><div class="health-list"><div><span>Schema validation</span><b>Enabled</b></div><div><span>Rate limits</span><b>Active</b></div><div><span>Audit events</span><b>Retained</b></div><div><span>PII mode</span><b>Restricted</b></div></div></article></div>
 </section>
 <section id="complianceWorkspace" class="workspace-page enterprise-page hidden">
   <div class="enterprise-header"><div><span class="eyebrow">Governance</span><h1>Security, Compliance & Assurance</h1><p>Demonstration controls dashboard. It does not represent certification or regulatory approval.</p></div><button id="exportCompliance" class="ghost">Export controls JSON</button></div>
@@ -273,6 +274,19 @@
 </section>
 
 <div id="toast" class="toast" role="status"></div>
+
+<div id="loginOverlay" class="login-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
+  <form id="loginForm" class="login-card">
+    <h2 id="loginTitle">Operator sign-in</h2>
+    <p class="muted">Session required. Demo auto-login is disabled.</p>
+    <label>Operator <input id="loginOperator" name="operator" autocomplete="username" required value="operator"></label>
+    <label>Password <input id="loginPassword" name="password" type="password" autocomplete="current-password" required></label>
+    <p id="loginError" class="login-error hidden" role="alert"></p>
+    <button type="submit" id="loginSubmit">Sign in</button>
+  </form>
+</div>
+
+<script src="js/config.local.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script type="module" src="js/app.js"></script>
 </body>

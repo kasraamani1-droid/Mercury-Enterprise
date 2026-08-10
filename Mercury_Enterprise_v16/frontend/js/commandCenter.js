@@ -1,4 +1,4 @@
-import { el } from "./utils.js";
+import { el, esc } from "./utils.js";
 import { state } from "./state.js";
 
 const notifications=[];
@@ -16,7 +16,7 @@ function renderNotifications(){
   const count=el("notificationCount");
   count.textContent=String(notifications.length);
   count.classList.toggle("active",notifications.length>0);
-  list.innerHTML=notifications.length?notifications.map((n,i)=>`<article class="notification-item ${i===0?"latest":""}"><time>${n.time}</time><strong>${n.title}</strong><span>${n.text}</span></article>`).join(""):'<div class="empty">No notifications.</div>';
+  list.innerHTML=notifications.length?notifications.map((n,i)=>`<article class="notification-item ${i===0?"latest":""}"><time>${esc(n.time)}</time><strong>${esc(n.title)}</strong><span>${esc(n.text)}</span></article>`).join(""):'<div class="empty">No notifications.</div>';
 }
 
 export function pushNotification(title,text){
@@ -33,7 +33,7 @@ export function initializeCommandCenter(){
     if(!panel.classList.contains("hidden")&&!panel.contains(event.target)&&!button.contains(event.target))panel.classList.add("hidden");
   });
   renderNotifications();
-  pushNotification("System ready","Mercury v16.0 integrated services are online.");
+  pushNotification("System ready","Mercury Enterprise V2.0 (16.0.0) integrated services are online.");
 }
 
 export function updateCommandCenter(step=0){

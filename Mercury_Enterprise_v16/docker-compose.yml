@@ -13,6 +13,7 @@ services:
       timeout: 3s
       retries: 20
 
+  # Backend is Compose-network only (expose). UI must call same-origin /api via NGINX on :3000.
   backend:
     build: ./backend
     env_file: .env

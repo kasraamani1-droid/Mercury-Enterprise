@@ -1,3 +1,4 @@
+from conftest import TEST_AUTH_PASSWORD
 from app.core.event_bus import EventBus
 from app.missions import MissionPriority
 from app.missions.mission_service import MissionService
@@ -60,3 +61,34 @@ def test_orchestrator_monitors_low_risk_signal():
     assert decision.action == "monitor"
     assert decision.severity == "info"
     assert timeline_manager.last() is not None
+
+
+def test_ops_router_reuses_main_orchestrator_singleton():
+    from app.main import response_orchestrator
+    from app.routers.ops import get_response_orchestrator
+
+    assert get_response_orchestrator() is response_orchestrator
+
+
+def test_ops_coordinate_requires_auth():
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    client = TestClient(app)
+    client.post("/api/v1/auth/logout")
+    denied = client.post("/api/v1/ops/coordinate", json={"event_type": "test", "payload": {}})
+    assert denied.status_code == 401
+
+    login = client.post("/api/v1/auth/login", json={"operator": "viewer", "password": TEST_AUTH_PASSWORD})
+    assert login.status_code == 200
+    forbidden = client.post("/api/v1/ops/coordinate", json={"event_type": "test", "payload": {}})
+    assert forbidden.status_code == 403
+
+    login = client.post("/api/v1/auth/login", json={"operator": "operator", "password": TEST_AUTH_PASSWORD})
+    assert login.status_code == 200
+    allowed = client.post(
+        "/api/v1/ops/coordinate",
+        json={"event_type": "ai.assessed", "payload": {"confidence": 40, "level": "LOW"}},
+    )
+    assert allowed.status_code == 200
+    assert "action" in allowed.json()

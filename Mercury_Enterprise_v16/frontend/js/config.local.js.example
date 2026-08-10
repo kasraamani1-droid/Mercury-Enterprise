@@ -1,0 +1,4 @@
+# Optional local dual-process overrides (gitignored).
+# START_FRONTEND.bat creates this when missing so Windows http.server on :3000 can reach API on :8000.
+window.__MERCURY_API_BASE__ = "http://127.0.0.1:8000/api/v1";
+window.__MERCURY_WS_URL__ = "ws://127.0.0.1:8000/api/v1/ws";

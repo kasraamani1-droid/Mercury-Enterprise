@@ -1,3 +1,4 @@
+from conftest import TEST_AUTH_PASSWORD
 from unittest.mock import MagicMock
 
 from fastapi.testclient import TestClient
@@ -55,6 +56,8 @@ def test_health_payload_marks_degraded_on_db_error():
 
 
 def test_platform_status_uses_advisory_ai_signal():
+    login = client.post("/api/v1/auth/login", json={"operator": "operator", "password": TEST_AUTH_PASSWORD})
+    assert login.status_code == 200
     response = client.get("/api/v1/platform/status")
     assert response.status_code == 200
     body = response.json()
@@ -65,6 +68,8 @@ def test_platform_status_uses_advisory_ai_signal():
 
 
 def test_ops_health_includes_subsystem_fields():
+    login = client.post("/api/v1/auth/login", json={"operator": "operator", "password": TEST_AUTH_PASSWORD})
+    assert login.status_code == 200
     response = client.get("/api/v1/ops/health")
     assert response.status_code == 200
     body = response.json()
@@ -74,7 +79,7 @@ def test_ops_health_includes_subsystem_fields():
 
 
 def test_decision_evaluate_survives_connector_noise():
-    login = client.post("/api/v1/auth/login", json={"operator": "operator", "password": "mercury-demo"})
+    login = client.post("/api/v1/auth/login", json={"operator": "operator", "password": TEST_AUTH_PASSWORD})
     assert login.status_code == 200
     response = client.post(
         "/api/v1/decisions/evaluate",

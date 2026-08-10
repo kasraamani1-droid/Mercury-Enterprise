@@ -1,3 +1,4 @@
+from conftest import TEST_AUTH_PASSWORD
 from fastapi.testclient import TestClient
 from app.main import app
 
@@ -5,12 +6,12 @@ client = TestClient(app)
 
 
 def login_client():
-    response = client.post('/api/v1/auth/login', json={'operator': 'operator', 'password': 'mercury-demo'})
+    response = client.post('/api/v1/auth/login', json={'operator': 'operator', 'password': TEST_AUTH_PASSWORD})
     assert response.status_code == 200
 
 
 def login_as(operator: str):
-    response = client.post('/api/v1/auth/login', json={'operator': operator, 'password': 'mercury-demo'})
+    response = client.post('/api/v1/auth/login', json={'operator': operator, 'password': TEST_AUTH_PASSWORD})
     assert response.status_code == 200
     return response.json()
 
@@ -20,17 +21,26 @@ def test_health():
     assert response.json()['status'] == 'ok'
 
 def test_incidents_exist():
+    login_client()
     response = client.get('/api/v1/incidents')
     assert response.status_code == 200
     assert len(response.json()) >= 1
 
 
+def test_incidents_require_auth():
+    client.post('/api/v1/auth/logout')
+    response = client.get('/api/v1/incidents')
+    assert response.status_code == 401
+
+
 def test_platform_status():
+    login_client()
     response=client.get('/api/v1/platform/status')
     assert response.status_code==200
     assert response.json()['version']=='16.0.0'
 
 def test_integrations_catalog():
+    login_client()
     response=client.get('/api/v1/integrations')
     assert response.status_code==200
     assert response.json()['configured']==12
@@ -42,6 +52,7 @@ def test_ready():
 
 
 def test_dashboard_summary():
+    login_client()
     response = client.get('/api/v1/dashboard/summary')
     assert response.status_code == 200
     payload = response.json()

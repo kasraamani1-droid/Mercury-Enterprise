@@ -1,4 +1,4 @@
-import { el } from "./utils.js";
+import { el, esc } from "./utils.js";
 import {
   getHealth,
   getDashboardSummary,
@@ -96,10 +96,10 @@ function renderOrgSiteSelectors(context){
   const sites = Array.isArray(context.sites) ? context.sites : [];
 
   organizationSelect.innerHTML = organizations
-    .map(item => `<option value="${item.organization_id}">${item.name}</option>`)
+    .map(item => `<option value="${esc(item.organization_id)}">${esc(item.name)}</option>`)
     .join("");
   siteSelect.innerHTML = sites
-    .map(item => `<option value="${item.site_id}">${item.name}</option>`)
+    .map(item => `<option value="${esc(item.site_id)}">${esc(item.name)}</option>`)
     .join("");
 
   if (context.organization?.organization_id) {
@@ -202,10 +202,10 @@ function renderDashboardSummary(summary){
         const reviewState = item.review_state || (item.operator_acknowledged ? "acknowledged" : "pending");
         const selectedName = item.selected_name || "Decision update";
         const warnings = item.warning_count ?? 0;
-        return `<div class="log-entry" data-decision-id="${decisionId}" style="cursor:${decisionId ? "pointer" : "default"}">
-          <span>${item.timestamp || "Unknown time"}</span>
-          <strong>${selectedName}</strong>
-          <small>${reviewState} · warnings ${warnings}${item.operator_acknowledged ? " · acknowledged" : " · review pending"}</small>
+        return `<div class="log-entry" data-decision-id="${esc(decisionId)}" style="cursor:${decisionId ? "pointer" : "default"}">
+          <span>${esc(item.timestamp || "Unknown time")}</span>
+          <strong>${esc(selectedName)}</strong>
+          <small>${esc(reviewState)} · warnings ${esc(warnings)}${item.operator_acknowledged ? " · acknowledged" : " · review pending"}</small>
         </div>`;
       })
       .join("")
@@ -222,14 +222,6 @@ function renderDashboardSummary(summary){
   } else if (selectedDecisionId) {
     loadDecisionDetail(selectedDecisionId);
   }
-}
-
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
 }
 
 function renderDecisionExplain(decision) {
@@ -250,25 +242,25 @@ function renderDecisionExplain(decision) {
   }
 
   const factorRows = [];
-  factorRows.push(`<div class="log-entry"><strong>Reasoning</strong><small>${escapeHtml(decision.reasoning || "")}</small></div>`);
+  factorRows.push(`<div class="log-entry"><strong>Reasoning</strong><small>${esc(decision.reasoning || "")}</small></div>`);
   (decision.warnings || []).forEach(item => {
-    factorRows.push(`<div class="log-entry"><strong>Warning</strong><small>${escapeHtml(item)}</small></div>`);
+    factorRows.push(`<div class="log-entry"><strong>Warning</strong><small>${esc(item)}</small></div>`);
   });
   (decision.assumptions || []).forEach(item => {
-    factorRows.push(`<div class="log-entry"><strong>Assumption</strong><small>${escapeHtml(item)}</small></div>`);
+    factorRows.push(`<div class="log-entry"><strong>Assumption</strong><small>${esc(item)}</small></div>`);
   });
   (decision.uncertainty || []).forEach(item => {
-    factorRows.push(`<div class="log-entry"><strong>Uncertainty</strong><small>${escapeHtml(item)}</small></div>`);
+    factorRows.push(`<div class="log-entry"><strong>Uncertainty</strong><small>${esc(item)}</small></div>`);
   });
   (decision.factor_breakdown || []).forEach(item => {
     factorRows.push(
-      `<div class="log-entry"><strong>${escapeHtml(item.name || "factor")}</strong><small>${escapeHtml(item.detail || "")} · ${escapeHtml(item.weight_or_score)}</small></div>`
+      `<div class="log-entry"><strong>${esc(item.name || "factor")}</strong><small>${esc(item.detail || "")} · ${esc(item.weight_or_score)}</small></div>`
     );
   });
   const connector = decision.connector_context || {};
   if ((connector.degraded || []).length || (connector.error || []).length) {
     factorRows.push(
-      `<div class="log-entry"><strong>Connector trust</strong><small>degraded=${escapeHtml((connector.degraded || []).join(", ") || "none")}; error=${escapeHtml((connector.error || []).join(", ") || "none")}</small></div>`
+      `<div class="log-entry"><strong>Connector trust</strong><small>degraded=${esc((connector.degraded || []).join(", ") || "none")}; error=${esc((connector.error || []).join(", ") || "none")}</small></div>`
     );
   }
   if (el("decisionFactorsList")) {
@@ -283,7 +275,7 @@ function renderDecisionExplain(decision) {
       ? alternatives
           .map(
             (item, index) =>
-              `<div class="log-entry"><span>#${index + 1}</span><strong>${escapeHtml(item.name)}</strong><small>score ${escapeHtml(item.overall_score)} · confidence ${escapeHtml(item.confidence)}</small></div>`
+              `<div class="log-entry"><span>#${index + 1}</span><strong>${esc(item.name)}</strong><small>score ${esc(item.overall_score)} · confidence ${esc(item.confidence)}</small></div>`
           )
           .join("")
       : '<div class="empty">No alternatives available.</div>';
@@ -297,7 +289,7 @@ async function loadDecisionDetail(decisionId) {
     renderDecisionExplain(decision);
   } catch (error) {
     if (el("decisionFactorsList")) {
-      el("decisionFactorsList").innerHTML = `<div class="empty">Decision detail unavailable: ${escapeHtml(error.message)}</div>`;
+      el("decisionFactorsList").innerHTML = `<div class="empty">Decision detail unavailable: ${esc(error.message)}</div>`;
     }
   }
 }
@@ -391,10 +383,53 @@ async function loadDashboardSummary(){
 async function ensureSession(){
   let session = await getSessionStatus();
   if (!session.authenticated) {
-    session = await login({ operator: "operator", password: "mercury-demo" });
+    session = await promptInteractiveLogin();
   }
   currentSession = session;
   return session;
+}
+
+function promptInteractiveLogin(){
+  return new Promise((resolve, reject) => {
+    const overlay = el("loginOverlay");
+    const form = el("loginForm");
+    const errorNode = el("loginError");
+    const operatorInput = el("loginOperator");
+    const passwordInput = el("loginPassword");
+    if (!overlay || !form || !operatorInput || !passwordInput) {
+      reject(new Error("Login UI unavailable"));
+      return;
+    }
+    overlay.classList.remove("hidden");
+    if (errorNode) {
+      errorNode.textContent = "";
+      errorNode.classList.add("hidden");
+    }
+    passwordInput.value = "";
+    operatorInput.focus();
+
+    const onSubmit = async event => {
+      event.preventDefault();
+      try {
+        const session = await login({
+          operator: operatorInput.value.trim(),
+          password: passwordInput.value,
+        });
+        if (!session.authenticated) {
+          throw new Error("Authentication failed");
+        }
+        form.removeEventListener("submit", onSubmit);
+        overlay.classList.add("hidden");
+        resolve(session);
+      } catch (error) {
+        if (errorNode) {
+          errorNode.textContent = error.message || "Invalid credentials";
+          errorNode.classList.remove("hidden");
+        }
+      }
+    };
+    form.addEventListener("submit", onSubmit);
+  });
 }
 
 function applyRoleAccess(){

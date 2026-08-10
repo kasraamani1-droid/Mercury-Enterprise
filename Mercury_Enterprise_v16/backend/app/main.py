@@ -12,7 +12,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response, WebSocke
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .alerts import AlertManager
@@ -22,7 +22,7 @@ from .fusion import FusionEngine
 from .missions import MissionService, MissionStatus
 from .ops import ResponseOrchestrationEngine
 from .core.config import settings
-from .core.health import build_health_payload, build_ops_health, build_platform_status, build_ready_payload
+from .core.health import build_health_payload, build_platform_status, build_ready_payload
 from .core.logging import configure_logging
 from .audit import list_audit_events, normalize_provenance, record_audit
 from .database import SessionLocal, ensure_schema, get_db
@@ -215,6 +215,24 @@ def require_permissions(*required: str):
     return dependency
 
 
+def _session_site_filter(session: dict[str, datetime | str]):
+    return (
+        Incident.organization_id == str(session["organization_id"]),
+        Incident.site_id == str(session["site_id"]),
+    )
+
+
+def _get_scoped_incident(db: Session, incident_id: str, session: dict[str, datetime | str]) -> Incident:
+    incident = db.get(Incident, incident_id)
+    if (
+        incident is None
+        or str(incident.organization_id or "") != str(session["organization_id"])
+        or str(incident.site_id or "") != str(session["site_id"])
+    ):
+        raise HTTPException(status_code=404, detail="Incident not found")
+    return incident
+
+
 def _create_approval(action: str, target_id: str | None, reason: str, session: dict[str, datetime | str]) -> dict[str, datetime | str | bool | None]:
     approval_id = secrets.token_urlsafe(16)
     record: dict[str, datetime | str | bool | None] = {
@@ -353,6 +371,7 @@ async def heartbeat() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    settings.validate_for_startup()
     ensure_schema()
     seed_demo()
     timeline_manager.add_event(
@@ -444,7 +463,10 @@ def ready(db: Session = Depends(get_db)):
 
 
 @app.get("/api/v1/platform/status")
-def platform_status(db: Session = Depends(get_db)):
+def platform_status(
+    db: Session = Depends(get_db),
+    _: dict[str, datetime | str] = Depends(require_permissions("platform.read")),
+):
     return build_platform_status(db, connector_manager)
 
 
@@ -680,8 +702,22 @@ def approve_request(
 
 
 @app.get("/api/v1/incidents", response_model=list[IncidentOut])
-def list_incidents(db: Session = Depends(get_db)):
-    return db.scalars(select(Incident).order_by(Incident.created_at.desc())).all()
+def list_incidents(
+    limit: int = 100,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    session: dict[str, datetime | str] = Depends(require_permissions("incident.read")),
+):
+    capped = max(1, min(int(limit), 500))
+    start = max(0, int(offset))
+    stmt = (
+        select(Incident)
+        .where(*_session_site_filter(session))
+        .order_by(Incident.created_at.desc())
+        .offset(start)
+        .limit(capped)
+    )
+    return db.scalars(stmt).all()
 
 
 @app.post("/api/v1/incidents", response_model=IncidentOut, status_code=201)
@@ -718,10 +754,12 @@ async def create_incident(
 
 
 @app.get("/api/v1/incidents/{incident_id}", response_model=IncidentDetail)
-def get_incident(incident_id: str, db: Session = Depends(get_db)):
-    incident = db.get(Incident, incident_id)
-    if not incident:
-        raise HTTPException(404, "Incident not found")
+def get_incident(
+    incident_id: str,
+    db: Session = Depends(get_db),
+    session: dict[str, datetime | str] = Depends(require_permissions("incident.read")),
+):
+    incident = _get_scoped_incident(db, incident_id, session)
     incident.events.sort(key=lambda item: item.occurred_at)
     return incident
 
@@ -856,18 +894,22 @@ def add_evidence(
 
 
 @app.get("/api/v1/incidents/{incident_id}/assessment")
-def get_assessment(incident_id: str, db: Session = Depends(get_db)):
-    incident = db.get(Incident, incident_id)
-    if not incident:
-        raise HTTPException(404, "Incident not found")
+def get_assessment(
+    incident_id: str,
+    db: Session = Depends(get_db),
+    session: dict[str, datetime | str] = Depends(require_permissions("incident.read")),
+):
+    incident = _get_scoped_incident(db, incident_id, session)
     return generate_assessment(incident)
 
 
 @app.get("/api/v1/incidents/{incident_id}/report")
-def incident_report(incident_id: str, db: Session = Depends(get_db)):
-    incident = db.get(Incident, incident_id)
-    if not incident:
-        raise HTTPException(404, "Incident not found")
+def incident_report(
+    incident_id: str,
+    db: Session = Depends(get_db),
+    session: dict[str, datetime | str] = Depends(require_permissions("incident.read")),
+):
+    incident = _get_scoped_incident(db, incident_id, session)
     return {
         "schema_version": "1.0",
         "incident": {"id": incident.id, "title": incident.title, "status": incident.status, "severity": incident.severity, "summary": incident.summary},
@@ -945,7 +987,11 @@ def report_history(
 
 
 @app.get("/api/v1/alerts")
-def list_alerts(incident_id: str | None = None, limit: int = 50):
+def list_alerts(
+    incident_id: str | None = None,
+    limit: int = 50,
+    _: dict[str, datetime | str] = Depends(require_permissions("alerts.read")),
+):
     return [alert.to_dict() for alert in alert_manager.get_alerts(incident_id=incident_id, limit=limit)]
 
 
@@ -958,12 +1004,12 @@ def acknowledge_alert(alert_id: str, _: dict[str, datetime | str] = Depends(requ
 
 
 @app.get("/api/v1/integrations")
-def integrations():
+def integrations(_: dict[str, datetime | str] = Depends(require_permissions("platform.read"))):
     return {"version": settings.version, "configured": 12, "online": 9, "sandbox": 3, "simulated": True}
 
 
 @app.get("/api/v1/compliance")
-def compliance():
+def compliance(_: dict[str, datetime | str] = Depends(require_permissions("platform.read"))):
     return {"version": settings.version, "control_coverage": 92, "open_findings": 4, "certified": False, "simulated": True}
 
 
@@ -1080,8 +1126,10 @@ def review_decision(
 
 
 @app.get("/api/v1/dashboard/summary")
-def dashboard_summary(request: Request, db: Session = Depends(get_db)):
-    session = _validate_session(_request_session_id(request))
+def dashboard_summary(
+    db: Session = Depends(get_db),
+    session: dict[str, datetime | str] = Depends(require_permissions("dashboard.read")),
+):
     platform_services = {"api": "online", "database": "online", "events": "online", "ai": "decision_engine_advisory"}
     connected_services = sum(1 for status in platform_services.values() if status == "online")
 
@@ -1091,10 +1139,15 @@ def dashboard_summary(request: Request, db: Session = Depends(get_db)):
     acknowledged_alerts = [alert for alert in alerts if alert.acknowledged]
 
     missions = mission_service.list_missions(status=MissionStatus.ACTIVE)
-    incidents = db.scalars(select(Incident)).all()
+    org_id = str(session["organization_id"])
+    site_id = str(session["site_id"])
+    incident_count = db.scalar(
+        select(func.count()).select_from(Incident).where(
+            Incident.organization_id == org_id,
+            Incident.site_id == site_id,
+        )
+    ) or 0
 
-    org_id = str(session["organization_id"]) if session else None
-    site_id = str(session["site_id"]) if session else None
     stored_decisions = decision_engine.list_decisions(organization_id=org_id, site_id=site_id, limit=20)
     pending_reviews = sum(1 for item in stored_decisions if str((item.get("review") or {}).get("state") or "") == "pending")
     latest = stored_decisions[0] if stored_decisions else None
@@ -1194,7 +1247,7 @@ def dashboard_summary(request: Request, db: Session = Depends(get_db)):
         "fleet_health": {
             "aircraft_online": 0,
             "active_sensors": sensor_online,
-            "incidents": len(incidents),
+            "incidents": int(incident_count),
             "ai_confidence": 0,
         },
         "connector_health": connector_states | {"status": connector_status},

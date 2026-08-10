@@ -1,57 +1,33 @@
-# Mercury Enterprise v15.0 — Full Source Foundation
+# Mercury Enterprise V2.0 (package 16.0.0)
 
-Mercury v15.0 is a **working, production-oriented source foundation** of the Mercury command platform. It preserves the full simulated command-center experience while adding deployment, configuration, WebSocket, database, health-check, security-header, CI, and container foundations.
+Mercury is a **working, production-oriented source foundation** of the Mercury command platform with simulated operational feeds.
 
-> **Important:** this package is not certified operational aviation/security software. UAV, aircraft, sensor, AI, weather, compliance, and mission data are simulated. Before real deployment, complete independent security, privacy, safety, regulatory, human-factors, and operational validation.
+> **Important:** not certified operational aviation/security software. Complete independent validation before real deployment.
 
-## Fastest Windows start (SQLite development mode)
+## Fastest Windows start (SQLite development)
 
-1. Stop older Mercury windows with `STOP_MERCURY.bat`.
-2. Run `CHECK_SYSTEM.bat`.
-3. Run `START_ALL.bat`.
-4. Open `http://localhost:3000`.
-5. API docs: `http://127.0.0.1:8000/docs`.
+1. Copy `.env.example` to `.env` and set `MERCURY_AUTH_PASSWORD` to a unique secret (not a demo/default value).
+2. `STOP_MERCURY.bat` if needed, then `CHECK_SYSTEM.bat`, then `START_ALL.bat`.
+3. Open `http://localhost:3000` and sign in with your configured operator password.
+4. API docs: `http://127.0.0.1:8000/docs` (local dual-process; `config.local.js` points the UI at `:8000`).
 
-## Container start (PostgreSQL reference deployment)
+## Container start (PostgreSQL)
 
 ```powershell
 copy .env.example .env
+# Set MERCURY_AUTH_PASSWORD (required) and DATABASE_URL
 docker compose up --build
 ```
 
-Open `http://localhost:3000`.
+Open `http://localhost:3000` (NGINX proxies `/api` and WebSocket).
 
-## Production foundations included
+Postgres migrations: `cd backend; alembic upgrade head`
 
-- FastAPI API with request IDs, response timing, readiness/health endpoints, structured logging, and CORS allow-listing
-- SQLAlchemy with SQLite local mode and PostgreSQL container mode
-- WebSocket event gateway with heartbeat and incident broadcasts
-- Optional API-key protection for write operations
-- NGINX frontend container and reverse-proxy configuration
-- Docker Compose, persistent PostgreSQL volume, health checks, and restart policies
-- GitHub Actions CI for tests, Python compilation, and JavaScript syntax
-- Modular frontend with Command, Digital Twin, Radar, Executive, History, Admin, Cloud, Integrations, and Compliance workspaces
-- Tests and production-readiness documentation
+## Version identity
 
-## Key endpoints
+| Field | Value |
+|-------|--------|
+| Product | Mercury Enterprise V2.0 |
+| Package / API (`MERCURY_VERSION`) | 16.0.0 |
 
-- `GET /api/v1/health`
-- `GET /api/v1/ready`
-- `GET /api/v1/incidents`
-- `POST /api/v1/incidents`
-- `GET /api/v1/incidents/{id}`
-- `PATCH /api/v1/incidents/{id}/status`
-- `GET /api/v1/incidents/{id}/assessment`
-- `GET /api/v1/incidents/{id}/report`
-- `WS /api/v1/ws`
-
-## Security note
-
-Set `MERCURY_API_KEY` in production. The included API-key mechanism is a deployment baseline, not a substitute for enterprise SSO/OIDC, secrets management, network segmentation, WAF/rate limiting, signed audit events, or formal authorization policy.
-
-See `docs/PRODUCTION_READINESS.md`, `docs/ARCHITECTURE.md`, and `docs/SECURITY.md`.
-
-
-## Scope transparency
-
-Read `IMPLEMENTATION_STATUS.md` for the exact boundary between runnable code, simulated features, and integrations that still require engineering and certification.
+See `docs/RELEASE_NOTES_v2.0.md`, `docs/SECURITY.md`, and `IMPLEMENTATION_STATUS.md`.

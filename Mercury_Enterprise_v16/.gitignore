@@ -11,6 +11,10 @@ venv/
 
 # Testing
 .pytest_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+coverage.xml
 
 # VS Code
 .vscode/
@@ -18,13 +22,27 @@ venv/
 # Logs
 *.log
 
-# Database
+# Database / runtime SQLite
 *.db
+*.sqlite
 *.sqlite3
+mercury.db
+**/mercury.db
+**/mercury_*.db
 
 # Environment
 .env
 .env.*
+!.env.example
+
+# Local dual-process API/WS overrides (created by START_FRONTEND.bat)
+frontend/js/config.local.js
+
+# Temp / scratch
+tmp_*.txt
+**/tmp_*.txt
+*.tmp
+*.bak
 
 # OS
 .DS_Store

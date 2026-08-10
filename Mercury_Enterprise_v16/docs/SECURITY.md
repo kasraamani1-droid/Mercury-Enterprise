@@ -2,20 +2,19 @@
 
 Included:
 - explicit CORS origins
-- optional API key for write endpoints
+- session-cookie authentication with server-side RBAC
+- site/org scoping on incident list/detail reads
+- **required** `MERCURY_AUTH_PASSWORD` (no embedded demo/default; forbidden values rejected at startup)
+- interactive operator sign-in (no demo auto-login)
+- production Secure cookie default when `MERCURY_ENV=production`
 - request IDs and generic 500 responses
-- security headers in NGINX
-- non-root external exposure through NGINX
-- environment-based secrets/configuration
+- NGINX security headers
+- environment-based secrets (`.env` / `MERCURY_*`)
 
-Required before real deployment:
-- OIDC/SSO with MFA
-- role/attribute-based authorization enforced server-side
-- managed secrets and certificate rotation
-- encrypted evidence/object storage
-- immutable and signed audit logs
-- rate limiting, WAF, IDS/IPS, segmentation, and egress controls
-- SAST/DAST/dependency/container scanning
-- privacy impact assessment and retention rules
-- incident-response and disaster-recovery exercises
-- aviation/security regulatory review
+Not currently enforced (reserved / deferred):
+- `MERCURY_API_KEY` is configuration-only; session RBAC is the active control plane
+- OIDC/SSO/MFA
+
+Public probes only: `GET /api/v1/health`, `GET /api/v1/ready`.
+
+See `docs/design/PRODUCTION_HARDENING_REPORT.md` and `.env.example`.

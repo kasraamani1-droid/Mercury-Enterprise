@@ -1,3 +1,4 @@
+from conftest import TEST_AUTH_PASSWORD
 from fastapi.testclient import TestClient
 
 from app.main import app, decision_engine
@@ -6,7 +7,7 @@ client = TestClient(app)
 
 
 def login_as(operator: str):
-    response = client.post("/api/v1/auth/login", json={"operator": operator, "password": "mercury-demo"})
+    response = client.post("/api/v1/auth/login", json={"operator": operator, "password": TEST_AUTH_PASSWORD})
     assert response.status_code == 200
     return response.json()
 

@@ -21,7 +21,11 @@ def get_db():
 
 
 def ensure_schema() -> None:
-    """Create missing tables and apply minimal SQLite ALTERs for Task 16/17 columns."""
+    """Create missing tables and apply minimal SQLite ALTERs for Task 16/17 columns.
+
+    Production Postgres upgrades should run Alembic (`alembic upgrade head`) before or
+    beside application start. `create_all` remains for empty SQLite/dev databases.
+    """
     # Import models so metadata includes Incident/Evidence/AuditEvent tables.
     from . import models  # noqa: F401
 
