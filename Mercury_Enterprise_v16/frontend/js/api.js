@@ -196,3 +196,31 @@ export async function getReportHistory({ start, end, limit } = {}) {
   const suffix = params.toString() ? `?${params.toString()}` : "";
   return (await request(`/reports/history${suffix}`)).json();
 }
+
+export async function listConnectors() {
+  return (await request("/connectors")).json();
+}
+
+export async function getConnectorHealth(id) {
+  return (await request(`/connectors/${id}/health`)).json();
+}
+
+export async function getConnectorHealthHistory(id, limit = 50) {
+  return (await request(`/connectors/${id}/health-history?limit=${limit}`)).json();
+}
+
+export async function startConnector(id) {
+  return (await request(`/connectors/${id}/start`, { method: "POST" })).json();
+}
+
+export async function stopConnector(id) {
+  return (await request(`/connectors/${id}/stop`, { method: "POST" })).json();
+}
+
+export async function recoverConnector(id) {
+  return (await request(`/connectors/${id}/recover`, { method: "POST" })).json();
+}
+
+export async function pollConnector(id) {
+  return (await request(`/connectors/${id}/poll`, { method: "POST" })).json();
+}

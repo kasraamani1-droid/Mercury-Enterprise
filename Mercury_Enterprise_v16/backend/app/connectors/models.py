@@ -26,6 +26,10 @@ class ConnectorRecord(BaseModel):
     simulated: bool = True
     last_poll_at: datetime | None = None
     last_error: str | None = None
+    last_transition_at: datetime | None = None
+    retry_count: int = 0
+    organization_id: str | None = None
+    site_id: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -35,6 +39,18 @@ class ConnectorHealth(BaseModel):
     checked_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     latency_ms: float | None = None
     message: str = "ok"
+    retry_count: int = 0
+    last_error: str | None = None
+    last_transition_at: datetime | None = None
+
+
+class ConnectorHealthEvent(BaseModel):
+    connector_id: str
+    from_state: str | None = None
+    to_state: str
+    occurred_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    message: str = ""
+    actor: str | None = None
 
 
 class NormalizedObservation(BaseModel):

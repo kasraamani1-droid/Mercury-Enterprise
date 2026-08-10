@@ -1,5 +1,5 @@
 import { el } from "./utils.js";
-import { getHealth, getDashboardSummary, getSessionStatus, getSessionContext, updateSessionContext, login } from "./api.js";
+import { getHealth, getDashboardSummary, getSessionStatus, getSessionContext, updateSessionContext, login, listConnectors } from "./api.js";
 import { initializeMap, toggleTracking, pauseTracking, resetTracking, setSimulationSpeed, toggleLayer, changeAirport, seekReplay } from "./map.js";
 import { loadIncidents, renderIncidentList, loadIncident, showTab, simulateIncident, performOperatorAction, resolveSelected, generateSelectedReport } from "./incidents.js";
 import { askCopilot } from "./copilot.js";
@@ -9,10 +9,11 @@ import { initializeMissionOps, updateWeather, updateProactiveBrief } from "./mis
 import { initializeCommandCenter } from "./commandCenter.js";
 import { initializeRealtimeConsole } from "./realtimeConsole.js";
 import { initializeEnterprise, refreshEnterpriseAudit, refreshEnterpriseReports } from "./enterprise.js";
-import { initializeEnterprise8 } from "./enterprise8.js";
+import { initializeEnterprise8, refreshIntegrations } from "./enterprise8.js";
 import { initializeWebSocket } from "./websocket.js";
 let currentSession = null;
 let currentContext = null;
+let latestConnectors = [];
 
 async function checkHealth(){try{const health=await getHealth();el("statusText").textContent=`API v${health.version}`;el("backendDot").classList.add("online")}catch{el("statusText").textContent="Backend offline";el("backendDot").classList.remove("online")}}
 function bindEvents(){
@@ -67,6 +68,7 @@ async function onOrganizationChange(event){
   renderOrgSiteSelectors(currentContext);
   try { await refreshEnterpriseAudit(); } catch { /* ignore audit refresh errors */ }
   try { await refreshEnterpriseReports(); } catch { /* ignore report refresh errors */ }
+  try { await refreshIntegrations(); } catch { /* ignore connector refresh errors */ }
 }
 
 async function onSiteChange(event){
@@ -75,6 +77,7 @@ async function onSiteChange(event){
   renderOrgSiteSelectors(currentContext);
   try { await refreshEnterpriseAudit(); } catch { /* ignore audit refresh errors */ }
   try { await refreshEnterpriseReports(); } catch { /* ignore report refresh errors */ }
+  try { await refreshIntegrations(); } catch { /* ignore connector refresh errors */ }
 }
 
 function setStatusIndicator(dotId, labelId, status, text){
@@ -119,6 +122,18 @@ function renderDashboardSummary(summary){
   el("connectorCameras").textContent = String(connectors.cameras || "offline").toUpperCase();
   el("connectorWeather").textContent = String(connectors.weather || "offline").toUpperCase();
   el("connectorMl").textContent = String(connectors.ml_engine || "offline").toUpperCase();
+
+  // Task 18: overlay live ConnectorManager states onto Command connector panel when available.
+  if (latestConnectors.length) {
+    const byCategory = Object.fromEntries(latestConnectors.map(item => [item.category, item.state]));
+    if (byCategory.aviation) el("connectorAdsb").textContent = String(byCategory.aviation).toUpperCase();
+    if (byCategory.weather) el("connectorWeather").textContent = String(byCategory.weather).toUpperCase();
+    const online = latestConnectors.filter(item => item.state === "online").length;
+    const degraded = latestConnectors.filter(item => item.state === "degraded").length;
+    const errored = latestConnectors.filter(item => item.state === "error").length;
+    const liveStatus = errored ? "critical" : degraded ? "degraded" : online ? "online" : "offline";
+    setStatusIndicator("connectorStatusDot","connectorStatusLabel",liveStatus,`Status ${liveStatus.toUpperCase()} · ${online}/${latestConnectors.length} online`);
+  }
 
   el("alertsActiveTotal").textContent = alertSummary.active ?? 0;
   el("alertsCriticalTotal").textContent = alertSummary.critical ?? 0;
@@ -176,6 +191,12 @@ async function loadDashboardSummary(){
   el("dashboardSummaryMessage").textContent = "Loading dashboard summary…";
   try {
     const summary = await getDashboardSummary();
+    try {
+      latestConnectors = await listConnectors();
+      if (!Array.isArray(latestConnectors)) latestConnectors = [];
+    } catch {
+      latestConnectors = [];
+    }
     renderDashboardSummary(summary);
   } catch (error) {
     renderDashboardError(`Dashboard unavailable: ${error.message}`);

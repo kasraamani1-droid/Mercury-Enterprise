@@ -1,6 +1,7 @@
 import { el, toast } from "./utils.js";
 import { state } from "./state.js";
 import { listAudit, getReportSummary, getReportHistory } from "./api.js";
+import { refreshIntegrations } from "./enterprise8.js";
 
 const workspaces=["command","digitalTwin","radar","executive","history","admin","cloud","integrations","compliance"];
 let serverAudits=[];
@@ -133,6 +134,7 @@ function showWorkspace(name){
   if(name==="admin")loadServerAudit();
   if(name==="executive")loadExecutive();
   if(name==="history")loadHistory();
+  if(name==="integrations")refreshIntegrations();
   if(name==="digitalTwin")updateTwin();
 }
 function renderContacts(){el("radarContacts").innerHTML=contacts.map(r=>`<div class="contact-row"><b>${r[0]}</b><span>${r[1]}<small>${r[2]} · ${r[3]}</small></span><em>${r[5]}</em></div>`).join("")}
