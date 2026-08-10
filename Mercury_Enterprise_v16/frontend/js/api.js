@@ -180,3 +180,19 @@ export async function listAudit({ action, target_id, limit } = {}) {
   const suffix = params.toString() ? `?${params.toString()}` : "";
   return (await request(`/audit${suffix}`)).json();
 }
+export async function getReportSummary({ start, end } = {}) {
+  const params = new URLSearchParams();
+  if (start) params.set("start", start);
+  if (end) params.set("end", end);
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return (await request(`/reports/summary${suffix}`)).json();
+}
+
+export async function getReportHistory({ start, end, limit } = {}) {
+  const params = new URLSearchParams();
+  if (start) params.set("start", start);
+  if (end) params.set("end", end);
+  if (limit != null) params.set("limit", String(limit));
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return (await request(`/reports/history${suffix}`)).json();
+}

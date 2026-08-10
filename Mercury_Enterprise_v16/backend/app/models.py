@@ -17,6 +17,8 @@ class Incident(Base):
     summary: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    organization_id: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
+    site_id: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
     events: Mapped[list["TimelineEvent"]] = relationship(back_populates="incident", cascade="all, delete-orphan")
     evidence: Mapped[list["Evidence"]] = relationship(back_populates="incident", cascade="all, delete-orphan")
 

@@ -1,19 +1,11 @@
 import { el, toast } from "./utils.js";
 import { state } from "./state.js";
-import { listAudit } from "./api.js";
+import { listAudit, getReportSummary, getReportHistory } from "./api.js";
 
 const workspaces=["command","digitalTwin","radar","executive","history","admin","cloud","integrations","compliance"];
 let serverAudits=[];
-const historyRows=[
-  ["INC-30018","CYUL","Unauthorized UAV","HIGH","Open","12:17","34 s","K. Amani"],
-  ["INC-30017","CYUL","Unknown RF","MEDIUM","Resolved","11:42","51 s","M. Chen"],
-  ["INC-30016","CYYZ","Perimeter vehicle","HIGH","Resolved","10:28","42 s","S. Patel"],
-  ["INC-30015","CYVR","Bird activity","LOW","Resolved","09:51","38 s","A. Roy"],
-  ["INC-30014","CYUL","Laser illumination","HIGH","Resolved","08:36","29 s","K. Amani"],
-  ["INC-30013","CYYZ","Unknown track","MEDIUM","Resolved","07:14","47 s","L. Martin"],
-  ["INC-30012","CYUL","Drone near apron","HIGH","Resolved","06:49","31 s","K. Amani"],
-  ["INC-30011","CYVR","RF anomaly","LOW","Resolved","05:22","55 s","J. Singh"]
-];
+let historyRows=[];
+let latestSummary=null;
 const contacts=[
   ["UAV-01","UNKNOWN","2.1 NM","146°","134 m","CRITICAL"],
   ["UAV-02","UNKNOWN","3.8 NM","278°","86 m","MEDIUM"],
@@ -70,25 +62,100 @@ export async function refreshEnterpriseAudit(){
 }
 
 function download(name,data,type="application/json"){const blob=new Blob([data],{type});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=name;a.click();URL.revokeObjectURL(url)}
+
+function renderExecutive(summary){
+  latestSummary=summary;
+  const kpis=summary?.kpis||{};
+  if(el("execIncidentsTotal")) el("execIncidentsTotal").textContent=String(kpis.incidents_total ?? "—");
+  if(el("execIncidentsNote")) el("execIncidentsNote").textContent=`Open ${kpis.incidents_open ?? 0} · site ${summary?.site_id||"—"}`;
+  if(el("execMedianResponse")) {
+    el("execMedianResponse").textContent=kpis.median_response_seconds==null?"—":`${kpis.median_response_seconds} s`;
+  }
+  if(el("execConnectorOnline")) el("execConnectorOnline").textContent=String(kpis.connector_online ?? "—");
+  if(el("execConnectorNote")) {
+    el("execConnectorNote").textContent=`Degraded ${kpis.connector_degraded ?? 0} · Error ${kpis.connector_error ?? 0}`;
+  }
+  if(el("execResolutionRate")) el("execResolutionRate").textContent=`${kpis.resolution_rate ?? 0}%`;
+  if(el("execResolutionNote")) {
+    el("execResolutionNote").textContent=`${kpis.incidents_resolved ?? 0} of ${kpis.incidents_total ?? 0} resolved`;
+  }
+  const trend=summary?.trends?.incidents_by_hour||[];
+  const values=trend.length?trend.map(item=>Number(item.count)||0):Array(24).fill(0);
+  const max=Math.max(1,...values);
+  el("hourlyChart").innerHTML=values.map((v,i)=>`<i style="height:${Math.round((v/max)*80)+18}px" data-label="${String(i).padStart(2,"0")}:00"></i>`).join("");
+}
+
+async function loadExecutive(){
+  try{
+    const summary=await getReportSummary();
+    renderExecutive(summary);
+  }catch(error){
+    toast(error.message||"Unable to load executive report");
+  }
+}
+
+function renderHistory(filter=""){
+  const q=filter.toLowerCase();
+  const rows=historyRows.filter(r=>Object.values(r).join(" ").toLowerCase().includes(q));
+  el("historyBody").innerHTML=rows.length?rows.map(r=>{
+    const severity=String(r.severity||"").toLowerCase();
+    return `<tr>
+      <td>${r.id||""}</td>
+      <td>${r.site_id||""}</td>
+      <td>${r.type||r.title||""}</td>
+      <td><span class="severity ${severity}">${r.severity||""}</span></td>
+      <td>${r.status||""}</td>
+      <td>${r.detected_at?new Date(r.detected_at).toLocaleString():""}</td>
+      <td>${r.response_seconds!=null?`${r.response_seconds} s`:""}</td>
+      <td>${r.operator||""}${r.provenance?` · ${r.provenance}`:""}</td>
+    </tr>`;
+  }).join(""):'<tr><td colspan="8">No historical records for current site/window.</td></tr>';
+}
+
+async function loadHistory(){
+  try{
+    historyRows=await getReportHistory({limit:200});
+    if(!Array.isArray(historyRows)) historyRows=[];
+    renderHistory(el("historySearch")?.value||"");
+  }catch(error){
+    historyRows=[];
+    el("historyBody").innerHTML=`<tr><td colspan="8">${error.message||"Unable to load history"}</td></tr>`;
+  }
+}
+
+export async function refreshEnterpriseReports(){
+  await Promise.allSettled([loadExecutive(), loadHistory()]);
+}
+
 function showWorkspace(name){
   workspaces.forEach(x=>{el(`${x}Workspace`)?.classList.toggle("hidden",x!==name);el(`${x}Workspace`)?.classList.toggle("active",x===name)});
   document.querySelectorAll(".product-tab").forEach(b=>b.classList.toggle("active",b.dataset.workspace===name));
   if(name==="admin")loadServerAudit();
+  if(name==="executive")loadExecutive();
+  if(name==="history")loadHistory();
   if(name==="digitalTwin")updateTwin();
 }
-function renderHistory(filter=""){const q=filter.toLowerCase();el("historyBody").innerHTML=historyRows.filter(r=>r.join(" ").toLowerCase().includes(q)).map(r=>`<tr>${r.map((v,i)=>`<td>${i===3?`<span class="severity ${String(v).toLowerCase()}">${v}</span>`:v}</td>`).join("")}</tr>`).join("")}
 function renderContacts(){el("radarContacts").innerHTML=contacts.map(r=>`<div class="contact-row"><b>${r[0]}</b><span>${r[1]}<small>${r[2]} · ${r[3]}</small></span><em>${r[5]}</em></div>`).join("")}
 function renderPresence(){const html=people.map(p=>`<div><span>●</span><b>${p[0]}<small>${p[1]}</small></b><em>${p[2]}</em></div>`).join("");el("operatorPresence").innerHTML=html;el("responseUnits").innerHTML=people.slice(2).map(p=>`<div><span>●</span><b>${p[0]}<small>${p[1]}</small></b><em>${p[2]}</em></div>`).join("")}
-function renderChart(){const values=[2,4,3,7,5,9,12,8,6,10,7,4];el("hourlyChart").innerHTML=values.map((v,i)=>`<i style="height:${v*8+18}px" data-label="${String(i+6).padStart(2,"0")}:00"></i>`).join("")}
 function updateTwin(){el("twinAltitude").textContent=el("targetAltitude")?.textContent||"120 m";el("twinTargetCount").textContent=`${state.secondaryDrone?2:1} TARGETS`}
-function executiveData(){return {generated_at:new Date().toISOString(),airport:"CYUL",incidents_today:14,median_response_seconds:34,sensor_availability_percent:98.7,resolution_rate_percent:92,system_status:"OPERATIONAL",note:"Simulated demonstration data"}}
 export function initializeEnterprise(){
  document.querySelectorAll(".product-tab").forEach(b=>b.addEventListener("click",()=>showWorkspace(b.dataset.workspace)));
  el("twinViewToggle")?.addEventListener("click",()=>{const stage=document.querySelector(".twin-stage");stage.classList.toggle("perspective");el("twinViewToggle").textContent=stage.classList.contains("perspective")?"Switch to Top View":"Switch to 3D Perspective"});
  el("centerTwin")?.addEventListener("click",()=>toast("Digital Twin centered on CYUL"));
  el("historySearch")?.addEventListener("input",e=>renderHistory(e.target.value));
- el("exportHistory")?.addEventListener("click",()=>{download("mercury-history.csv",["ID,Airport,Type,Severity,Status,Detected,Response,Operator",...historyRows.map(r=>r.join(","))].join("\n"),"text/csv")});
- el("exportExecutive")?.addEventListener("click",()=>{download("mercury-executive-summary.json",JSON.stringify(executiveData(),null,2))});
+ el("exportHistory")?.addEventListener("click",()=>{
+   const header="ID,Airport,Type,Severity,Status,Detected,Response,Operator,Provenance";
+   const lines=historyRows.map(r=>[r.id,r.site_id,r.type||r.title,r.severity,r.status,r.detected_at,r.response_seconds,r.operator,r.provenance].join(","));
+   download("mercury-history.csv",[header,...lines].join("\n"),"text/csv");
+ });
+ el("exportExecutive")?.addEventListener("click",async()=>{
+   try{
+     const summary=latestSummary||await getReportSummary();
+     download("mercury-executive-summary.json",JSON.stringify(summary,null,2));
+   }catch(error){
+     toast(error.message||"Unable to export executive summary");
+   }
+ });
  el("downloadAudit")?.addEventListener("click",async()=>{
    try{
      const rows=serverAudits.length?serverAudits:await listAudit({limit:100});
@@ -98,6 +165,6 @@ export function initializeEnterprise(){
    }
  });
  el("roleSelect")?.addEventListener("change",e=>{el("permissionSummary").textContent=roles[e.target.value]});
- renderHistory();renderContacts();renderPresence();renderChart();el("permissionSummary").textContent=roles.Commander;
+ renderContacts();renderPresence();el("permissionSummary").textContent=roles.Commander;
 }
 export function updateEnterprise(){updateTwin()}

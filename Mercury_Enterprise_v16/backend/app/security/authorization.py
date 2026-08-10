@@ -19,13 +19,17 @@ PERMISSIONS_BY_ROLE: dict[Role, set[str]] = {
         "incident.evidence",
         "approval.request",
         "alerts.ack",
+        "reports.read",
     },
     Role.REVIEWER: {
         "approval.review",
         "alerts.ack",
         "audit.read",
+        "reports.read",
     },
-    Role.VIEWER: set(),
+    Role.VIEWER: {
+        "reports.read",
+    },
 }
 
 

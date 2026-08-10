@@ -8,7 +8,7 @@ import { onTrackingTick, updateFusion, updateThreatMatrix, acknowledgeThreat } f
 import { initializeMissionOps, updateWeather, updateProactiveBrief } from "./missionOps.js";
 import { initializeCommandCenter } from "./commandCenter.js";
 import { initializeRealtimeConsole } from "./realtimeConsole.js";
-import { initializeEnterprise, refreshEnterpriseAudit } from "./enterprise.js";
+import { initializeEnterprise, refreshEnterpriseAudit, refreshEnterpriseReports } from "./enterprise.js";
 import { initializeEnterprise8 } from "./enterprise8.js";
 import { initializeWebSocket } from "./websocket.js";
 let currentSession = null;
@@ -66,6 +66,7 @@ async function onOrganizationChange(event){
   currentContext = await updateSessionContext({ organization_id });
   renderOrgSiteSelectors(currentContext);
   try { await refreshEnterpriseAudit(); } catch { /* ignore audit refresh errors */ }
+  try { await refreshEnterpriseReports(); } catch { /* ignore report refresh errors */ }
 }
 
 async function onSiteChange(event){
@@ -73,6 +74,7 @@ async function onSiteChange(event){
   currentContext = await updateSessionContext({ site_id });
   renderOrgSiteSelectors(currentContext);
   try { await refreshEnterpriseAudit(); } catch { /* ignore audit refresh errors */ }
+  try { await refreshEnterpriseReports(); } catch { /* ignore report refresh errors */ }
 }
 
 function setStatusIndicator(dotId, labelId, status, text){

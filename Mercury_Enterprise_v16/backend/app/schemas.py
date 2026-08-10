@@ -47,6 +47,8 @@ class IncidentOut(IncidentCreate):
     id: str
     created_at: datetime
     updated_at: datetime
+    organization_id: str | None = None
+    site_id: str | None = None
 
 class IncidentDetail(IncidentOut):
     events: list[TimelineEventOut]

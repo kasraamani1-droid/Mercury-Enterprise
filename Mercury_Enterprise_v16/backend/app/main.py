@@ -27,6 +27,7 @@ from .audit import list_audit_events, normalize_provenance, record_audit
 from .database import SessionLocal, ensure_schema, get_db
 from .decision import DecisionEngine
 from .models import Evidence, Incident, TimelineEvent
+from .reporting import build_report_history, build_report_summary
 from .schemas import (
     AuditEventOut,
     EvidenceCreate,
@@ -271,6 +272,14 @@ def seed_demo() -> None:
         return
     db = SessionLocal()
     try:
+        # Task 17: stamp legacy unscoped incidents so site reports remain usable in demos.
+        legacy = list(db.scalars(select(Incident).where(Incident.site_id.is_(None))).all())
+        for item in legacy:
+            item.organization_id = item.organization_id or "org-aviation-east"
+            item.site_id = "site-cyul"
+        if legacy:
+            db.commit()
+
         if db.scalar(select(Incident).limit(1)):
             return
         incident = Incident(
@@ -278,6 +287,8 @@ def seed_demo() -> None:
             status="open",
             severity="high",
             summary="Simulated demonstration incident for Mercury Enterprise.",
+            organization_id="org-aviation-east",
+            site_id="site-cyul",
         )
         db.add(incident)
         db.flush()
@@ -655,7 +666,11 @@ async def create_incident(
     db: Session = Depends(get_db),
     session: dict[str, datetime | str] = Depends(require_permissions("incident.create")),
 ):
-    incident = Incident(**payload.model_dump())
+    incident = Incident(
+        **payload.model_dump(),
+        organization_id=str(session["organization_id"]),
+        site_id=str(session["site_id"]),
+    )
     db.add(incident)
     db.flush()
     record_audit(
@@ -868,6 +883,40 @@ def list_audit(
         target_id=target_id,
         limit=limit,
         retention_days=settings.audit_retention_days,
+    )
+
+
+@app.get("/api/v1/reports/summary")
+def report_summary(
+    start: datetime | None = None,
+    end: datetime | None = None,
+    db: Session = Depends(get_db),
+    session: dict[str, datetime | str] = Depends(require_permissions("reports.read")),
+):
+    return build_report_summary(
+        db,
+        organization_id=str(session["organization_id"]),
+        site_id=str(session["site_id"]),
+        start=start,
+        end=end,
+    )
+
+
+@app.get("/api/v1/reports/history")
+def report_history(
+    start: datetime | None = None,
+    end: datetime | None = None,
+    limit: int = 200,
+    db: Session = Depends(get_db),
+    session: dict[str, datetime | str] = Depends(require_permissions("reports.read")),
+):
+    return build_report_history(
+        db,
+        organization_id=str(session["organization_id"]),
+        site_id=str(session["site_id"]),
+        start=start,
+        end=end,
+        limit=limit,
     )
 
 
