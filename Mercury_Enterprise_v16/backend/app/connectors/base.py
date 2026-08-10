@@ -33,21 +33,23 @@ class BaseConnector(ABC):
         raise NotImplementedError
 
     async def health(self) -> ConnectorHealth:
+        # latency_ms measures local health-evaluation duration only (not remote RTT).
+        # APPLY_TASK_18 / Milestone 1 require diagnosability via state, history, and errors;
+        # they do not require probing remote connector latency. Mock providers have no RTT.
         started = perf_counter()
-        if self.record.state == ConnectorState.online:
-            message = "ok"
-        elif self.record.state == ConnectorState.degraded:
-            message = self.record.last_error or "connector degraded"
+        payload: dict = {
+            "connector_id": self.record.id,
+            "state": self.record.state,
+            "latency_ms": round((perf_counter() - started) * 1000, 2),
+            "retry_count": self.record.retry_count,
+            "last_error": self.record.last_error,
+            "last_transition_at": self.record.last_transition_at,
+        }
+        if self.record.state == ConnectorState.degraded:
+            payload["message"] = self.record.last_error or "connector degraded"
         elif self.record.state == ConnectorState.error:
-            message = self.record.last_error or "connector error"
-        else:
-            message = f"connector {self.record.state.value}"
-        return ConnectorHealth(
-            connector_id=self.record.id,
-            state=self.record.state,
-            latency_ms=round((perf_counter() - started) * 1000, 2),
-            message=message,
-            retry_count=self.record.retry_count,
-            last_error=self.record.last_error,
-            last_transition_at=self.record.last_transition_at,
-        )
+            payload["message"] = self.record.last_error or "connector error"
+        elif self.record.state != ConnectorState.online:
+            payload["message"] = f"connector {self.record.state.value}"
+        # online: omit message so ConnectorHealth default ("ok") applies
+        return ConnectorHealth(**payload)
