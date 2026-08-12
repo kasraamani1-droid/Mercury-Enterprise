@@ -22,7 +22,7 @@ from .fusion import FusionEngine
 from .missions import MissionService, MissionStatus
 from .ops import ResponseOrchestrationEngine
 from .core.config import settings
-from .core.health import build_health_payload, build_platform_status, build_ready_payload
+from .core.health import build_health_payload, build_live_payload, build_platform_status, build_ready_payload
 from .core.logging import configure_logging
 from .audit import list_audit_events, normalize_provenance, record_audit
 from .database import SessionLocal, ensure_schema, get_db
@@ -46,6 +46,7 @@ from .schemas import (
     TimelineEventOut,
 )
 from .security.authorization import Role, has_permissions
+from .security.rate_limit import classify_rate_limit_path, client_key, rate_limiter
 from .timeline import TimelineManager
 from .websocket.manager import manager
 from .routers import connectors_router, ops_router
@@ -430,6 +431,25 @@ app.add_middleware(
 
 
 @app.middleware("http")
+async def rate_limit_requests(request: Request, call_next):
+    bucket = classify_rate_limit_path(request.url.path)
+    if bucket is not None:
+        limit = (
+            settings.rate_limit_login_per_minute
+            if bucket == "login"
+            else settings.rate_limit_api_per_minute
+        )
+        key = f"{bucket}:{client_key(request.client.host if request.client else None, request.headers.get('x-forwarded-for'))}"
+        if not rate_limiter.allow(key, limit=limit, window_seconds=60.0):
+            return JSONResponse(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                content={"detail": "Rate limit exceeded", "retry_after_seconds": 60},
+                headers={"Retry-After": "60"},
+            )
+    return await call_next(request)
+
+
+@app.middleware("http")
 async def request_context(request: Request, call_next):
     request_id = request.headers.get("x-request-id", str(uuid.uuid4()))
     started = time.perf_counter()
@@ -450,6 +470,21 @@ async def request_context(request: Request, call_next):
         elapsed_ms,
     )
     return response
+
+
+@app.get("/health")
+def root_health(db: Session = Depends(get_db)):
+    return build_health_payload(db, connector_manager)
+
+
+@app.get("/ready")
+def root_ready(db: Session = Depends(get_db)):
+    return build_ready_payload(db)
+
+
+@app.get("/live")
+def root_live():
+    return build_live_payload()
 
 
 @app.get("/api/v1/health")
@@ -476,6 +511,7 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
     if role is None or payload.password != settings.auth_password:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
     session_id, expires_at = _create_session(payload.operator, role)
+    # Auth cookies: always HttpOnly + SameSite=Lax (or configured); Secure required in production/HTTPS.
     response.set_cookie(
         key=settings.session_cookie_name,
         value=session_id,
@@ -530,7 +566,13 @@ def logout(response: Response, request: Request, db: Session = Depends(get_db)):
         except Exception:
             logger.exception("Failed to record auth.logout audit")
     _invalidate_session(_request_session_id(request))
-    response.delete_cookie(key=settings.session_cookie_name, path="/", secure=settings.session_cookie_secure, samesite=settings.session_cookie_samesite)
+    response.delete_cookie(
+        key=settings.session_cookie_name,
+        path="/",
+        secure=settings.session_cookie_secure,
+        httponly=True,
+        samesite=settings.session_cookie_samesite,
+    )
     return {"authenticated": False}
 
 
