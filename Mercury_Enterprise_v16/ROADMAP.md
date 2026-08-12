@@ -10,14 +10,16 @@ Mercury ships as an incremental FastAPI + vanilla JS foundation. Items below are
 | **v0.9.1** | Production security & infrastructure (HTTPS, headers, rate limits, Compose production profile) |
 | **v0.9.2** | Enterprise observability & operations (logs, metrics, admin APIs, backup scripts) |
 | **Sprint 5** | Enterprise organizations & multi-tenancy (companies, sites, departments, teams, memberships) |
+| **Sprint 6** | Aircraft registry & fleet management (manufacturers, models, aircraft, registrations, fleets) |
 
 ## Near term (additive)
 
 1. **Shared session store** — Redis-backed sessions to allow multi-worker API processes  
 2. **Metrics scrape gateway** — authenticated or network-isolated Prometheus access pattern  
 3. **Deeper backup automation** — scheduled Compose jobs + restore drills in CI  
-4. **Frontend admin views** — consume `/admin/*` and org APIs without new SPA frameworks  
-5. **Directory sync** — unify `org_users` passwords with `operator_store` / future IdP
+4. **Frontend admin views** — consume `/admin/*`, org, and fleet APIs without new SPA frameworks  
+5. **Directory sync** — unify `org_users` passwords with `operator_store` / future IdP  
+6. **Aircraft–incident linkage** — optional aircraft_id on incidents for operational correlation
 
 ## Deferred platform expansion
 

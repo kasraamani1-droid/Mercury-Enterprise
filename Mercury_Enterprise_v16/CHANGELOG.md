@@ -2,6 +2,15 @@
 
 All notable changes to Mercury Enterprise are summarized here. Package/API version remains `16.0.0` unless noted; sprint tags mark security/ops increments.
 
+## Sprint 6 — Aircraft Registry & Fleet Management
+
+### Added
+- Aviation domain: manufacturers, aircraft models, statuses, fleet operators, fleets, aircraft, registrations
+- Alembic migration `20260812_0003_aircraft_registry`
+- REST APIs under `/api/v1/fleet/*` with org isolation, audit events, and seed catalog/demo fleet
+- Permissions `fleet.read` / `fleet.manage`; dashboard `fleet_health.aircraft_online` from registry
+- Docs: `docs/FLEET_REGISTRY.md`
+
 ## Sprint 5 — Enterprise Organizations & Multi-Tenancy
 
 ### Added

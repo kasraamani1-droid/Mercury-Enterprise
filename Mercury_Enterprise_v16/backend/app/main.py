@@ -61,6 +61,8 @@ from .websocket.manager import manager
 from .routers import admin_router, connectors_router, ops_router
 from .org.router import router as org_router
 from .org.service import OrganizationService
+from .fleet.router import router as fleet_router
+from .fleet.service import FleetService
 from .connectors.manager import connector_manager
 from .connectors.models import ConnectorState
 
@@ -137,6 +139,15 @@ def seed_organizations() -> None:
             default_password_hash=hash_password(settings.auth_password),
             operator_roles=dict(_ROLE_BY_OPERATOR),
         )
+    finally:
+        db.close()
+
+
+def seed_fleet() -> None:
+    """Idempotent aircraft registry catalog + east-org demo fleet."""
+    db = SessionLocal()
+    try:
+        FleetService(db).ensure_seed_data()
     finally:
         db.close()
 
@@ -397,6 +408,7 @@ async def lifespan(app: FastAPI):
     settings.validate_for_startup()
     ensure_schema()
     seed_organizations()
+    seed_fleet()
     seed_demo()
     timeline_manager.add_event(
         event_type="mission.started",
@@ -445,6 +457,7 @@ app.include_router(connectors_router)
 app.include_router(ops_router)
 app.include_router(admin_router)
 app.include_router(org_router)
+app.include_router(fleet_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -1360,6 +1373,7 @@ def dashboard_summary(
             Incident.site_id == site_id,
         )
     ) or 0
+    fleet_operational = FleetService(db).repo.count_operational_aircraft(organization_id=org_id)
 
     stored_decisions = decision_engine.list_decisions(organization_id=org_id, site_id=site_id, limit=20)
     pending_reviews = sum(1 for item in stored_decisions if str((item.get("review") or {}).get("state") or "") == "pending")
@@ -1458,7 +1472,7 @@ def dashboard_summary(
             "advisory_only": True,
         },
         "fleet_health": {
-            "aircraft_online": 0,
+            "aircraft_online": int(fleet_operational),
             "active_sensors": sensor_online,
             "incidents": int(incident_count),
             "ai_confidence": 0,
