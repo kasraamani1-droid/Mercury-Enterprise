@@ -30,6 +30,7 @@ def ensure_schema() -> None:
     from . import models  # noqa: F401
     from .org import models as org_models  # noqa: F401
     from .fleet import models as fleet_models  # noqa: F401
+    from .components import models as component_models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
 

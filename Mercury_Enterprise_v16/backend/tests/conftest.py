@@ -17,9 +17,10 @@ os.environ.setdefault("MERCURY_AUDIT_API_ACCESS", "false")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.database import ensure_schema
-from app.main import seed_demo, seed_fleet, seed_organizations
+from app.main import seed_components, seed_demo, seed_fleet, seed_organizations
 
 ensure_schema()
 seed_organizations()
 seed_fleet()
+seed_components()
 seed_demo()

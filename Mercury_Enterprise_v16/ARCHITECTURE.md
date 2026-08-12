@@ -41,6 +41,7 @@ Backend port `8000` is **not** published on the host in production Compose. Scal
 | RBAC, rate limit, operators | `backend/app/security/` |
 | Organizations / multi-tenancy | `backend/app/org/` |
 | Aircraft registry / fleets | `backend/app/fleet/` |
+| Aircraft components / configuration | `backend/app/components/` |
 | WebSocket manager | `backend/app/websocket/` |
 | Persistence models | `backend/app/models.py` |
 | API contracts | `backend/app/schemas.py` |
@@ -55,6 +56,7 @@ Backend port `8000` is **not** published on the host in production Compose. Scal
 - **Auth:** Session cookie + server-side RBAC (Administrator / Operator / Reviewer / Viewer)
 - **Organizations:** Persisted company → organization → site → department → team hierarchy with membership-scoped context switches (see [docs/ORGANIZATIONS.md](docs/ORGANIZATIONS.md))
 - **Fleet registry:** Shared manufacturer/model/status catalog plus org-scoped operators, fleets, aircraft, and registrations (see [docs/FLEET_REGISTRY.md](docs/FLEET_REGISTRY.md))
+- **Components:** ATA catalog, serialized components, install/remove/transfer history, and aircraft configuration (see [docs/AIRCRAFT_CONFIGURATION.md](docs/AIRCRAFT_CONFIGURATION.md))
 - **Observability:** JSON logs, `/health` `/ready` `/live`, Prometheus `/metrics`, admin audit APIs
 - **Security edge:** TLS 1.2+, security headers, rate limits (see [SECURITY.md](SECURITY.md))
 

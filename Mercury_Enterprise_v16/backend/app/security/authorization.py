@@ -33,6 +33,10 @@ PERMISSIONS_BY_ROLE: dict[Role, set[str]] = {
         "org.read",
         "fleet.read",
         "fleet.manage",
+        "component.read",
+        "component.manage",
+        "configuration.read",
+        "configuration.manage",
     },
     Role.REVIEWER: {
         "approval.review",
@@ -48,6 +52,8 @@ PERMISSIONS_BY_ROLE: dict[Role, set[str]] = {
         "platform.read",
         "org.read",
         "fleet.read",
+        "component.read",
+        "configuration.read",
     },
     Role.VIEWER: {
         "reports.read",
@@ -59,6 +65,8 @@ PERMISSIONS_BY_ROLE: dict[Role, set[str]] = {
         "platform.read",
         "org.read",
         "fleet.read",
+        "component.read",
+        "configuration.read",
     },
 }
 

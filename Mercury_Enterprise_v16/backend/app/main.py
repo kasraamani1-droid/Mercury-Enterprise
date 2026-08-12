@@ -63,6 +63,8 @@ from .org.router import router as org_router
 from .org.service import OrganizationService
 from .fleet.router import router as fleet_router
 from .fleet.service import FleetService
+from .components.router import router as components_router
+from .components.service import ComponentService
 from .connectors.manager import connector_manager
 from .connectors.models import ConnectorState
 
@@ -148,6 +150,15 @@ def seed_fleet() -> None:
     db = SessionLocal()
     try:
         FleetService(db).ensure_seed_data()
+    finally:
+        db.close()
+
+
+def seed_components() -> None:
+    """Idempotent ATA/catalog + east-org serialized component demo."""
+    db = SessionLocal()
+    try:
+        ComponentService(db).ensure_seed_data()
     finally:
         db.close()
 
@@ -409,6 +420,7 @@ async def lifespan(app: FastAPI):
     ensure_schema()
     seed_organizations()
     seed_fleet()
+    seed_components()
     seed_demo()
     timeline_manager.add_event(
         event_type="mission.started",
@@ -458,6 +470,7 @@ app.include_router(ops_router)
 app.include_router(admin_router)
 app.include_router(org_router)
 app.include_router(fleet_router)
+app.include_router(components_router)
 
 app.add_middleware(
     CORSMiddleware,

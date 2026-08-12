@@ -2,6 +2,14 @@
 
 All notable changes to Mercury Enterprise are summarized here. Package/API version remains `16.0.0` unless noted; sprint tags mark security/ops increments.
 
+## Sprint 7 — Aircraft Components & Configuration Management
+
+### Added
+- ATA chapters, component catalog, serialized components, immutable installation history
+- Install / remove / transfer flows with TSN/CSN/TSO/CSO decimal hour tracking and optional life limits
+- Aircraft configuration API; permissions `component.*` / `configuration.*`
+- Alembic `20260812_0004_aircraft_components`; docs `docs/AIRCRAFT_CONFIGURATION.md`
+
 ## Sprint 6 — Aircraft Registry & Fleet Management
 
 ### Added
