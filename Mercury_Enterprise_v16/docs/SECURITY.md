@@ -16,7 +16,9 @@ Not currently enforced (reserved / deferred):
 - OIDC/SSO/MFA
 
 Public probes: `GET /health`, `GET /ready`, `GET /live` (also `/api/v1/health`, `/api/v1/ready`).
+Metrics: `GET /metrics` (Prometheus). Admin ops: `GET /admin/system|health|metrics|audit`.
 
 HTTPS / TLS production deployment: `docs/security/HTTPS.md`.
+Observability: `docs/OBSERVABILITY.md`, `docs/AUDIT_LOGGING.md`, `docs/MONITORING.md`, `docs/BACKUP.md`.
 
 See `docs/design/PRODUCTION_HARDENING_REPORT.md` and `.env.example`.

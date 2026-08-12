@@ -62,7 +62,7 @@ class Settings:
     session_cookie_secure: bool = False
     audit_retention_days: int = _int("MERCURY_AUDIT_RETENTION_DAYS", 365)
     log_json: bool = _bool("MERCURY_LOG_JSON", False)
-    metrics_enabled: bool = _bool("MERCURY_METRICS_ENABLED", False)  # Reserved; /metrics not enabled by default.
+    metrics_enabled: bool = _bool("MERCURY_METRICS_ENABLED", True)
     jwt_secret: str = ""
     cookie_secret: str = ""
     domain: str = os.getenv("DOMAIN", "")
@@ -70,6 +70,11 @@ class Settings:
     letsencrypt_email: str = os.getenv("LETSENCRYPT_EMAIL", "")
     rate_limit_login_per_minute: int = _int("MERCURY_RATE_LIMIT_LOGIN_PER_MINUTE", 10)
     rate_limit_api_per_minute: int = _int("MERCURY_RATE_LIMIT_API_PER_MINUTE", 300)
+    build_version: str = os.getenv("MERCURY_BUILD_VERSION", os.getenv("MERCURY_VERSION", "16.0.0"))
+    redis_url: str = os.getenv("REDIS_URL", "")
+    redis_required: bool = _bool("REDIS_REQUIRED", False)
+    audit_api_access: bool = _bool("MERCURY_AUDIT_API_ACCESS", False)
+    log_file: str = os.getenv("LOG_FILE", "")
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "cors_origins", _csv("MERCURY_CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"))

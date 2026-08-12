@@ -23,8 +23,18 @@ from .missions import MissionService, MissionStatus
 from .ops import ResponseOrchestrationEngine
 from .core.config import settings
 from .core.health import build_health_payload, build_live_payload, build_platform_status, build_ready_payload
-from .core.logging import configure_logging
-from .audit import list_audit_events, normalize_provenance, record_audit
+from .core.logging import bind_request_context, configure_logging
+from .core import metrics as metrics_mod
+from .audit import (
+    ACTION_API_ACCESS,
+    ACTION_LOGIN,
+    ACTION_LOGIN_FAILURE,
+    ACTION_LOGOUT,
+    ACTION_SECURITY_EVENT,
+    list_audit_events,
+    normalize_provenance,
+    record_audit,
+)
 from .database import SessionLocal, ensure_schema, get_db
 from .decision import DecisionEngine
 from .models import Evidence, Incident, TimelineEvent
@@ -46,10 +56,11 @@ from .schemas import (
     TimelineEventOut,
 )
 from .security.authorization import Role, has_permissions
+from .security.operators import operator_store
 from .security.rate_limit import classify_rate_limit_path, client_key, rate_limiter
 from .timeline import TimelineManager
 from .websocket.manager import manager
-from .routers import connectors_router, ops_router
+from .routers import admin_router, connectors_router, ops_router
 from .connectors.manager import connector_manager
 from .connectors.models import ConnectorState
 
@@ -101,6 +112,13 @@ _ROLE_BY_OPERATOR = {
     "reviewer": Role.REVIEWER.value,
     "viewer": Role.VIEWER.value,
 }
+
+# Bootstrap mutable operator directory from static roles + shared password.
+operator_store.bootstrap(
+    auth_operator=settings.auth_operator,
+    auth_password=settings.auth_password,
+    role_by_operator=_ROLE_BY_OPERATOR,
+)
 
 
 class LoginRequest(BaseModel):
@@ -420,6 +438,7 @@ app = FastAPI(
 )
 app.include_router(connectors_router)
 app.include_router(ops_router)
+app.include_router(admin_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -441,6 +460,7 @@ async def rate_limit_requests(request: Request, call_next):
         )
         key = f"{bucket}:{client_key(request.client.host if request.client else None, request.headers.get('x-forwarded-for'))}"
         if not rate_limiter.allow(key, limit=limit, window_seconds=60.0):
+            metrics_mod.observe_rate_limit_block(bucket)
             return JSONResponse(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 content={"detail": "Rate limit exceeded", "retry_after_seconds": 60},
@@ -451,24 +471,74 @@ async def rate_limit_requests(request: Request, call_next):
 
 @app.middleware("http")
 async def request_context(request: Request, call_next):
-    request_id = request.headers.get("x-request-id", str(uuid.uuid4()))
+    request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
+    correlation_id = request.headers.get("x-correlation-id") or request_id
+    session = _validate_session(_request_session_id(request))
+    user_id = str(session["operator"]) if session else ""
+    bind_request_context(request_id=request_id, correlation_id=correlation_id, user_id=user_id)
     started = time.perf_counter()
     try:
         response = await call_next(request)
-    except Exception as exc:
-        logger.exception("Unhandled request error request_id=%s path=%s", request_id, request.url.path)
+    except Exception:
+        logger.exception("Unhandled request error path=%s", request.url.path)
+        metrics_mod.observe_request(
+            method=request.method,
+            path=request.url.path,
+            status_code=500,
+            duration_seconds=time.perf_counter() - started,
+        )
         return JSONResponse(status_code=500, content={"detail": "Internal server error", "request_id": request_id})
-    elapsed_ms = (time.perf_counter() - started) * 1000
+    elapsed = time.perf_counter() - started
+    elapsed_ms = elapsed * 1000
     response.headers["x-request-id"] = request_id
+    response.headers["x-correlation-id"] = correlation_id
     response.headers["x-response-time-ms"] = f"{elapsed_ms:.1f}"
+    if settings.metrics_enabled:
+        metrics_mod.observe_request(
+            method=request.method,
+            path=request.url.path,
+            status_code=response.status_code,
+            duration_seconds=elapsed,
+        )
+        metrics_mod.set_active_users(len(_sessions))
     logger.info(
-        "request method=%s path=%s status=%s request_id=%s duration_ms=%.1f",
+        "request method=%s path=%s status=%s duration_ms=%.1f",
         request.method,
         request.url.path,
         response.status_code,
-        request_id,
         elapsed_ms,
     )
+    # API access audit for mutating authenticated calls (and all /admin writes already audited).
+    if (
+        settings.audit_api_access
+        and session is not None
+        and request.method.upper() in {"POST", "PATCH", "PUT", "DELETE"}
+        and not request.url.path.startswith("/admin/")
+        and request.url.path.startswith("/api/")
+        and request.url.path not in {"/api/v1/auth/login", "/api/v1/auth/logout"}
+    ):
+        try:
+            db = SessionLocal()
+            try:
+                record_audit(
+                    db,
+                    action=ACTION_API_ACCESS,
+                    actor=str(session["operator"]),
+                    actor_role=str(session["role"]),
+                    organization_id=str(session["organization_id"]),
+                    site_id=str(session["site_id"]),
+                    target_type="endpoint",
+                    target_id=f"{request.method.upper()} {request.url.path}",
+                    source="api",
+                    outcome="success" if response.status_code < 400 else "failure",
+                    origin="operator",
+                    details=f"status={response.status_code}",
+                )
+                db.commit()
+            finally:
+                db.close()
+        except Exception:
+            logger.exception("Failed to record api.access audit")
     return response
 
 
@@ -485,6 +555,14 @@ def root_ready(db: Session = Depends(get_db)):
 @app.get("/live")
 def root_live():
     return build_live_payload()
+
+
+@app.get("/metrics")
+def prometheus_metrics():
+    if not settings.metrics_enabled:
+        raise HTTPException(status_code=404, detail="Metrics disabled")
+    payload, content_type = metrics_mod.render_prometheus()
+    return Response(content=payload, media_type=content_type)
 
 
 @app.get("/api/v1/health")
@@ -507,9 +585,45 @@ def platform_status(
 
 @app.post("/api/v1/auth/login")
 def login(payload: LoginRequest, response: Response, db: Session = Depends(get_db)):
-    role = _ROLE_BY_OPERATOR.get(payload.operator)
-    if role is None or payload.password != settings.auth_password:
+    role = operator_store.authenticate(payload.operator, payload.password)
+    if role is None:
+        metrics_mod.observe_login(success=False)
+        try:
+            default_organization = next(iter(_organizations.values()))
+            default_site = _sites_by_organization[default_organization.organization_id][0]
+            record_audit(
+                db,
+                action=ACTION_LOGIN_FAILURE,
+                actor=payload.operator[:120],
+                actor_role="",
+                organization_id=default_organization.organization_id,
+                site_id=default_site.site_id,
+                target_type="session",
+                target_id=payload.operator[:120],
+                source="api",
+                outcome="failure",
+                origin="operator",
+                details="invalid_credentials",
+            )
+            record_audit(
+                db,
+                action=ACTION_SECURITY_EVENT,
+                actor=payload.operator[:120],
+                actor_role="",
+                organization_id=default_organization.organization_id,
+                site_id=default_site.site_id,
+                target_type="auth",
+                target_id="login",
+                source="api",
+                outcome="failure",
+                origin="system",
+                details="invalid_credentials",
+            )
+            _safe_commit_audit(db)
+        except Exception:
+            logger.exception("Failed to record login failure audit")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+    metrics_mod.observe_login(success=True)
     session_id, expires_at = _create_session(payload.operator, role)
     # Auth cookies: always HttpOnly + SameSite=Lax (or configured); Secure required in production/HTTPS.
     response.set_cookie(
@@ -525,7 +639,7 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
         session = _sessions[session_id]
         record_audit(
             db,
-            action="auth.login",
+            action=ACTION_LOGIN,
             actor=payload.operator,
             actor_role=role,
             organization_id=str(session["organization_id"]),
@@ -540,6 +654,7 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
         _safe_commit_audit(db)
     except Exception:
         logger.exception("Failed to record auth.login audit")
+    metrics_mod.set_active_users(len(_sessions))
     return {"authenticated": True, "operator": payload.operator, "role": role, "expires_at": expires_at.isoformat()}
 
 
@@ -550,7 +665,7 @@ def logout(response: Response, request: Request, db: Session = Depends(get_db)):
         try:
             record_audit(
                 db,
-                action="auth.logout",
+                action=ACTION_LOGOUT,
                 actor=str(session["operator"]),
                 actor_role=str(session["role"]),
                 organization_id=str(session["organization_id"]),
@@ -566,6 +681,7 @@ def logout(response: Response, request: Request, db: Session = Depends(get_db)):
         except Exception:
             logger.exception("Failed to record auth.logout audit")
     _invalidate_session(_request_session_id(request))
+    metrics_mod.set_active_users(len(_sessions))
     response.delete_cookie(
         key=settings.session_cookie_name,
         path="/",

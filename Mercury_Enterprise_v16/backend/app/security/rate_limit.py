@@ -47,6 +47,7 @@ def is_probe_path(path: str) -> bool:
         "/health",
         "/ready",
         "/live",
+        "/metrics",
         "/api/v1/health",
         "/api/v1/ready",
     }

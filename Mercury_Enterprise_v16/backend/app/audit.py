@@ -64,6 +64,18 @@ def record_audit(
     return event
 
 
+# Canonical audit action names used across Mercury observability.
+ACTION_LOGIN = "auth.login"
+ACTION_LOGOUT = "auth.logout"
+ACTION_LOGIN_FAILURE = "security.login_failure"
+ACTION_USER_CREATE = "user.create"
+ACTION_PASSWORD_CHANGE = "user.password_change"
+ACTION_ROLE_CHANGE = "user.role_change"
+ACTION_CONFIG_CHANGE = "config.change"
+ACTION_API_ACCESS = "api.access"
+ACTION_SECURITY_EVENT = "security.event"
+
+
 def list_audit_events(
     db: Session,
     *,
@@ -88,5 +100,26 @@ def list_audit_events(
         stmt = stmt.where(AuditEvent.action == action)
     if target_id:
         stmt = stmt.where(AuditEvent.target_id == target_id)
+    stmt = stmt.order_by(AuditEvent.occurred_at.desc()).limit(clamped_limit)
+    return list(db.scalars(stmt).all())
+
+
+def list_audit_events_admin(
+    db: Session,
+    *,
+    action: str | None = None,
+    actor: str | None = None,
+    limit: int = 100,
+    retention_days: int | None = None,
+) -> list[AuditEvent]:
+    """Administrator cross-site audit listing."""
+    clamped_limit = max(1, min(int(limit), 500))
+    days = settings.audit_retention_days if retention_days is None else retention_days
+    cutoff = datetime.utcnow() - timedelta(days=max(1, int(days)))
+    stmt = select(AuditEvent).where(AuditEvent.occurred_at >= cutoff)
+    if action:
+        stmt = stmt.where(AuditEvent.action == action)
+    if actor:
+        stmt = stmt.where(AuditEvent.actor == actor)
     stmt = stmt.order_by(AuditEvent.occurred_at.desc()).limit(clamped_limit)
     return list(db.scalars(stmt).all())
