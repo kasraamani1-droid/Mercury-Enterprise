@@ -1,0 +1,10 @@
+# Default owners for Mercury Enterprise repository automation and reviews.
+# GitHub handle must match an org/repo collaborator with write access.
+
+*       @kasraamani1-droid
+
+/.github/               @kasraamani1-droid
+/Mercury_Enterprise_v16/backend/   @kasraamani1-droid
+/Mercury_Enterprise_v16/frontend/  @kasraamani1-droid
+/Mercury_Enterprise_v16/deploy/    @kasraamani1-droid
+/Mercury_Enterprise_v16/docs/      @kasraamani1-droid
