@@ -1,6 +1,49 @@
-.venv/
+# Python
 __pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+venv/
+.v/
+
+# Testing
 .pytest_cache/
-*.pyc
-.DS_Store
+.ruff_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# VS Code
 .vscode/
+
+# Logs
+*.log
+
+# Database / runtime SQLite
+*.db
+*.sqlite
+*.sqlite3
+mercury.db
+**/mercury.db
+**/mercury_*.db
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Local dual-process API/WS overrides (created by START_FRONTEND.bat)
+frontend/js/config.local.js
+
+# Temp / scratch
+tmp_*.txt
+**/tmp_*.txt
+*.tmp
+*.bak
+
+# OS
+.DS_Store
+Thumbs.db

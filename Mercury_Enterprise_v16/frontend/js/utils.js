@@ -6,6 +6,19 @@ export const esc = value => String(value ?? "")
   .replaceAll('"', "&quot;")
   .replaceAll("'", "&#039;");
 export const fmt = value => value ? new Date(value).toLocaleString() : "Unknown time";
+
+/** Download a string or JSON-serializable payload as a browser file. */
+export function download(name, data, type = "application/json") {
+  const payload = typeof data === "string" ? data : JSON.stringify(data, null, 2);
+  const blob = new Blob([payload], { type });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = name;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
 export function toast(message) {
   const node = el("toast");
   node.textContent = message;

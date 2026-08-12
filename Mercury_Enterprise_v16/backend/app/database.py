@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from .core.config import settings
@@ -18,3 +18,59 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def ensure_schema() -> None:
+    """Create missing tables and apply minimal SQLite ALTERs for Task 16/17 columns.
+
+    Production Postgres upgrades should run Alembic (`alembic upgrade head`) before or
+    beside application start. `create_all` remains for empty SQLite/dev databases.
+    """
+    # Import models so metadata includes Incident/Evidence/AuditEvent tables.
+    from . import models  # noqa: F401
+
+    Base.metadata.create_all(bind=engine)
+
+    if not settings.database_url.startswith("sqlite"):
+        return
+
+    with engine.begin() as connection:
+        evidence_columns = {row[1] for row in connection.execute(text("PRAGMA table_info(evidence)")).fetchall()}
+        evidence_alterations: list[str] = []
+        if "provenance" not in evidence_columns:
+            evidence_alterations.append(
+                "ALTER TABLE evidence ADD COLUMN provenance VARCHAR(40) NOT NULL DEFAULT 'operator_entered'"
+            )
+        if "created_by" not in evidence_columns:
+            evidence_alterations.append(
+                "ALTER TABLE evidence ADD COLUMN created_by VARCHAR(120) NOT NULL DEFAULT ''"
+            )
+        if "organization_id" not in evidence_columns:
+            evidence_alterations.append("ALTER TABLE evidence ADD COLUMN organization_id VARCHAR(80)")
+        if "site_id" not in evidence_columns:
+            evidence_alterations.append("ALTER TABLE evidence ADD COLUMN site_id VARCHAR(80)")
+        for statement in evidence_alterations:
+            connection.execute(text(statement))
+
+        connection.execute(
+            text("CREATE INDEX IF NOT EXISTS ix_evidence_organization_id ON evidence (organization_id)")
+        )
+        connection.execute(
+            text("CREATE INDEX IF NOT EXISTS ix_evidence_site_id ON evidence (site_id)")
+        )
+
+        incident_columns = {row[1] for row in connection.execute(text("PRAGMA table_info(incidents)")).fetchall()}
+        incident_alterations: list[str] = []
+        if "organization_id" not in incident_columns:
+            incident_alterations.append("ALTER TABLE incidents ADD COLUMN organization_id VARCHAR(80)")
+        if "site_id" not in incident_columns:
+            incident_alterations.append("ALTER TABLE incidents ADD COLUMN site_id VARCHAR(80)")
+        for statement in incident_alterations:
+            connection.execute(text(statement))
+
+        connection.execute(
+            text("CREATE INDEX IF NOT EXISTS ix_incidents_organization_id ON incidents (organization_id)")
+        )
+        connection.execute(
+            text("CREATE INDEX IF NOT EXISTS ix_incidents_site_id ON incidents (site_id)")
+        )

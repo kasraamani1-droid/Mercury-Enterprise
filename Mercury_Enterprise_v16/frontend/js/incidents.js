@@ -1,7 +1,7 @@
 import { state } from "./state.js";
 import { SEVERITY_RANK } from "./config.js";
 import { el, esc, fmt, confidenceAverage, toast } from "./utils.js";
-import { getIncidents, getIncident, getAssessment, createIncident, addEvent, resolveIncident, downloadReport } from "./api.js";
+import { getIncidents, getIncident, getAssessment, createIncident, addEvent, resolveIncident, downloadReport, getSessionStatus, requestApproval } from "./api.js";
 import { buildTimelineEvents, renderTimeline } from "./timeline.js";
 import { renderAssessment } from "./assessment.js";
 
@@ -52,7 +52,13 @@ export async function loadIncident(id){
   }catch(error){el("incidentDetail").innerHTML=`<div class="error">${esc(error.message)}</div>`}
 }
 function renderEvidence(evidence){
-  el("evidenceDetails").innerHTML=evidence.length?evidence.map(item=>`<article class="evidence-item"><h3>${esc(item.title)}</h3><p>${esc(item.content)}</p><div class="meta">${esc(item.evidence_type)} · ${esc(item.source)} · ${Math.round(Number(item.confidence)||0)}%</div></article>`).join(""):'<div class="empty">No database evidence available for this incident.</div>';
+  el("evidenceDetails").innerHTML=evidence.length?evidence.map(item=>{
+    const meta=[item.provenance,item.created_by,item.site_id,item.evidence_type,item.source,`${Math.round(Number(item.confidence)||0)}%`]
+      .filter(value=>value!=null&&String(value).trim()!=="")
+      .map(value=>esc(String(value)))
+      .join(" · ");
+    return `<article class="evidence-item"><h3>${esc(item.title)}</h3><p>${esc(item.content)}</p><div class="meta">${meta}</div></article>`;
+  }).join(""):'<div class="empty">No database evidence available for this incident.</div>';
 }
 export function showTab(name){
   ["assessment","evidence","actions","analytics"].forEach(tab=>{
@@ -74,7 +80,17 @@ export async function performOperatorAction(description,logCallback){
 }
 export async function resolveSelected(){
   if(!state.selectedIncidentId)return toast("Select an incident first");
-  try{await resolveIncident(state.selectedIncidentId);toast("Incident resolved");state.selectedIncidentId=null;state.selectedIncident=null;state.selectedAssessment=null;await loadIncidents();el("incidentDetail").innerHTML='<div class="empty">Select an incident</div>';el("assessmentTab").innerHTML='<div class="empty">No incident selected.</div>';el("evidenceTab").innerHTML='<div class="empty">No evidence selected.</div>';el("selectedConfidence").textContent="—"}catch(error){toast(error.message)}
+  try{
+    const session = await getSessionStatus();
+    const role = String(session.role || "Viewer");
+    if (role === "Viewer" || role === "Reviewer") return toast("Current role is read-only for incident resolution");
+    if (role === "Operator") {
+      await requestApproval({ action: "incident.resolve", target_id: state.selectedIncidentId, reason: "Operator requested incident resolution" });
+      return toast("Approval request submitted for reviewer/administrator");
+    }
+    await resolveIncident(state.selectedIncidentId);
+    toast("Incident resolved");state.selectedIncidentId=null;state.selectedIncident=null;state.selectedAssessment=null;await loadIncidents();el("incidentDetail").innerHTML='<div class="empty">Select an incident</div>';el("assessmentTab").innerHTML='<div class="empty">No incident selected.</div>';el("evidenceTab").innerHTML='<div class="empty">No evidence selected.</div>';el("selectedConfidence").textContent="—"
+  }catch(error){toast(error.message)}
 }
 export async function generateSelectedReport(){
   if(!state.selectedIncidentId)return toast("Select an incident first");

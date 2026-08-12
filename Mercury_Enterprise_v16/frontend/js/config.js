@@ -1,4 +1,31 @@
-export const API_BASE = "http://127.0.0.1:8000/api/v1";
+export function resolveApiBase() {
+  if (typeof window !== "undefined" && window.__MERCURY_API_BASE__) {
+    return String(window.__MERCURY_API_BASE__).replace(/\/$/, "");
+  }
+  if (typeof document !== "undefined") {
+    const meta = document.querySelector('meta[name="mercury-api-base"]');
+    const content = meta && meta.getAttribute("content");
+    if (content && content.trim()) {
+      return content.trim().replace(/\/$/, "");
+    }
+  }
+  return "/api/v1";
+}
+
+export function resolveWsUrl() {
+  if (typeof window !== "undefined" && window.__MERCURY_WS_URL__) {
+    return String(window.__MERCURY_WS_URL__);
+  }
+  if (typeof window === "undefined" || !window.location) {
+    return "ws://localhost/api/v1/ws";
+  }
+  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${proto}//${window.location.host}/api/v1/ws`;
+}
+
+/** Same-origin relative API by default; override via window.__MERCURY_API_BASE__ or meta mercury-api-base. */
+export const API_BASE = resolveApiBase();
+
 export const AIRPORTS = {
   CYUL: { name: "Montréal–Trudeau", center: [45.4706, -73.7408], zoom: 13 },
   CYYZ: { name: "Toronto Pearson", center: [43.6777, -79.6248], zoom: 13 },

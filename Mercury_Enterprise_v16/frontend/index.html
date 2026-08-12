@@ -3,8 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- Optional: <meta name="mercury-api-base" content="http://127.0.0.1:8000/api/v1"> for dual-process local demos -->
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛰️</text></svg>">
-  <title>Mercury v16.0 Enterprise Platform</title>
+  <title>Mercury Enterprise V2.0 (16.0.0)</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="css/base.css">
   <link rel="stylesheet" href="css/layout.css">
@@ -14,7 +15,7 @@
 <body>
 <div id="criticalAlert" class="critical-alert hidden"><strong>CRITICAL AIRSPACE ALERT</strong><span id="criticalAlertText">UAV approaching protected runway zone.</span><button id="dismissAlert">Dismiss</button></div>
 <header class="topbar">
-  <div class="brand">Mercury <span>Enterprise Platform — v16.0</span>
+  <div class="brand">Mercury <span>Enterprise V2.0 — 16.0.0</span>
   <nav class="product-nav" aria-label="Mercury workspaces">
     <button class="product-tab active" data-workspace="command">Command</button>
     <button class="product-tab" data-workspace="digitalTwin">Digital Twin</button>
@@ -32,6 +33,8 @@
     <span><i class="health-dot online"></i>RF Sensors</span>
     <span><i class="health-dot online"></i>Cameras</span>
     <span id="statusText" class="muted">Checking…</span>
+    <label>Org <select id="organizationSelect" aria-label="Organization selector"></select></label>
+    <label>Site <select id="siteSelect" aria-label="Site selector"></select></label>
   </div>
 </header><aside id="notificationCenter" class="notification-center hidden"><div class="panel-title"><h3>Notification center</h3><button id="clearNotifications" class="ghost small">Clear</button></div><div id="notificationList"><div class="empty">No notifications.</div></div></aside>
 
@@ -81,6 +84,75 @@
       <div class="telemetry"><span>Heading</span><strong id="targetHeading">124°</strong></div>
       <div class="telemetry"><span>Runway ETA</span><strong id="targetEta">03:42</strong></div>
     </div>
+
+    <article class="card dashboard-summary">
+      <div class="panel-title"><h3>Operational Dashboard Summary</h3><span id="dashboardStatus" class="muted">Loading…</span></div>
+      <div class="telemetry-grid">
+        <div class="telemetry"><span>Backend</span><strong id="dashboardPlatformStatus">Loading…</strong></div>
+        <div class="telemetry"><span>Active missions</span><strong id="dashboardActiveMissions">—</strong><small class="status-inline"><i id="dashboardMissionDot" class="health-dot"></i><span id="dashboardMissionStatus">Unknown</span></small></div>
+        <div class="telemetry"><span>Active alerts</span><strong id="dashboardActiveAlerts">—</strong><small class="status-inline"><i id="dashboardAlertDot" class="health-dot"></i><span id="dashboardAlertStatus">Unknown</span></small></div>
+        <div class="telemetry"><span>Active tracks</span><strong id="dashboardActiveTracks">—</strong></div>
+        <div class="telemetry"><span>Highest threat</span><strong id="dashboardHighestThreat">—</strong></div>
+        <div class="telemetry"><span>Pending decisions</span><strong id="dashboardPendingDecisions">—</strong><small class="status-inline"><i id="dashboardDecisionDot" class="health-dot"></i><span id="dashboardDecisionStatus">Unknown</span></small></div>
+      </div>
+      <div id="dashboardSummaryMessage" class="muted">Loading summary.</div>
+    </article>
+
+    <article class="card dashboard-summary">
+      <div class="panel-title"><h3>Fleet Status</h3><span class="muted" id="fleetStatusLabel">Loading…</span></div>
+      <div class="telemetry-grid">
+        <div class="telemetry"><span>Aircraft Online</span><strong id="fleetAircraftOnline">—</strong></div>
+        <div class="telemetry"><span>Active Sensors</span><strong id="fleetActiveSensors">—</strong></div>
+        <div class="telemetry"><span>Incidents</span><strong id="fleetIncidents">—</strong></div>
+        <div class="telemetry"><span>AI Confidence</span><strong id="fleetAiConfidence">—</strong></div>
+      </div>
+    </article>
+
+    <article class="card dashboard-summary">
+      <div class="panel-title"><h3>Connector Health</h3><span class="muted"><i id="connectorStatusDot" class="health-dot"></i> <span id="connectorStatusLabel">Read-only aggregation</span></span></div>
+      <div class="telemetry-grid">
+        <div class="telemetry"><span>ADS-B</span><strong id="connectorAdsb">—</strong></div>
+        <div class="telemetry"><span>RF</span><strong id="connectorRf">—</strong></div>
+        <div class="telemetry"><span>Cameras</span><strong id="connectorCameras">—</strong></div>
+        <div class="telemetry"><span>Weather</span><strong id="connectorWeather">—</strong></div>
+        <div class="telemetry"><span>ML Engine</span><strong id="connectorMl">—</strong></div>
+      </div>
+    </article>
+
+    <article class="card dashboard-summary">
+      <div class="panel-title"><h3>Alert Summary</h3><span class="muted">Live advisory only</span></div>
+      <div class="telemetry-grid">
+        <div class="telemetry"><span>Active</span><strong id="alertsActiveTotal">—</strong></div>
+        <div class="telemetry"><span>Critical</span><strong id="alertsCriticalTotal">—</strong></div>
+        <div class="telemetry"><span>Acknowledged</span><strong id="alertsAcknowledgedTotal">—</strong></div>
+        <div class="telemetry"><span>Sensor Online</span><strong id="sensorOnlineTotal">—</strong></div>
+        <div class="telemetry"><span>Sensor Warning</span><strong id="sensorWarningTotal">—</strong></div>
+      </div>
+      <div class="telemetry-grid">
+        <div class="telemetry"><span>Sensor Offline</span><strong id="sensorOfflineTotal">—</strong></div>
+      </div>
+    </article>
+
+    <article class="card dashboard-summary">
+      <div class="panel-title"><h3>Decision Timeline</h3><span class="muted">Operator Decision Support</span></div>
+      <div id="decisionAdvisoryBanner" class="muted">Advisory only — human operator remains in full control. No autonomous execution.</div>
+      <div class="page-actions" style="margin:0.5rem 0;">
+        <button id="decisionEvaluateButton" class="ghost small" type="button">Evaluate advisory decision</button>
+      </div>
+      <div id="decisionTimelineList" class="event-log-list"><div class="empty">Loading decision timeline…</div></div>
+      <div id="decisionExplainPanel" class="muted" style="margin-top:0.75rem;">
+        <div><strong>Review state:</strong> <span id="decisionReviewState">—</span></div>
+        <div id="decisionFactorsList" class="event-log-list"><div class="empty">Select a decision to inspect factors, warnings, assumptions, and uncertainty.</div></div>
+        <div id="decisionAlternativesList" class="event-log-list"><div class="empty">No alternatives selected.</div></div>
+        <label for="decisionReviewComment">Review comment</label>
+        <textarea id="decisionReviewComment" rows="2" placeholder="Optional comment (required for commented state)"></textarea>
+        <div class="page-actions" style="margin-top:0.5rem;">
+          <button id="decisionReviewSubmit" class="small" type="button" data-state="acknowledged">Acknowledge</button>
+          <button id="decisionReviewCommentBtn" class="ghost small" type="button" data-state="commented">Comment</button>
+          <button id="decisionReviewRejectBtn" class="ghost small warning" type="button" data-state="rejected_advisory">Reject advisory</button>
+        </div>
+      </div>
+    </article>
 
     <section class="live-ops-strip"><div class="layer-panel card"><h3>Airspace layers</h3><label><input type="checkbox" data-layer="zones" checked> Protection zones</label><label><input type="checkbox" data-layer="sensors" checked> Sensors</label><label><input type="checkbox" data-layer="aircraft" checked> Aircraft</label><label><input type="checkbox" data-layer="trail" checked> UAV trail</label></div><div class="fusion-panel card"><div class="panel-title"><h3>Sensor fusion</h3><strong><span id="liveThreatScore">92</span>%</strong></div><div id="fusionBars"></div></div><div class="live-timeline-panel card"><h3>Live timeline</h3><div id="liveTimeline"><div class="empty">Start tracking to stream events.</div></div></div></section><section class="threat-matrix card"><div class="panel-title"><h3>Threat matrix</h3><button id="ackButton" class="warning small">Acknowledge</button></div><div class="table-wrap"><table><thead><tr><th>Target</th><th>Priority</th><th>Altitude</th><th>Speed</th><th>Heading</th><th>ETA</th><th>Status</th></tr></thead><tbody id="threatMatrixBody"></tbody></table></div></section><section class="lower-grid">
       <div id="incidentDetail" class="empty">Select an incident</div>
@@ -160,7 +232,7 @@
 
 <section id="executiveWorkspace" class="workspace-page enterprise-page hidden">
   <div class="page-heading"><div><span class="eyebrow">EXECUTIVE OVERVIEW</span><h1>Operational Readiness & Risk</h1><p>Simulated performance and incident metrics for leadership review.</p></div><button id="exportExecutive">Export Executive JSON</button></div>
-  <div class="executive-kpis"><article class="card"><span>Incidents today</span><b>14</b><small>+3 vs yesterday</small></article><article class="card"><span>Median response</span><b>34 s</b><small>Target &lt; 60 s</small></article><article class="card"><span>Sensor availability</span><b>98.7%</b><small>30-day average</small></article><article class="card"><span>Resolution rate</span><b>92%</b><small>13 of 14 closed</small></article></div>
+  <div class="executive-kpis"><article class="card"><span>Incidents in window</span><b id="execIncidentsTotal">—</b><small id="execIncidentsNote">Scoped historical KPI</small></article><article class="card"><span>Median response</span><b id="execMedianResponse">—</b><small>Target &lt; 60 s</small></article><article class="card"><span>Connector online</span><b id="execConnectorOnline">—</b><small id="execConnectorNote">Current connector states</small></article><article class="card"><span>Resolution rate</span><b id="execResolutionRate">—</b><small id="execResolutionNote">Resolved / total</small></article></div>
   <div class="analytics-grid">
     <article class="card"><h3>Incidents by hour</h3><div class="bar-chart" id="hourlyChart"></div></article>
     <article class="card"><h3>Threat mix</h3><div class="donut-wrap"><div class="donut-chart"><b>14</b><span>Total</span></div><div class="legend"><span><i class="red"></i>High 29%</span><span><i class="amber"></i>Medium 43%</span><span><i class="green"></i>Low 28%</span></div></div></article>
@@ -193,7 +265,7 @@
 <section id="integrationsWorkspace" class="workspace-page enterprise-page hidden">
   <div class="enterprise-header"><div><span class="eyebrow">Open platform</span><h1>Integrations & API Marketplace</h1><p>Simulated connectors for airport, security, sensor, messaging, and data systems.</p></div><button id="exportIntegrations" class="ghost">Export integration catalog</button></div>
   <section class="enterprise-kpis"><article><span>Configured</span><strong>12</strong><small>9 online · 3 sandbox</small></article><article><span>Events processed</span><strong>28.4k</strong><small>Last 24 hours</small></article><article><span>Webhook success</span><strong>99.4%</strong><small>Simulated</small></article><article><span>API keys</span><strong>7</strong><small>2 expire this month</small></article></section>
-  <div class="enterprise-grid"><article class="card admin-wide"><h3>Connector catalog</h3><div id="integrationCatalog" class="integration-list"></div></article><article class="card"><h3>Developer access</h3><div class="health-list"><div><span>REST API</span><b>v16.0</b></div><div><span>WebSocket gateway</span><b>Ready</b></div><div><span>SDK profiles</span><b>Python · JS</b></div><div><span>Sandbox</span><b>Enabled</b></div></div></article><article class="card"><h3>Data governance</h3><div class="health-list"><div><span>Schema validation</span><b>Enabled</b></div><div><span>Rate limits</span><b>Active</b></div><div><span>Audit events</span><b>Retained</b></div><div><span>PII mode</span><b>Restricted</b></div></div></article></div>
+  <div class="enterprise-grid"><article class="card admin-wide"><h3>Connector catalog</h3><div id="integrationCatalog" class="integration-list"></div></article><article class="card"><h3>Developer access</h3><div class="health-list"><div><span>REST API</span><b>16.0.0</b></div><div><span>WebSocket gateway</span><b>Ready</b></div><div><span>SDK profiles</span><b>Python · JS</b></div><div><span>Sandbox</span><b>Enabled</b></div></div></article><article class="card"><h3>Data governance</h3><div class="health-list"><div><span>Schema validation</span><b>Enabled</b></div><div><span>Rate limits</span><b>Active</b></div><div><span>Audit events</span><b>Retained</b></div><div><span>PII mode</span><b>Restricted</b></div></div></article></div>
 </section>
 <section id="complianceWorkspace" class="workspace-page enterprise-page hidden">
   <div class="enterprise-header"><div><span class="eyebrow">Governance</span><h1>Security, Compliance & Assurance</h1><p>Demonstration controls dashboard. It does not represent certification or regulatory approval.</p></div><button id="exportCompliance" class="ghost">Export controls JSON</button></div>
@@ -202,6 +274,19 @@
 </section>
 
 <div id="toast" class="toast" role="status"></div>
+
+<div id="loginOverlay" class="login-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
+  <form id="loginForm" class="login-card">
+    <h2 id="loginTitle">Operator sign-in</h2>
+    <p class="muted">Session required. Demo auto-login is disabled.</p>
+    <label>Operator <input id="loginOperator" name="operator" autocomplete="username" required value="operator"></label>
+    <label>Password <input id="loginPassword" name="password" type="password" autocomplete="current-password" required></label>
+    <p id="loginError" class="login-error hidden" role="alert"></p>
+    <button type="submit" id="loginSubmit">Sign in</button>
+  </form>
+</div>
+
+<script src="js/config.local.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script type="module" src="js/app.js"></script>
 </body>

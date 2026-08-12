@@ -1,7 +1,23 @@
 @echo off
-setlocal
+setlocal EnableExtensions
+cd /d "%~dp0"
+title Mercury Enterprise V2.0 Backend - Port 8000
+
+REM Load optional package .env (KEY=VALUE lines; comments ignored)
+if exist "%~dp0.env" (
+  for /f "usebackq eol=# tokens=1,* delims==" %%A in ("%~dp0.env") do (
+    if not "%%A"=="" if not "%%B"=="" set "%%A=%%B"
+  )
+)
+
+if not defined MERCURY_AUTH_PASSWORD (
+  echo ERROR: MERCURY_AUTH_PASSWORD is not set.
+  echo Copy .env.example to .env and set a unique password before starting.
+  pause
+  exit /b 1
+)
+
 cd /d "%~dp0backend"
-title Mercury v10 Backend - Port 8000
 if not exist .venv (
   echo Creating Python environment...
   py -m venv .venv || goto :error

@@ -1,3 +1,4 @@
+import { resolveWsUrl } from "./config.js";
 import { addLog } from "./eventLog.js";
 import { loadIncidents } from "./incidents.js";
 import { toast } from "./utils.js";
@@ -6,8 +7,7 @@ let socket;
 let retryTimer;
 
 function socketUrl() {
-  const host = window.location.hostname || "127.0.0.1";
-  return `ws://${host}:8000/api/v1/ws`;
+  return resolveWsUrl();
 }
 
 export function initializeWebSocket() {

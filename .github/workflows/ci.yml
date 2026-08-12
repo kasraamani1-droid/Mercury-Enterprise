@@ -1,0 +1,33 @@
+name: Mercury CI
+on: [push, pull_request]
+defaults:
+  run:
+    working-directory: Mercury_Enterprise_v16
+env:
+  MERCURY_ENV: development
+  MERCURY_AUTH_PASSWORD: ci-test-password-not-for-production
+  MERCURY_VERSION: "16.0.0"
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: pip install -r backend/requirements.txt
+      - run: pytest -q backend/tests
+      - run: python -m compileall backend/app
+      - name: Frontend JavaScript syntax
+        run: |
+          for f in frontend/js/*.js; do
+            node --check "$f"
+          done
+      - name: Validate compose config
+        working-directory: Mercury_Enterprise_v16
+        run: docker compose config
+        continue-on-error: true
+      - name: Docker build (best-effort)
+        working-directory: Mercury_Enterprise_v16
+        run: docker compose build
+        continue-on-error: true
