@@ -26,9 +26,10 @@ def ensure_schema() -> None:
     Production Postgres upgrades should run Alembic (`alembic upgrade head`) before or
     beside application start. `create_all` remains for empty SQLite/dev databases.
     """
-    # Import models so metadata includes Incident/Evidence/AuditEvent + org hierarchy tables.
+    # Import models so metadata includes Incident/Evidence/AuditEvent + org + fleet tables.
     from . import models  # noqa: F401
     from .org import models as org_models  # noqa: F401
+    from .fleet import models as fleet_models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
 
