@@ -15,6 +15,8 @@ Not currently enforced (reserved / deferred):
 - `MERCURY_API_KEY` is configuration-only; session RBAC is the active control plane
 - OIDC/SSO/MFA
 
-Public probes only: `GET /api/v1/health`, `GET /api/v1/ready`.
+Public probes: `GET /health`, `GET /ready`, `GET /live` (also `/api/v1/health`, `/api/v1/ready`).
+
+HTTPS / TLS production deployment: `docs/security/HTTPS.md`.
 
 See `docs/design/PRODUCTION_HARDENING_REPORT.md` and `.env.example`.

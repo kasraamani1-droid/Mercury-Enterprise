@@ -67,6 +67,7 @@ def build_ready_payload(db: Session) -> dict[str, Any]:
     ready = checks.get("database") == "ok"
     payload = {
         "ready": ready,
+        "status": "ok" if ready else "unavailable",
         "version": settings.version,
         "checks": checks,
     }
@@ -74,6 +75,16 @@ def build_ready_payload(db: Session) -> dict[str, Any]:
         payload["reason"] = "database"
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=payload)
     return payload
+
+
+def build_live_payload() -> dict[str, Any]:
+    """Liveness probe — process is up (no dependency checks)."""
+    return {
+        "live": True,
+        "status": "ok",
+        "version": settings.version,
+        "environment": settings.environment,
+    }
 
 
 def build_platform_status(db: Session, connector_manager: Any) -> dict[str, Any]:

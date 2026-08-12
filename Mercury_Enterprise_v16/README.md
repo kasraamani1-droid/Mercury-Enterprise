@@ -30,4 +30,6 @@ Postgres migrations: `cd backend; alembic upgrade head`
 | Product | Mercury Enterprise V2.0 |
 | Package / API (`MERCURY_VERSION`) | 16.0.0 |
 
+Production HTTPS: see `docs/security/HTTPS.md` (`docker compose --profile production up`).
+
 See `docs/RELEASE_NOTES_v2.0.md`, `docs/SECURITY.md`, and `IMPLEMENTATION_STATUS.md`.
