@@ -26,8 +26,9 @@ def ensure_schema() -> None:
     Production Postgres upgrades should run Alembic (`alembic upgrade head`) before or
     beside application start. `create_all` remains for empty SQLite/dev databases.
     """
-    # Import models so metadata includes Incident/Evidence/AuditEvent tables.
+    # Import models so metadata includes Incident/Evidence/AuditEvent + org hierarchy tables.
     from . import models  # noqa: F401
+    from .org import models as org_models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
 
@@ -74,3 +75,17 @@ def ensure_schema() -> None:
         connection.execute(
             text("CREATE INDEX IF NOT EXISTS ix_incidents_site_id ON incidents (site_id)")
         )
+
+        # Org hierarchy indexes (additive for long-lived SQLite files).
+        for statement in (
+            "CREATE INDEX IF NOT EXISTS ix_memberships_user_org ON memberships (user_id, organization_id)",
+            "CREATE INDEX IF NOT EXISTS ix_memberships_org_status ON memberships (organization_id, status)",
+            "CREATE INDEX IF NOT EXISTS ix_memberships_status ON memberships (status)",
+            "CREATE INDEX IF NOT EXISTS ix_organizations_status ON organizations (status)",
+            "CREATE INDEX IF NOT EXISTS ix_org_sites_status ON org_sites (status)",
+        ):
+            try:
+                connection.execute(text(statement))
+            except Exception:
+                # Tables may not exist yet on first boot before create_all races; ignore.
+                pass

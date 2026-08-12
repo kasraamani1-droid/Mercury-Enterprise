@@ -9,13 +9,15 @@ Mercury ships as an incremental FastAPI + vanilla JS foundation. Items below are
 | V2.0 / package 16.0.0 | Command platform foundation, decisions, hardening |
 | **v0.9.1** | Production security & infrastructure (HTTPS, headers, rate limits, Compose production profile) |
 | **v0.9.2** | Enterprise observability & operations (logs, metrics, admin APIs, backup scripts) |
+| **Sprint 5** | Enterprise organizations & multi-tenancy (companies, sites, departments, teams, memberships) |
 
 ## Near term (additive)
 
 1. **Shared session store** — Redis-backed sessions to allow multi-worker API processes  
 2. **Metrics scrape gateway** — authenticated or network-isolated Prometheus access pattern  
 3. **Deeper backup automation** — scheduled Compose jobs + restore drills in CI  
-4. **Frontend admin views** — consume `/admin/*` without new SPA frameworks  
+4. **Frontend admin views** — consume `/admin/*` and org APIs without new SPA frameworks  
+5. **Directory sync** — unify `org_users` passwords with `operator_store` / future IdP
 
 ## Deferred platform expansion
 
@@ -24,7 +26,7 @@ Documented as a future multi-service shape (not current runtime):
 - Mobile clients  
 - Dedicated API gateway service  
 - Object store / message queue  
-- Full multi-tenant write scoping on every path  
+- Full multi-tenant write scoping on every path (org APIs + session isolation shipped; extend remaining engines as needed)  
 - OIDC / SSO / MFA  
 - Kubernetes HA under load  
 

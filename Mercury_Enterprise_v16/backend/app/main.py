@@ -50,17 +50,17 @@ from .schemas import (
     IncidentOut,
     IncidentStatusUpdate,
     SessionContextUpdate,
-    SiteOut,
-    OrganizationOut,
     TimelineEventCreate,
     TimelineEventOut,
 )
 from .security.authorization import Role, has_permissions
-from .security.operators import operator_store
+from .security.operators import hash_password, operator_store
 from .security.rate_limit import classify_rate_limit_path, client_key, rate_limiter
 from .timeline import TimelineManager
 from .websocket.manager import manager
 from .routers import admin_router, connectors_router, ops_router
+from .org.router import router as org_router
+from .org.service import OrganizationService
 from .connectors.manager import connector_manager
 from .connectors.models import ConnectorState
 
@@ -91,20 +91,6 @@ decision_engine = DecisionEngine(
 
 _sessions: dict[str, dict[str, datetime | str]] = {}
 _approvals: dict[str, dict[str, datetime | str | bool | None]] = {}
-
-_organizations: dict[str, OrganizationOut] = {
-    "org-aviation-east": OrganizationOut(organization_id="org-aviation-east", name="Mercury Aviation East"),
-    "org-aviation-west": OrganizationOut(organization_id="org-aviation-west", name="Mercury Aviation West"),
-}
-_sites_by_organization: dict[str, list[SiteOut]] = {
-    "org-aviation-east": [
-        SiteOut(site_id="site-cyul", organization_id="org-aviation-east", name="CYUL Montréal"),
-        SiteOut(site_id="site-cyyz", organization_id="org-aviation-east", name="CYYZ Toronto"),
-    ],
-    "org-aviation-west": [
-        SiteOut(site_id="site-cyvr", organization_id="org-aviation-west", name="CYVR Vancouver"),
-    ],
-}
 
 _ROLE_BY_OPERATOR = {
     "admin": Role.ADMINISTRATOR.value,
@@ -143,17 +129,34 @@ def _cleanup_expired_sessions(now: datetime | None = None) -> None:
         _sessions.pop(sid, None)
 
 
+def seed_organizations() -> None:
+    """Idempotent company/org/site/membership seed for multi-tenant RBAC."""
+    db = SessionLocal()
+    try:
+        OrganizationService(db).ensure_seed_data(
+            default_password_hash=hash_password(settings.auth_password),
+            operator_roles=dict(_ROLE_BY_OPERATOR),
+        )
+    finally:
+        db.close()
+
+
 def _create_session(operator: str, role: str) -> tuple[str, datetime]:
     now = utcnow()
     session_id = secrets.token_urlsafe(32)
     expires_at = now + timedelta(seconds=settings.session_ttl_seconds)
-    default_organization = next(iter(_organizations.values()))
-    default_site = _sites_by_organization[default_organization.organization_id][0]
+    db = SessionLocal()
+    try:
+        svc = OrganizationService(db)
+        organization_id, site_id = svc.default_context_for_user(operator, role)
+        effective_role = svc.effective_role_for_org(operator, role, organization_id)
+    finally:
+        db.close()
     _sessions[session_id] = {
         "operator": operator,
-        "role": role,
-        "organization_id": default_organization.organization_id,
-        "site_id": default_site.site_id,
+        "role": effective_role,
+        "organization_id": organization_id,
+        "site_id": site_id,
         "created_at": now,
         "expires_at": expires_at,
     }
@@ -197,31 +200,32 @@ def require_session(request: Request) -> dict[str, datetime | str]:
     return session
 
 
-def _get_organization(organization_id: str) -> OrganizationOut:
-    organization = _organizations.get(organization_id)
-    if organization is None:
-        raise HTTPException(status_code=404, detail="Organization not found")
-    return organization
-
-
-def _get_site_for_organization(organization_id: str, site_id: str) -> SiteOut:
-    for site in _sites_by_organization.get(organization_id, []):
-        if site.site_id == site_id:
-            return site
-    raise HTTPException(status_code=404, detail="Site not found")
-
-
-def _session_context_payload(session: dict[str, datetime | str]) -> dict[str, object]:
+def _session_context_payload(session: dict[str, datetime | str], db: Session | None = None) -> dict[str, object]:
     organization_id = str(session["organization_id"])
     site_id = str(session["site_id"])
-    organization = _get_organization(organization_id)
-    site = _get_site_for_organization(organization_id, site_id)
-    return {
-        "organization": organization.model_dump(),
-        "site": site.model_dump(),
-        "organizations": [item.model_dump() for item in _organizations.values()],
-        "sites": [item.model_dump() for item in _sites_by_organization.get(organization_id, [])],
-    }
+    operator = str(session["operator"])
+    # Access checks use login-directory role, not possibly membership-adjusted session role.
+    global_role = operator_store.get(operator)
+    access_role = global_role["role"] if global_role else str(session["role"])
+    owns_db = db is None
+    if owns_db:
+        db = SessionLocal()
+    assert db is not None
+    try:
+        svc = OrganizationService(db)
+        organization = svc.get_organization_out(organization_id)
+        site = svc.get_site_out(organization_id, site_id)
+        organizations = svc.organizations_for_session(operator, access_role)
+        sites = svc.sites_for_session(operator, access_role, organization_id)
+        return {
+            "organization": organization.model_dump(),
+            "site": site.model_dump(),
+            "organizations": [item.model_dump() for item in organizations],
+            "sites": [item.model_dump() for item in sites],
+        }
+    finally:
+        if owns_db:
+            db.close()
 
 
 def require_permissions(*required: str):
@@ -392,6 +396,7 @@ async def heartbeat() -> None:
 async def lifespan(app: FastAPI):
     settings.validate_for_startup()
     ensure_schema()
+    seed_organizations()
     seed_demo()
     timeline_manager.add_event(
         event_type="mission.started",
@@ -439,6 +444,7 @@ app = FastAPI(
 app.include_router(connectors_router)
 app.include_router(ops_router)
 app.include_router(admin_router)
+app.include_router(org_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -589,15 +595,27 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
     if role is None:
         metrics_mod.observe_login(success=False)
         try:
-            default_organization = next(iter(_organizations.values()))
-            default_site = _sites_by_organization[default_organization.organization_id][0]
+            seed_organizations()
+            org_db = SessionLocal()
+            try:
+                svc = OrganizationService(org_db)
+                orgs = svc.repo.list_organizations()
+                if orgs:
+                    sites = svc.repo.list_sites(organization_id=orgs[0].id)
+                    default_organization_id = orgs[0].id
+                    default_site_id = sites[0].id if sites else ""
+                else:
+                    default_organization_id = "org-aviation-east"
+                    default_site_id = "site-cyul"
+            finally:
+                org_db.close()
             record_audit(
                 db,
                 action=ACTION_LOGIN_FAILURE,
                 actor=payload.operator[:120],
                 actor_role="",
-                organization_id=default_organization.organization_id,
-                site_id=default_site.site_id,
+                organization_id=default_organization_id,
+                site_id=default_site_id,
                 target_type="session",
                 target_id=payload.operator[:120],
                 source="api",
@@ -610,8 +628,8 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
                 action=ACTION_SECURITY_EVENT,
                 actor=payload.operator[:120],
                 actor_role="",
-                organization_id=default_organization.organization_id,
-                site_id=default_site.site_id,
+                organization_id=default_organization_id,
+                site_id=default_site_id,
                 target_type="auth",
                 target_id="login",
                 source="api",
@@ -625,6 +643,8 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
     metrics_mod.observe_login(success=True)
     session_id, expires_at = _create_session(payload.operator, role)
+    session = _sessions[session_id]
+    effective_role = str(session["role"])
     # Auth cookies: always HttpOnly + SameSite=Lax (or configured); Secure required in production/HTTPS.
     response.set_cookie(
         key=settings.session_cookie_name,
@@ -636,12 +656,11 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
         path="/",
     )
     try:
-        session = _sessions[session_id]
         record_audit(
             db,
             action=ACTION_LOGIN,
             actor=payload.operator,
-            actor_role=role,
+            actor_role=effective_role,
             organization_id=str(session["organization_id"]),
             site_id=str(session["site_id"]),
             target_type="session",
@@ -655,8 +674,12 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
     except Exception:
         logger.exception("Failed to record auth.login audit")
     metrics_mod.set_active_users(len(_sessions))
-    return {"authenticated": True, "operator": payload.operator, "role": role, "expires_at": expires_at.isoformat()}
-
+    return {
+        "authenticated": True,
+        "operator": payload.operator,
+        "role": effective_role,
+        "expires_at": expires_at.isoformat(),
+    }
 
 @app.post("/api/v1/auth/logout")
 def logout(response: Response, request: Request, db: Session = Depends(get_db)):
@@ -708,11 +731,14 @@ def session_status(request: Request):
 
 
 @app.get("/api/v1/auth/context")
-def get_session_context(session: dict[str, datetime | str] = Depends(require_session)):
+def get_session_context(
+    session: dict[str, datetime | str] = Depends(require_session),
+    db: Session = Depends(get_db),
+):
     return {
         "operator": str(session["operator"]),
         "role": str(session["role"]),
-        **_session_context_payload(session),
+        **_session_context_payload(session, db),
     }
 
 
@@ -726,27 +752,56 @@ def update_session_context(
     old_site_id = str(session["site_id"])
     current_organization_id = old_organization_id
     next_organization_id = payload.organization_id or current_organization_id
-    _get_organization(next_organization_id)
+    svc = OrganizationService(db)
+    operator = str(session["operator"])
+    # Platform admins keep global admin; others must hold membership for target org.
+    global_role = operator_store.get(operator)
+    fallback_role = global_role["role"] if global_role else str(session["role"])
+    try:
+        svc.assert_org_access(username=operator, session_role=fallback_role, organization_id=next_organization_id)
+    except HTTPException as exc:
+        if exc.status_code == 403:
+            try:
+                record_audit(
+                    db,
+                    action=ACTION_SECURITY_EVENT,
+                    actor=operator,
+                    actor_role=fallback_role,
+                    organization_id=old_organization_id,
+                    site_id=old_site_id,
+                    target_type="organization",
+                    target_id=next_organization_id,
+                    source="api",
+                    outcome="failure",
+                    origin="operator",
+                    details="organization_access_denied",
+                )
+                _safe_commit_audit(db)
+            except Exception:
+                logger.exception("Failed to record denied auth.context audit")
+        raise
+    svc.get_organization_out(next_organization_id)
 
-    available_sites = _sites_by_organization.get(next_organization_id, [])
+    available_sites = svc.sites_for_session(operator, fallback_role, next_organization_id)
     if not available_sites:
         raise HTTPException(status_code=409, detail="Organization has no configured sites")
 
     if payload.site_id:
-        _get_site_for_organization(next_organization_id, payload.site_id)
+        svc.get_site_out(next_organization_id, payload.site_id)
         next_site_id = payload.site_id
     elif payload.organization_id and payload.organization_id != current_organization_id:
         next_site_id = available_sites[0].site_id
     else:
         current_site_id = str(session["site_id"])
         try:
-            _get_site_for_organization(next_organization_id, current_site_id)
+            svc.get_site_out(next_organization_id, current_site_id)
             next_site_id = current_site_id
         except HTTPException:
             next_site_id = available_sites[0].site_id
 
     session["organization_id"] = next_organization_id
     session["site_id"] = next_site_id
+    session["role"] = svc.effective_role_for_org(operator, fallback_role, next_organization_id)
 
     try:
         record_audit(
@@ -770,7 +825,7 @@ def update_session_context(
     return {
         "operator": str(session["operator"]),
         "role": str(session["role"]),
-        **_session_context_payload(session),
+        **_session_context_payload(session, db),
     }
 
 

@@ -39,6 +39,7 @@ Backend port `8000` is **not** published on the host in production Compose. Scal
 |------|----------|
 | Config / logging / health / metrics | `backend/app/core/` |
 | RBAC, rate limit, operators | `backend/app/security/` |
+| Organizations / multi-tenancy | `backend/app/org/` |
 | WebSocket manager | `backend/app/websocket/` |
 | Persistence models | `backend/app/models.py` |
 | API contracts | `backend/app/schemas.py` |
@@ -51,6 +52,7 @@ Backend port `8000` is **not** published on the host in production Compose. Scal
 ## Cross-cutting concerns
 
 - **Auth:** Session cookie + server-side RBAC (Administrator / Operator / Reviewer / Viewer)
+- **Organizations:** Persisted company → organization → site → department → team hierarchy with membership-scoped context switches (see [docs/ORGANIZATIONS.md](docs/ORGANIZATIONS.md))
 - **Observability:** JSON logs, `/health` `/ready` `/live`, Prometheus `/metrics`, admin audit APIs
 - **Security edge:** TLS 1.2+, security headers, rate limits (see [SECURITY.md](SECURITY.md))
 
