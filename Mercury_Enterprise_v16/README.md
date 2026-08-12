@@ -16,6 +16,7 @@ Mercury is a **working, production-oriented source foundation** of the Mercury c
 | [ROADMAP.md](ROADMAP.md) | Near-term and deferred work |
 | [CHANGELOG.md](CHANGELOG.md) | Release history |
 | [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md) | Logs, health, metrics |
+| [docs/ORGANIZATIONS.md](docs/ORGANIZATIONS.md) | Multi-tenant org hierarchy & RBAC |
 | [docs/security/HTTPS.md](docs/security/HTTPS.md) | TLS / Let's Encrypt |
 
 ## Fastest Windows start (SQLite development)

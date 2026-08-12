@@ -156,7 +156,7 @@ def test_audit_unauthorized_without_session():
 
 def test_seed_evidence_provenance_is_simulated():
     login_as('operator')
-    incidents = client.get('/api/v1/incidents')
+    incidents = client.get('/api/v1/incidents', params={'limit': 500})
     assert incidents.status_code == 200
     assert len(incidents.json()) >= 1
     seeded = []
@@ -167,5 +167,24 @@ def test_seed_evidence_provenance_is_simulated():
             assert 'provenance' in item
             if item.get('created_by') == 'seed':
                 seeded.append(item)
+    if not seeded:
+        # Seed row may be older than the default list window on long-lived local DBs.
+        from app.database import SessionLocal
+        from app.models import Evidence
+        from sqlalchemy import select
+
+        db = SessionLocal()
+        try:
+            seed_rows = list(db.scalars(select(Evidence).where(Evidence.created_by == 'seed')).all())
+        finally:
+            db.close()
+        assert seed_rows, 'expected seed evidence in database'
+        for row in seed_rows:
+            detail = client.get(f'/api/v1/incidents/{row.incident_id}')
+            if detail.status_code != 200:
+                continue
+            for item in detail.json().get('evidence') or []:
+                if item.get('created_by') == 'seed':
+                    seeded.append(item)
     assert len(seeded) >= 1
     assert all(item['provenance'] == 'simulated' for item in seeded)

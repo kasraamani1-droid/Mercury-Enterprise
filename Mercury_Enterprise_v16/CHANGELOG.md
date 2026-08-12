@@ -2,6 +2,20 @@
 
 All notable changes to Mercury Enterprise are summarized here. Package/API version remains `16.0.0` unless noted; sprint tags mark security/ops increments.
 
+## Sprint 5 — Enterprise Organizations & Multi-Tenancy
+
+### Added
+- Persisted hierarchy: companies, organizations, sites, departments, teams, org users, memberships
+- Alembic migration `20260812_0002_enterprise_organizations`
+- REST APIs under `/api/v1/companies|organizations|sites|departments|teams|org/users|memberships|org/me`
+- Membership-aware session context (`auth/context`) and org-scoped role resolution
+- Idempotent aviation seed (East/West orgs and sites) with operator memberships
+- Permissions `org.read` / `org.manage`; docs in `docs/ORGANIZATIONS.md`
+
+### Security
+- Context switches denied without organization membership (platform admin exempt)
+- Organization list/site APIs filtered by membership
+
 ## v0.9.2 — Enterprise Observability & Operations
 
 ### Added
