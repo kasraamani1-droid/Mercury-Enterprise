@@ -29,9 +29,19 @@ class AircraftModelCreate(BaseModel):
     max_seats: int | None = Field(default=None, ge=0, le=1000)
 
 
+class AircraftFamilyOut(BaseModel):
+    id: str
+    manufacturer_id: str
+    name: str
+    code: str
+    description: str
+    status: str
+
+
 class AircraftModelOut(BaseModel):
     id: str
     manufacturer_id: str
+    family_id: str | None = None
     name: str
     code: str
     icao_type: str

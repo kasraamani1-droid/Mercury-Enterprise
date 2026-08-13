@@ -2,6 +2,25 @@
 
 All notable changes to Mercury Enterprise are summarized here. Package/API version remains `16.0.0` unless noted; sprint tags mark security/ops increments.
 
+## Sprint 7b — Technical Library, Personnel & Maintenance Certification
+
+### Added
+- Expanded publication types (maintenance / flight / engineering / operations) with revision history and library browse
+- Aircraft families, alternate parts / interchangeability, personnel qualifications & ACA authorizations
+- Maintenance Task Engine (scheduled/unscheduled/corrective/preventive/inspections/checks/troubleshooting/replacement/deferred/MEL-CDL/SB/EO) with library revision binding, certification flags, release → technical logbook, audit trail API
+- Critical-task policies, immutable digital signatures, certification chain, technical logbook
+- AI-ready index / embedding / cross-ref stubs (no AI compute); enterprise RBAC permission expansion + persona map
+- Production-readiness hardening: certify credential + authority/expiry checks, task lifecycle transitions, release→component history, publication activate RBAC fix, library types WDM/SDM/TSM/MFIM, family browse API, pagination
+- Alembic `20260813_0005`–`20260813_0008`; docs for publications, library, personnel, tasks, certification, signatures, logbook, RBAC
+
+## Sprint 7 — Aircraft Components & Configuration Management
+
+### Added
+- ATA chapters, component catalog, serialized components, immutable installation history
+- Install / remove / transfer flows with TSN/CSN/TSO/CSO decimal hour tracking and optional life limits
+- Aircraft configuration API; permissions `component.*` / `configuration.*`
+- Alembic `20260812_0004_aircraft_components`; docs `docs/AIRCRAFT_CONFIGURATION.md`
+
 ## Sprint 6 — Aircraft Registry & Fleet Management
 
 ### Added

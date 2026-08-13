@@ -2,6 +2,7 @@
 
 from .models import (
     Aircraft,
+    AircraftFamily,
     AircraftModel,
     AircraftStatus,
     Fleet,
@@ -13,6 +14,7 @@ from .service import FleetService
 
 __all__ = [
     "Manufacturer",
+    "AircraftFamily",
     "AircraftModel",
     "AircraftStatus",
     "FleetOperator",

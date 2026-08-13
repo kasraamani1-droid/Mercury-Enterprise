@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from .models import (
     Aircraft,
+    AircraftFamily,
     AircraftModel,
     AircraftStatus,
     Fleet,
@@ -47,6 +48,21 @@ class FleetRepository:
         return self.db.get(AircraftModel, model_id)
 
     def add_model(self, row: AircraftModel) -> AircraftModel:
+        self.db.add(row)
+        return row
+
+    def list_families(self, *, manufacturer_id: str | None = None, active_only: bool = True) -> list[AircraftFamily]:
+        stmt = select(AircraftFamily).order_by(AircraftFamily.name)
+        if manufacturer_id:
+            stmt = stmt.where(AircraftFamily.manufacturer_id == manufacturer_id)
+        if active_only:
+            stmt = stmt.where(AircraftFamily.status == "active")
+        return list(self.db.scalars(stmt).all())
+
+    def get_family(self, family_id: str) -> AircraftFamily | None:
+        return self.db.get(AircraftFamily, family_id)
+
+    def add_family(self, row: AircraftFamily) -> AircraftFamily:
         self.db.add(row)
         return row
 

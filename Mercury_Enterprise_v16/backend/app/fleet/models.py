@@ -25,6 +25,26 @@ class Manufacturer(Base):
     models: Mapped[list["AircraftModel"]] = relationship(back_populates="manufacturer", cascade="all, delete-orphan")
 
 
+class AircraftFamily(Base):
+    """Shared aircraft family (e.g. A320 Family) under a manufacturer."""
+
+    __tablename__ = "aircraft_families"
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True, default=uid)
+    manufacturer_id: Mapped[str] = mapped_column(ForeignKey("manufacturers.id"), index=True)
+    name: Mapped[str] = mapped_column(String(200), index=True)
+    code: Mapped[str] = mapped_column(String(40), index=True)
+    description: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(40), default="active", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    manufacturer: Mapped[Manufacturer] = relationship()
+    models: Mapped[list["AircraftModel"]] = relationship(back_populates="family")
+
+    __table_args__ = (UniqueConstraint("manufacturer_id", "code", name="uq_aircraft_family_mfr_code"),)
+
+
 class AircraftModel(Base):
     """Shared aircraft type/model catalog."""
 
@@ -32,6 +52,7 @@ class AircraftModel(Base):
 
     id: Mapped[str] = mapped_column(String(80), primary_key=True, default=uid)
     manufacturer_id: Mapped[str] = mapped_column(ForeignKey("manufacturers.id"), index=True)
+    family_id: Mapped[str | None] = mapped_column(ForeignKey("aircraft_families.id"), nullable=True, index=True)
     name: Mapped[str] = mapped_column(String(200), index=True)
     code: Mapped[str] = mapped_column(String(40), index=True)
     icao_type: Mapped[str] = mapped_column(String(20), default="", index=True)
@@ -43,6 +64,7 @@ class AircraftModel(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     manufacturer: Mapped[Manufacturer] = relationship(back_populates="models")
+    family: Mapped[AircraftFamily | None] = relationship(back_populates="models")
     aircraft: Mapped[list["Aircraft"]] = relationship(back_populates="model")
 
     __table_args__ = (UniqueConstraint("manufacturer_id", "code", name="uq_aircraft_model_mfr_code"),)
