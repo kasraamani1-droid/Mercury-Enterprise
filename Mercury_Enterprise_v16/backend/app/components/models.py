@@ -54,6 +54,36 @@ class ComponentCatalogItem(Base):
 
     ata_chapter: Mapped[AtaChapter | None] = relationship(back_populates="catalog_items")
     components: Mapped[list["SerializedComponent"]] = relationship(back_populates="catalog_item")
+    alternate_of: Mapped[list["AlternatePart"]] = relationship(
+        back_populates="catalog_item",
+        foreign_keys="AlternatePart.catalog_item_id",
+        cascade="all, delete-orphan",
+    )
+
+
+class AlternatePart(Base):
+    """Interchangeability / alternate part relationship between catalog items."""
+
+    __tablename__ = "alternate_parts"
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True, default=uid)
+    catalog_item_id: Mapped[str] = mapped_column(ForeignKey("component_catalog.id"), index=True)
+    alternate_catalog_item_id: Mapped[str] = mapped_column(ForeignKey("component_catalog.id"), index=True)
+    # one_way | two_way | conditional
+    interchangeability: Mapped[str] = mapped_column(String(40), default="one_way", index=True)
+    conditions: Mapped[str] = mapped_column(Text, default="")
+    authority_reference: Mapped[str] = mapped_column(String(200), default="")
+    status: Mapped[str] = mapped_column(String(40), default="active", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    catalog_item: Mapped[ComponentCatalogItem] = relationship(
+        back_populates="alternate_of", foreign_keys=[catalog_item_id]
+    )
+
+    __table_args__ = (
+        UniqueConstraint("catalog_item_id", "alternate_catalog_item_id", name="uq_alternate_part_pair"),
+    )
 
 
 class SerializedComponent(Base):

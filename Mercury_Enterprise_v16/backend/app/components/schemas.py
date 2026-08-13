@@ -52,6 +52,24 @@ class CatalogItemOut(BaseModel):
     status: str
 
 
+class AlternatePartCreate(BaseModel):
+    catalog_item_id: str
+    alternate_catalog_item_id: str
+    interchangeability: str = Field(default="one_way", pattern="^(one_way|two_way|conditional)$")
+    conditions: str = ""
+    authority_reference: str = ""
+
+
+class AlternatePartOut(BaseModel):
+    id: str
+    catalog_item_id: str
+    alternate_catalog_item_id: str
+    interchangeability: str
+    conditions: str
+    authority_reference: str
+    status: str
+
+
 class SerializedComponentCreate(BaseModel):
     catalog_item_id: str
     serial_number: str = Field(min_length=1, max_length=120)

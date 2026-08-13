@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from ..org.service import OrganizationService
 from .models import (
     Aircraft,
+    AircraftFamily,
     AircraftModel,
     AircraftStatus,
     Fleet,
@@ -20,6 +21,7 @@ from .models import (
 from .repository import FleetRepository
 from .schemas import (
     AircraftCreate,
+    AircraftFamilyOut,
     AircraftModelCreate,
     AircraftModelOut,
     AircraftOut,
@@ -97,10 +99,22 @@ class FleetService:
             )
             self.repo.add_manufacturer(airbus)
             self.repo.add_manufacturer(boeing)
+            self.repo.add_family(
+                AircraftFamily(
+                    id="family-a320",
+                    manufacturer_id=airbus.id,
+                    name="A320 Family",
+                    code="A320F",
+                    description="A320ceo/neo family",
+                    created_at=_utcnow(),
+                    updated_at=_utcnow(),
+                )
+            )
             self.repo.add_model(
                 AircraftModel(
                     id="model-a320",
                     manufacturer_id=airbus.id,
+                    family_id="family-a320",
                     name="A320-200",
                     code="A320",
                     icao_type="A320",
@@ -128,6 +142,25 @@ class FleetService:
             pending = True
 
         if pending:
+            self.repo.commit()
+
+        # Backfill aircraft family for long-lived DBs created before Sprint 7b.
+        if self.repo.get_family("family-a320") is None and self.repo.get_manufacturer("mfr-airbus") is not None:
+            self.repo.add_family(
+                AircraftFamily(
+                    id="family-a320",
+                    manufacturer_id="mfr-airbus",
+                    name="A320 Family",
+                    code="A320F",
+                    description="A320ceo/neo family",
+                    created_at=_utcnow(),
+                    updated_at=_utcnow(),
+                )
+            )
+            model = self.repo.get_model("model-a320")
+            if model is not None and not model.family_id:
+                model.family_id = "family-a320"
+                model.updated_at = _utcnow()
             self.repo.commit()
 
         # Tenant demo data (requires organizations seed).
@@ -249,10 +282,22 @@ class FleetService:
         )
 
     @staticmethod
+    def family_out(row: AircraftFamily) -> AircraftFamilyOut:
+        return AircraftFamilyOut(
+            id=row.id,
+            manufacturer_id=row.manufacturer_id,
+            name=row.name,
+            code=row.code,
+            description=row.description or "",
+            status=row.status,
+        )
+
+    @staticmethod
     def model_out(row: AircraftModel) -> AircraftModelOut:
         return AircraftModelOut(
             id=row.id,
             manufacturer_id=row.manufacturer_id,
+            family_id=getattr(row, "family_id", None),
             name=row.name,
             code=row.code,
             icao_type=row.icao_type,

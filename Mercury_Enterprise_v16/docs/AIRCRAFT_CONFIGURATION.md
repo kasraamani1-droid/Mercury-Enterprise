@@ -1,6 +1,6 @@
 # Aircraft Components & Configuration Management
 
-Sprint 7 adds ATA-linked component catalog, serialized component tracking, installation history, and aircraft configuration views on top of the Aircraft Registry.
+Sprint 7 adds ATA-linked component catalog, serialized component tracking, installation history, alternate/interchangeability links, and aircraft configuration views on top of the Aircraft Registry. Publication references (AMM/CMM/AIPC, …) are linked via the Technical Library — see [PUBLICATIONS.md](PUBLICATIONS.md) and [TECHNICAL_LIBRARY.md](TECHNICAL_LIBRARY.md).
 
 ## Domain
 

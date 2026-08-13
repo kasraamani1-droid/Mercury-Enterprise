@@ -19,6 +19,16 @@ Mercury is a **working, production-oriented source foundation** of the Mercury c
 | [docs/ORGANIZATIONS.md](docs/ORGANIZATIONS.md) | Multi-tenant org hierarchy & RBAC |
 | [docs/FLEET_REGISTRY.md](docs/FLEET_REGISTRY.md) | Aircraft registry & fleet management |
 | [docs/AIRCRAFT_CONFIGURATION.md](docs/AIRCRAFT_CONFIGURATION.md) | Components, ATA, install/remove history |
+| [docs/PUBLICATIONS.md](docs/PUBLICATIONS.md) | Technical publications metadata & revisions |
+| [docs/TECHNICAL_LIBRARY.md](docs/TECHNICAL_LIBRARY.md) | Library browse, search, license-safe storage |
+| [docs/PERSONNEL.md](docs/PERSONNEL.md) | Employees, qualifications, authorizations |
+| [docs/MAINTENANCE_TASKS.md](docs/MAINTENANCE_TASKS.md) | Maintenance Task Engine (types, lifecycle, library links) |
+| [docs/MAINTENANCE_CERTIFICATION.md](docs/MAINTENANCE_CERTIFICATION.md) | Critical tasks & certification chain |
+| [docs/CERTIFICATION.md](docs/CERTIFICATION.md) | Certification index (aliases maintenance certification) |
+| [docs/LOGBOOK.md](docs/LOGBOOK.md) | Logbook index (aliases technical logbook) |
+| [docs/DIGITAL_SIGNATURES.md](docs/DIGITAL_SIGNATURES.md) | Immutable e-signatures / stamps |
+| [docs/TECHNICAL_LOGBOOK.md](docs/TECHNICAL_LOGBOOK.md) | Digital technical logbook |
+| [docs/RBAC.md](docs/RBAC.md) | Roles, personas, permissions |
 | [docs/security/HTTPS.md](docs/security/HTTPS.md) | TLS / Let's Encrypt |
 
 ## Fastest Windows start (SQLite development)

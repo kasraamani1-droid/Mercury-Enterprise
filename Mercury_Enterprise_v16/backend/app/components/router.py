@@ -12,6 +12,8 @@ from ..security.authorization import has_permissions
 from ..security.operators import operator_store
 from .schemas import (
     AircraftConfigurationOut,
+    AlternatePartCreate,
+    AlternatePartOut,
     AtaChapterCreate,
     AtaChapterOut,
     CatalogItemCreate,
@@ -153,6 +155,33 @@ def create_catalog_item(
 ) -> CatalogItemOut:
     out = _svc(db).create_catalog_item(payload)
     _audit(db, session, action="component.catalog.create", target_type="catalog_item", target_id=out.id, details=out.part_number)
+    return out
+
+
+@router.get("/catalog/{catalog_item_id}/alternates", response_model=list[AlternatePartOut])
+def list_alternates(
+    catalog_item_id: str,
+    db: Session = Depends(get_db),
+    _: dict[str, datetime | str] = Depends(require_component_read),
+) -> list[AlternatePartOut]:
+    return _svc(db).list_alternates(catalog_item_id)
+
+
+@router.post("/catalog/alternates", response_model=AlternatePartOut, status_code=201)
+def create_alternate(
+    payload: AlternatePartCreate,
+    db: Session = Depends(get_db),
+    session: dict[str, datetime | str] = Depends(require_catalog_admin),
+) -> AlternatePartOut:
+    out = _svc(db).create_alternate(payload)
+    _audit(
+        db,
+        session,
+        action="component.alternate.create",
+        target_type="alternate_part",
+        target_id=out.id,
+        details=f"{out.catalog_item_id}->{out.alternate_catalog_item_id}:{out.interchangeability}",
+    )
     return out
 
 

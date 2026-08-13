@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from ..fleet.repository import FleetRepository
 from ..org.service import OrganizationService
 from .models import (
+    AlternatePart,
     AtaChapter,
     ComponentCatalogItem,
     ComponentInstallationHistory,
@@ -20,6 +21,8 @@ from .repository import ComponentRepository
 from .schemas import (
     AircraftConfigurationItem,
     AircraftConfigurationOut,
+    AlternatePartCreate,
+    AlternatePartOut,
     AtaChapterCreate,
     AtaChapterOut,
     CatalogItemCreate,
@@ -242,6 +245,60 @@ class ComponentService:
             calendar_limit_days=row.calendar_limit_days,
             status=row.status,
         )
+
+    @staticmethod
+    def alternate_out(row: AlternatePart) -> AlternatePartOut:
+        return AlternatePartOut(
+            id=row.id,
+            catalog_item_id=row.catalog_item_id,
+            alternate_catalog_item_id=row.alternate_catalog_item_id,
+            interchangeability=row.interchangeability,
+            conditions=row.conditions or "",
+            authority_reference=row.authority_reference or "",
+            status=row.status,
+        )
+
+    def list_alternates(self, catalog_item_id: str) -> list[AlternatePartOut]:
+        if self.repo.get_catalog_item(catalog_item_id) is None:
+            raise HTTPException(status_code=404, detail="Catalog item not found")
+        return [self.alternate_out(r) for r in self.repo.list_alternates(catalog_item_id)]
+
+    def create_alternate(self, payload: AlternatePartCreate) -> AlternatePartOut:
+        if self.repo.get_catalog_item(payload.catalog_item_id) is None:
+            raise HTTPException(status_code=404, detail="Catalog item not found")
+        if self.repo.get_catalog_item(payload.alternate_catalog_item_id) is None:
+            raise HTTPException(status_code=404, detail="Alternate catalog item not found")
+        if payload.catalog_item_id == payload.alternate_catalog_item_id:
+            raise HTTPException(status_code=400, detail="Catalog item cannot alternate itself")
+        if self.repo.get_alternate_pair(payload.catalog_item_id, payload.alternate_catalog_item_id):
+            raise HTTPException(status_code=409, detail="Alternate part relationship already exists")
+        row = AlternatePart(
+            catalog_item_id=payload.catalog_item_id,
+            alternate_catalog_item_id=payload.alternate_catalog_item_id,
+            interchangeability=payload.interchangeability,
+            conditions=payload.conditions or "",
+            authority_reference=payload.authority_reference or "",
+            created_at=_utcnow(),
+            updated_at=_utcnow(),
+        )
+        self.repo.add_alternate(row)
+        if payload.interchangeability == "two_way" and not self.repo.get_alternate_pair(
+            payload.alternate_catalog_item_id, payload.catalog_item_id
+        ):
+            self.repo.add_alternate(
+                AlternatePart(
+                    catalog_item_id=payload.alternate_catalog_item_id,
+                    alternate_catalog_item_id=payload.catalog_item_id,
+                    interchangeability="two_way",
+                    conditions=payload.conditions or "",
+                    authority_reference=payload.authority_reference or "",
+                    created_at=_utcnow(),
+                    updated_at=_utcnow(),
+                )
+            )
+        self._commit_or_conflict(detail="Alternate part conflict")
+        self.repo.refresh(row)
+        return self.alternate_out(row)
 
     @staticmethod
     def component_out(row: SerializedComponent) -> SerializedComponentOut:
@@ -521,6 +578,15 @@ class ComponentService:
             raise HTTPException(status_code=409, detail="Component already installed")
         if row.component_status == "retired":
             raise HTTPException(status_code=409, detail="Retired component cannot be installed")
+        if row.component_status == "quarantine":
+            raise HTTPException(status_code=409, detail="Quarantined component cannot be installed")
+        _recompute_remaining(row)
+        if row.hour_limit is not None and row.remaining_hours is not None and _hours(row.remaining_hours) <= 0:
+            raise HTTPException(status_code=409, detail="Component life limit (hours) exhausted")
+        if row.cycle_limit is not None and row.remaining_cycles is not None and int(row.remaining_cycles) <= 0:
+            raise HTTPException(status_code=409, detail="Component life limit (cycles) exhausted")
+        if row.due_date is not None and row.due_date < _utcnow():
+            raise HTTPException(status_code=409, detail="Component calendar life limit expired")
         self._assert_aircraft_in_org(organization_id=row.organization_id, aircraft_id=payload.aircraft_id)
         position = payload.position.strip().upper()
         occupant = self.repo.get_installed_at_position(payload.aircraft_id, position)

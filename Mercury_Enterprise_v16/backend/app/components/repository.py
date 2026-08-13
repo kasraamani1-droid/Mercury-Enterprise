@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from .models import (
+    AlternatePart,
     AtaChapter,
     ComponentCatalogItem,
     ComponentInstallationHistory,
@@ -57,6 +58,28 @@ class ComponentRepository:
         )
 
     def add_catalog_item(self, row: ComponentCatalogItem) -> ComponentCatalogItem:
+        self.db.add(row)
+        return row
+
+    def list_alternates(self, catalog_item_id: str) -> list[AlternatePart]:
+        return list(
+            self.db.scalars(
+                select(AlternatePart).where(
+                    AlternatePart.catalog_item_id == catalog_item_id,
+                    AlternatePart.status == "active",
+                )
+            ).all()
+        )
+
+    def get_alternate_pair(self, catalog_item_id: str, alternate_catalog_item_id: str) -> AlternatePart | None:
+        return self.db.scalar(
+            select(AlternatePart).where(
+                AlternatePart.catalog_item_id == catalog_item_id,
+                AlternatePart.alternate_catalog_item_id == alternate_catalog_item_id,
+            )
+        )
+
+    def add_alternate(self, row: AlternatePart) -> AlternatePart:
         self.db.add(row)
         return row
 

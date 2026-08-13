@@ -12,16 +12,17 @@ Mercury ships as an incremental FastAPI + vanilla JS foundation. Items below are
 | **Sprint 5** | Enterprise organizations & multi-tenancy (companies, sites, departments, teams, memberships) |
 | **Sprint 6** | Aircraft registry & fleet management (manufacturers, models, aircraft, registrations, fleets) |
 | **Sprint 7** | Aircraft components & configuration (ATA, catalog, serialized parts, install history) |
+| **Sprint 7b** | Publications, technical library, personnel, maintenance task engine, certification, signatures, tech logbook, AI stubs |
 
-## Near term (additive)
+## Near term (additive) — Sprint 8 candidates
 
-1. **Shared session store** — Redis-backed sessions to allow multi-worker API processes  
-2. **Metrics scrape gateway** — authenticated or network-isolated Prometheus access pattern  
-3. **Deeper backup automation** — scheduled Compose jobs + restore drills in CI  
-4. **Frontend admin views** — consume `/admin/*`, org, fleet, and component APIs without new SPA frameworks  
-5. **Directory sync** — unify `org_users` passwords with `operator_store` / future IdP  
-6. **Aircraft–incident linkage** — optional aircraft_id on incidents for operational correlation  
-7. **Work orders / MPD** — deferred maintenance planning (explicitly out of Sprint 7)
+1. **Frontend admin views** — personnel, library, certification, and logbook UIs (vanilla JS)  
+2. **Permission overrides** — individual / ATA / fleet-scoped grants beyond session roles  
+3. **PKI / smart-card adapters** — real signature providers behind existing method flags  
+4. **Authorized document ingestion** — object-store upload + licensed OEM pipelines (still not AI/RAG)  
+5. **Work orders / MPD planning engine** — schedule, due lists, compliance findings  
+6. **Shared session store** — Redis-backed sessions for multi-worker API  
+7. **Directory sync / IdP** — unify org users with operator store / OIDC
 
 ## Deferred platform expansion
 

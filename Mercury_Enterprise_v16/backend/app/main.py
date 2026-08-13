@@ -65,6 +65,12 @@ from .fleet.router import router as fleet_router
 from .fleet.service import FleetService
 from .components.router import router as components_router
 from .components.service import ComponentService
+from .publications.router import library_router, router as publications_router
+from .publications.service import PublicationService
+from .personnel.router import router as personnel_router
+from .personnel.service import PersonnelService
+from .maintenance.router import router as maintenance_router
+from .maintenance.service import MaintenanceService
 from .connectors.manager import connector_manager
 from .connectors.models import ConnectorState
 
@@ -159,6 +165,33 @@ def seed_components() -> None:
     db = SessionLocal()
     try:
         ComponentService(db).ensure_seed_data()
+    finally:
+        db.close()
+
+
+def seed_publications() -> None:
+    """Idempotent publication types + east-org technical library demos (locators only)."""
+    db = SessionLocal()
+    try:
+        PublicationService(db).ensure_seed_data()
+    finally:
+        db.close()
+
+
+def seed_personnel() -> None:
+    """Idempotent personnel / qualification demo for org-aviation-east."""
+    db = SessionLocal()
+    try:
+        PersonnelService(db).ensure_seed_data()
+    finally:
+        db.close()
+
+
+def seed_maintenance() -> None:
+    """Idempotent critical policies, fault codes, and demo maintenance task."""
+    db = SessionLocal()
+    try:
+        MaintenanceService(db).ensure_seed_data()
     finally:
         db.close()
 
@@ -421,6 +454,9 @@ async def lifespan(app: FastAPI):
     seed_organizations()
     seed_fleet()
     seed_components()
+    seed_publications()
+    seed_personnel()
+    seed_maintenance()
     seed_demo()
     timeline_manager.add_event(
         event_type="mission.started",
@@ -471,6 +507,10 @@ app.include_router(admin_router)
 app.include_router(org_router)
 app.include_router(fleet_router)
 app.include_router(components_router)
+app.include_router(publications_router)
+app.include_router(library_router)
+app.include_router(personnel_router)
+app.include_router(maintenance_router)
 
 app.add_middleware(
     CORSMiddleware,

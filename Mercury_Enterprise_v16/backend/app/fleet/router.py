@@ -12,6 +12,7 @@ from ..security.authorization import has_permissions
 from ..security.operators import operator_store
 from .schemas import (
     AircraftCreate,
+    AircraftFamilyOut,
     AircraftModelCreate,
     AircraftModelOut,
     AircraftOut,
@@ -124,6 +125,16 @@ def create_manufacturer(
     out = _svc(db).create_manufacturer(payload)
     _audit(db, session, action="fleet.manufacturer.create", target_type="manufacturer", target_id=out.id, details=out.code)
     return out
+
+
+@router.get("/families", response_model=list[AircraftFamilyOut])
+def list_families(
+    manufacturer_id: str | None = None,
+    db: Session = Depends(get_db),
+    _: dict[str, datetime | str] = Depends(require_fleet_read),
+) -> list[AircraftFamilyOut]:
+    svc = _svc(db)
+    return [svc.family_out(r) for r in svc.repo.list_families(manufacturer_id=manufacturer_id)]
 
 
 @router.get("/models", response_model=list[AircraftModelOut])
