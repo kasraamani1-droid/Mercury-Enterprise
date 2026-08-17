@@ -142,19 +142,33 @@ def test_task_engine_types_library_and_audit_trail():
         ).status_code
         == 200
     )
+    # Segregation of duties: performer cannot also inspect.
+    same_person = client.post(
+        f"/api/v1/maintenance/tasks/{body['id']}/certify",
+        json={
+            "step": "inspected",
+            "employee_id": emp["E-1001"],
+            "method": "pin",
+            "credential": "2468",
+        },
+    )
+    assert same_person.status_code == 409
+
+    login_as("reviewer")
     assert (
         client.post(
             f"/api/v1/maintenance/tasks/{body['id']}/certify",
             json={
                 "step": "inspected",
-                "employee_id": emp["E-1001"],
-                "method": "pin",
-                "credential": "2468",
+                "employee_id": emp["E-2001"],
+                "method": "password",
+                "credential": TEST_AUTH_PASSWORD,
             },
         ).status_code
         == 200
     )
 
+    login_as("operator")
     # Cannot impersonate another linked employee.
     spoof = client.post(
         f"/api/v1/maintenance/tasks/{body['id']}/certify",
@@ -226,13 +240,14 @@ def test_certification_workflow_and_logbook():
     )
     assert performed.status_code == 200, performed.text
 
+    login_as("reviewer")
     inspected = client.post(
         f"/api/v1/maintenance/tasks/{task_id}/certify",
         json={
             "step": "inspected",
-            "employee_id": emp["E-1001"],
-            "method": "pin",
-            "credential": "2468",
+            "employee_id": emp["E-2001"],
+            "method": "password",
+            "credential": TEST_AUTH_PASSWORD,
         },
     )
     assert inspected.status_code == 200, inspected.text
@@ -241,13 +256,14 @@ def test_certification_workflow_and_logbook():
         f"/api/v1/maintenance/tasks/{task_id}/certify",
         json={
             "step": "aca_certified",
-            "employee_id": emp["E-1001"],
+            "employee_id": emp["E-2001"],
             "method": "password",
             "credential": TEST_AUTH_PASSWORD,
         },
     )
     assert aca.status_code == 200, aca.text
 
+    login_as("operator")
     release_denied = client.post(
         f"/api/v1/maintenance/tasks/{task_id}/certify",
         json={
@@ -278,9 +294,23 @@ def test_certification_workflow_and_logbook():
     assert logbook.status_code == 200
     entry = next(e for e in logbook.json() if e["task_id"] == task_id)
     assert entry["mechanic_employee_id"] == emp["E-1001"]
-    assert entry["aca_employee_id"] in {emp["E-1001"], emp["E-2001"]}
+    assert entry["inspector_employee_id"] == emp["E-2001"]
+    assert entry["aca_employee_id"] == emp["E-2001"]
     assert "aircraft_history=true" in entry["details"]
     assert "signature_chain=" in entry["details"]
+    assert "revision_number=" in entry["details"]
+    assert "required_certification=" in entry["details"]
+
+    login_as("operator")
+    amended = client.post(
+        f"/api/v1/maintenance/logbook/{entry['id']}/amend",
+        json={"reason": "Corrected ATA reference note", "summary": "Amendment"},
+    )
+    assert amended.status_code == 201, amended.text
+    assert f"amendment_of={entry['id']}" in amended.json()["details"]
+    # Original remains unchanged (immutable).
+    original = next(e for e in client.get("/api/v1/maintenance/logbook", params={"aircraft_id": "ac-c-gmea"}).json() if e["id"] == entry["id"])
+    assert "amendment_of=" not in original["details"]
 
     login_as("admin")
     events = client.get("/admin/audit", params={"action": "maintenance.certify", "limit": 50})

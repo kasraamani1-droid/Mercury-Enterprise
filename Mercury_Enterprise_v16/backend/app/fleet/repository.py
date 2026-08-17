@@ -3,6 +3,7 @@ from __future__ import annotations
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
+from ..shared import clamp_page
 from .models import (
     Aircraft,
     AircraftFamily,
@@ -20,11 +21,14 @@ class FleetRepository:
         self.db = db
 
     # Manufacturers / models / statuses (catalog)
-    def list_manufacturers(self, *, active_only: bool = True) -> list[Manufacturer]:
+    def list_manufacturers(
+        self, *, active_only: bool = True, limit: int | None = None, offset: int | None = None
+    ) -> list[Manufacturer]:
+        lim, off = clamp_page(limit, offset)
         stmt = select(Manufacturer).order_by(Manufacturer.name)
         if active_only:
             stmt = stmt.where(Manufacturer.status == "active")
-        return list(self.db.scalars(stmt).all())
+        return list(self.db.scalars(stmt.limit(lim).offset(off)).all())
 
     def get_manufacturer(self, manufacturer_id: str) -> Manufacturer | None:
         return self.db.get(Manufacturer, manufacturer_id)
@@ -36,13 +40,21 @@ class FleetRepository:
         self.db.add(row)
         return row
 
-    def list_models(self, *, manufacturer_id: str | None = None, active_only: bool = True) -> list[AircraftModel]:
+    def list_models(
+        self,
+        *,
+        manufacturer_id: str | None = None,
+        active_only: bool = True,
+        limit: int | None = None,
+        offset: int | None = None,
+    ) -> list[AircraftModel]:
+        lim, off = clamp_page(limit, offset)
         stmt = select(AircraftModel).order_by(AircraftModel.name)
         if manufacturer_id:
             stmt = stmt.where(AircraftModel.manufacturer_id == manufacturer_id)
         if active_only:
             stmt = stmt.where(AircraftModel.status == "active")
-        return list(self.db.scalars(stmt).all())
+        return list(self.db.scalars(stmt.limit(lim).offset(off)).all())
 
     def get_model(self, model_id: str) -> AircraftModel | None:
         return self.db.get(AircraftModel, model_id)
@@ -51,13 +63,21 @@ class FleetRepository:
         self.db.add(row)
         return row
 
-    def list_families(self, *, manufacturer_id: str | None = None, active_only: bool = True) -> list[AircraftFamily]:
+    def list_families(
+        self,
+        *,
+        manufacturer_id: str | None = None,
+        active_only: bool = True,
+        limit: int | None = None,
+        offset: int | None = None,
+    ) -> list[AircraftFamily]:
+        lim, off = clamp_page(limit, offset)
         stmt = select(AircraftFamily).order_by(AircraftFamily.name)
         if manufacturer_id:
             stmt = stmt.where(AircraftFamily.manufacturer_id == manufacturer_id)
         if active_only:
             stmt = stmt.where(AircraftFamily.status == "active")
-        return list(self.db.scalars(stmt).all())
+        return list(self.db.scalars(stmt.limit(lim).offset(off)).all())
 
     def get_family(self, family_id: str) -> AircraftFamily | None:
         return self.db.get(AircraftFamily, family_id)
@@ -66,11 +86,14 @@ class FleetRepository:
         self.db.add(row)
         return row
 
-    def list_statuses(self, *, active_only: bool = True) -> list[AircraftStatus]:
+    def list_statuses(
+        self, *, active_only: bool = True, limit: int | None = None, offset: int | None = None
+    ) -> list[AircraftStatus]:
+        lim, off = clamp_page(limit, offset)
         stmt = select(AircraftStatus).order_by(AircraftStatus.sort_order, AircraftStatus.code)
         if active_only:
             stmt = stmt.where(AircraftStatus.status == "active")
-        return list(self.db.scalars(stmt).all())
+        return list(self.db.scalars(stmt.limit(lim).offset(off)).all())
 
     def get_status(self, code: str) -> AircraftStatus | None:
         return self.db.get(AircraftStatus, code)
@@ -80,7 +103,15 @@ class FleetRepository:
         return row
 
     # Operators / fleets / aircraft / registrations (tenant)
-    def list_operators(self, *, organization_id: str, active_only: bool = True) -> list[FleetOperator]:
+    def list_operators(
+        self,
+        *,
+        organization_id: str,
+        active_only: bool = True,
+        limit: int | None = None,
+        offset: int | None = None,
+    ) -> list[FleetOperator]:
+        lim, off = clamp_page(limit, offset)
         stmt = (
             select(FleetOperator)
             .where(FleetOperator.organization_id == organization_id)
@@ -88,7 +119,7 @@ class FleetRepository:
         )
         if active_only:
             stmt = stmt.where(FleetOperator.status == "active")
-        return list(self.db.scalars(stmt).all())
+        return list(self.db.scalars(stmt.limit(lim).offset(off)).all())
 
     def get_operator(self, operator_id: str) -> FleetOperator | None:
         return self.db.get(FleetOperator, operator_id)
@@ -97,11 +128,19 @@ class FleetRepository:
         self.db.add(row)
         return row
 
-    def list_fleets(self, *, organization_id: str, active_only: bool = True) -> list[Fleet]:
+    def list_fleets(
+        self,
+        *,
+        organization_id: str,
+        active_only: bool = True,
+        limit: int | None = None,
+        offset: int | None = None,
+    ) -> list[Fleet]:
+        lim, off = clamp_page(limit, offset)
         stmt = select(Fleet).where(Fleet.organization_id == organization_id).order_by(Fleet.name)
         if active_only:
             stmt = stmt.where(Fleet.status == "active")
-        return list(self.db.scalars(stmt).all())
+        return list(self.db.scalars(stmt.limit(lim).offset(off)).all())
 
     def get_fleet(self, fleet_id: str) -> Fleet | None:
         return self.db.get(Fleet, fleet_id)
@@ -141,7 +180,10 @@ class FleetRepository:
         status_code: str | None = None,
         active_only: bool = True,
         with_registrations: bool = False,
+        limit: int | None = None,
+        offset: int | None = None,
     ) -> list[Aircraft]:
+        lim, off = clamp_page(limit, offset)
         stmt = select(Aircraft).where(Aircraft.organization_id == organization_id).order_by(Aircraft.serial_number)
         if with_registrations:
             stmt = stmt.options(joinedload(Aircraft.registrations))
@@ -151,7 +193,7 @@ class FleetRepository:
             stmt = stmt.where(Aircraft.status_code == status_code)
         if active_only:
             stmt = stmt.where(Aircraft.status == "active")
-        return list(self.db.scalars(stmt).unique().all())
+        return list(self.db.scalars(stmt.limit(lim).offset(off)).unique().all())
 
     def get_aircraft(self, aircraft_id: str, *, with_registrations: bool = False) -> Aircraft | None:
         if not with_registrations:
@@ -187,7 +229,10 @@ class FleetRepository:
         organization_id: str,
         aircraft_id: str | None = None,
         current_only: bool = False,
+        limit: int | None = None,
+        offset: int | None = None,
     ) -> list[Registration]:
+        lim, off = clamp_page(limit, offset)
         stmt = (
             select(Registration)
             .where(Registration.organization_id == organization_id)
@@ -197,7 +242,10 @@ class FleetRepository:
             stmt = stmt.where(Registration.aircraft_id == aircraft_id)
         if current_only:
             stmt = stmt.where(Registration.is_current == "true")
-        return list(self.db.scalars(stmt).all())
+        return list(self.db.scalars(stmt.limit(lim).offset(off)).all())
+
+    def get_registration(self, registration_id: str) -> Registration | None:
+        return self.db.get(Registration, registration_id)
 
     def get_registration_by_mark(self, registration_mark: str) -> Registration | None:
         return self.db.scalar(

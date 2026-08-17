@@ -51,10 +51,23 @@ Compose includes restart policies and healthchecks:
 
 ## Database migrations
 
+Production Compose sets `DATABASE_URL` to PostgreSQL. The backend image entrypoint runs:
+
+```bash
+alembic upgrade head
+```
+
+before uvicorn when `DATABASE_URL` starts with `postgresql` / `postgres`.
+
+Manual (host tooling against a reachable Postgres):
+
 ```bash
 cd backend
 alembic upgrade head
+alembic current   # expect head revision (e.g. 20260814_0022)
 ```
+
+Procedure, rollback, dual SQLite bootstrap, and tests: [docs/engineering/POSTGRESQL_MIGRATIONS.md](docs/engineering/POSTGRESQL_MIGRATIONS.md).
 
 ## Backups
 

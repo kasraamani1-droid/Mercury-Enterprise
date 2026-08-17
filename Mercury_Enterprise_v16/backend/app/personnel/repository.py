@@ -3,6 +3,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..shared import clamp_page
 from .models import (
     DigitalStampProfile,
     PersonnelAuthorization,
@@ -22,7 +23,10 @@ class PersonnelRepository:
         organization_id: str,
         status: str | None = None,
         active_only: bool = True,
+        limit: int | None = None,
+        offset: int | None = None,
     ) -> list[PersonnelEmployee]:
+        lim, off = clamp_page(limit, offset)
         stmt = (
             select(PersonnelEmployee)
             .where(PersonnelEmployee.organization_id == organization_id)
@@ -32,7 +36,7 @@ class PersonnelRepository:
             stmt = stmt.where(PersonnelEmployee.status == status)
         elif active_only:
             stmt = stmt.where(PersonnelEmployee.status == "active")
-        return list(self.db.scalars(stmt).all())
+        return list(self.db.scalars(stmt.limit(lim).offset(off)).all())
 
     def get_employee(self, employee_id: str, *, for_update: bool = False) -> PersonnelEmployee | None:
         stmt = select(PersonnelEmployee).where(PersonnelEmployee.id == employee_id)
@@ -81,6 +85,9 @@ class PersonnelRepository:
             .order_by(PersonnelAuthorization.created_at.desc())
         )
         return list(self.db.scalars(stmt).all())
+
+    def get_authorization(self, authorization_id: str) -> PersonnelAuthorization | None:
+        return self.db.get(PersonnelAuthorization, authorization_id)
 
     def add_authorization(self, row: PersonnelAuthorization) -> PersonnelAuthorization:
         self.db.add(row)

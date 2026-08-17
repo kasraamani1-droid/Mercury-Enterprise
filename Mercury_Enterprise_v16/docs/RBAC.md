@@ -14,23 +14,29 @@ Personas guide documentation and future override engines:
 
 | Persona | Typical access |
 |---------|----------------|
-| Technician | AMM/CMM/FIM/SDS/SSM/WM, tasks, sign performed work |
-| Store | IPC, component read, store |
-| Planner | MPD, planner, fleet, tasks read |
-| Inspector | inspection approve, certification.sign, audit read |
-| ACA | certification.release, logbook, signatures |
-| Engineering | SRM/EO, configuration, engineering.read |
-| Reliability / QA | compliance, audit, findings (qa.read) |
+| Technician | AMM/CMM/FIM/SDS/SSM/WM, tasks, job cards, `work_order.execute`, sign performed work |
+| Store | IPC, component read, store, work order read |
+| Planner | MPD, planner, fleet, work package/order manage |
+| Supervisor | Assign/reassign job cards, monitor progress, work_order.manage |
+| Inspector | inspection approve/reject/rework, certification.sign, audit read |
+| ACA | certification.release, logbook, signatures, job card release |
+| Engineering | SRM/EO, configuration, engineering.read, waiting-engineering unblock |
+| Reliability / QA | compliance, audit, findings (qa.read), inspection queues |
+| Manager | Dashboards & reports across work orders |
 | Administrator | full |
 
 ## Domains covered
 
-Org · Fleet · Components/Configuration · Publications · Personnel · Maintenance · Certification · Logbook · Signatures · Store/Planner/Inspector/Engineering/QA permissions
+Org · Fleet · Components/Configuration · Publications · Personnel · Maintenance · Work Orders / Job Cards · Certification · Logbook · Signatures · Store/Planner/Inspector/Engineering/QA permissions
 
 ## Isolation
 
-Organization membership gates all tenant data. Fleet → aircraft → ATA → task chain is enforced by org ownership checks on each resource.
+Organization membership gates all tenant data. Fleet → aircraft → ATA → work package → work order → job card → task chain is enforced by org ownership checks on each resource.
 
-## Future (Sprint 8+)
+Incident Command writes (status / events / evidence) use `_get_scoped_incident` (404 on cross-tenant UUID). WebSocket incident events are org/site scoped. See [engineering/TENANT_ISOLATION.md](engineering/TENANT_ISOLATION.md).
+
+Approval inbox (`/api/v1/approvals`) is org/site scoped: Operators may `approval.request`; Reviewers/Admins may `approval.review`. Rows persist in `approval_requests` (see [engineering/APPROVAL_PERSISTENCE.md](engineering/APPROVAL_PERSISTENCE.md)).
+
+## Future
 
 Individual permission overrides, ATA-scoped grants, fleet-scoped grants, and department/team/position binding beyond membership roles.

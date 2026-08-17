@@ -184,6 +184,9 @@ class MaintenanceRepository:
         stmt = select(DigitalSignature).where(DigitalSignature.id.in_(signature_ids))
         return list(self.db.scalars(stmt).all())
 
+    def get_log_entry(self, entry_id: str) -> TechnicalLogEntry | None:
+        return self.db.get(TechnicalLogEntry, entry_id)
+
     def add_log_entry(self, row: TechnicalLogEntry) -> TechnicalLogEntry:
         self.db.add(row)
         return row

@@ -145,6 +145,13 @@ class RegistrationCreate(BaseModel):
     organization_id: str | None = None
 
 
+class RegistrationUpdate(BaseModel):
+    country: str | None = None
+    notes: str | None = None
+    status: str | None = Field(default=None, pattern="^(active|archived)$")
+    make_current: bool | None = None
+
+
 class RegistrationOut(BaseModel):
     id: str
     organization_id: str

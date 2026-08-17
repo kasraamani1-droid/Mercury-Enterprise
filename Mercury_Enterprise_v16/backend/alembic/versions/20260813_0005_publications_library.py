@@ -98,13 +98,14 @@ def upgrade() -> None:
     op.create_index("ix_pub_revisions_effective", "publication_revisions", ["effective_date"])
     op.create_index("ix_pub_revisions_revision_date", "publication_revisions", ["revision_date"])
 
-    op.create_foreign_key(
-        "fk_publications_current_revision",
-        "publications",
-        "publication_revisions",
-        ["current_revision_id"],
-        ["id"],
-    )
+    # batch_alter_table is a no-op wrapper on PostgreSQL; required on SQLite for ADD CONSTRAINT.
+    with op.batch_alter_table("publications") as batch_op:
+        batch_op.create_foreign_key(
+            "fk_publications_current_revision",
+            "publication_revisions",
+            ["current_revision_id"],
+            ["id"],
+        )
 
     op.create_table(
         "publication_ata_links",
@@ -138,7 +139,8 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_table("publication_catalog_links")
     op.drop_table("publication_ata_links")
-    op.drop_constraint("fk_publications_current_revision", "publications", type_="foreignkey")
+    with op.batch_alter_table("publications") as batch_op:
+        batch_op.drop_constraint("fk_publications_current_revision", type_="foreignkey")
     op.drop_table("publication_revisions")
     op.drop_table("publications")
     op.drop_table("publication_types")

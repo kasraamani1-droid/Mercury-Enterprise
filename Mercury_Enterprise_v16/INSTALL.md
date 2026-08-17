@@ -53,7 +53,7 @@ docker compose up --build
 ```
 
 - UI / API via NGINX: http://localhost:3000  
-- Apply migrations: `cd backend; alembic upgrade head`
+- Migrations: backend image entrypoint runs `alembic upgrade head` for PostgreSQL. Manual: `cd backend; alembic upgrade head`. See [docs/engineering/POSTGRESQL_MIGRATIONS.md](docs/engineering/POSTGRESQL_MIGRATIONS.md).
 
 ## 3c. Backend tests (optional)
 

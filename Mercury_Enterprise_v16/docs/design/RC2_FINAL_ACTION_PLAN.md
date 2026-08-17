@@ -94,16 +94,16 @@ No open Critical code or configuration defects were found after hardening. Origi
 
 ### Medium
 
-#### M1 — In-memory decisions / approvals / missions / sessions
+#### M1 — In-memory decisions / missions / sessions
 
 | Field | Detail |
 |-------|--------|
 | **Root cause** | Milestone 2 Option A + in-process session dict; workers pinned to 1 |
-| **Impact** | State lost on restart; cannot horizontally scale API |
-| **Files** | `backend/app/main.py` (`_sessions`, `_approvals`), `decision/`, `missions/` |
-| **Required implementation** | Shared session store + durable decision/approval store (follow-on HA spec) |
-| **Estimated effort** | 1–2 weeks |
-| **Blocks production?** | **No** for single-node pilot with workers=1. **Yes** for HA scale-out |
+| **Impact** | Decision/mission state lost on restart; cannot horizontally scale API without Redis sessions |
+| **Files** | `backend/app/main.py` (sessions via store), `decision/`, `missions/` |
+| **Required implementation** | Shared session store (done for Redis) + durable decision store (follow-on). Approvals: **done** (`approval_requests`, RC1 Blocker 03) |
+| **Estimated effort** | 1–2 weeks (remaining decision/mission durability) |
+| **Blocks production?** | **No** for single-node pilot with workers=1 + Redis sessions. **Yes** for HA scale-out without Redis |
 
 #### M2 — `MERCURY_API_KEY` reserved but unused
 

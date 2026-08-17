@@ -8,10 +8,11 @@ import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 
-from fastapi import Depends, FastAPI, HTTPException, Request, Response, WebSocket, WebSocketDisconnect, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -25,6 +26,8 @@ from .core.config import settings
 from .core.health import build_health_payload, build_live_payload, build_platform_status, build_ready_payload
 from .core.logging import bind_request_context, configure_logging
 from .core import metrics as metrics_mod
+from .security.api_key import api_key_configured, extract_api_key, resolve_api_key_session
+from .security.sessions import session_store
 from .audit import (
     ACTION_API_ACCESS,
     ACTION_LOGIN,
@@ -37,7 +40,7 @@ from .audit import (
 )
 from .database import SessionLocal, ensure_schema, get_db
 from .decision import DecisionEngine
-from .models import Evidence, Incident, TimelineEvent
+from .models import ApprovalRequest, Evidence, Incident, TimelineEvent
 from .reporting import build_report_history, build_report_summary
 from .schemas import (
     AuditEventOut,
@@ -53,11 +56,13 @@ from .schemas import (
     TimelineEventCreate,
     TimelineEventOut,
 )
-from .security.authorization import Role, has_permissions
-from .security.operators import hash_password, operator_store
+from .security.authorization import Role
+from .security.runtime_authz import require_allowed
+from .security.operators import authenticate_credentials, hash_password, operator_store
 from .security.rate_limit import classify_rate_limit_path, client_key, rate_limiter
+from .shared import clamp_page
 from .timeline import TimelineManager
-from .websocket.manager import manager
+from .openapi_docs import OPENAPI_TAGS, enrich_openapi
 from .routers import admin_router, connectors_router, ops_router
 from .org.router import router as org_router
 from .org.service import OrganizationService
@@ -71,8 +76,37 @@ from .personnel.router import router as personnel_router
 from .personnel.service import PersonnelService
 from .maintenance.router import router as maintenance_router
 from .maintenance.service import MaintenanceService
+from .work_orders.router import router as work_orders_router
+from .work_orders.service import WorkOrderService
+from .planning.router import router as planning_router
+from .planning.service import PlanningService
+from .logistics.router import router as logistics_router
+from .logistics.service import LogisticsService
+from .platform.router import router as platform_router
+from .platform.service import PlatformService
+from .marketplace.router import router as marketplace_router
+from .marketplace.service import MarketplaceService
+from .oem.router import router as oem_router
+from .oem.service import OemService
+from .authority.router import router as authority_router
+from .authority.service import AuthorityService
+from .fabric.router import router as fabric_router
+from .fabric.service import FabricService
+from .ecosystem.router import router as ecosystem_router
+from .ecosystem.service import EcosystemService
+from .connect.router import router as connect_router
+from .connect.service import ConnectService
+from .network.router import router as network_router
+from .network.service import NetworkService
+from .twin.router import router as twin_router
+from .twin.service import TwinService
+from .plugins.router import router as plugins_router
+from .plugins.service import PluginService
+from .event_fabric.router import router as event_fabric_router
+from .event_fabric.service import EventFabricService
 from .connectors.manager import connector_manager
 from .connectors.models import ConnectorState
+from .websocket.manager import manager
 
 configure_logging()
 logger = logging.getLogger("mercury.api")
@@ -99,8 +133,8 @@ decision_engine = DecisionEngine(
     connector_manager=connector_manager,
 )
 
-_sessions: dict[str, dict[str, datetime | str]] = {}
-_approvals: dict[str, dict[str, datetime | str | bool | None]] = {}
+# Back-compat alias for admin metrics; prefer session_store.
+_sessions = session_store
 
 _ROLE_BY_OPERATOR = {
     "admin": Role.ADMINISTRATOR.value,
@@ -118,14 +152,20 @@ operator_store.bootstrap(
 
 
 class LoginRequest(BaseModel):
-    operator: str
-    password: str
+    operator: str = Field(min_length=1, max_length=120, description="Directory username")
+    password: str = Field(min_length=1, max_length=200, description="Operator password")
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [{"operator": "operator", "password": "your-password"}],
+        }
+    }
 
 
 class ApprovalRequestPayload(BaseModel):
-    action: str
-    target_id: str | None = None
-    reason: str = ""
+    action: str = Field(description="Approval action, e.g. incident.resolve")
+    target_id: str | None = Field(default=None, description="Target resource id (incident id for resolve)")
+    reason: str = Field(default="", description="Operator reason recorded on the request")
 
 
 def utcnow() -> datetime:
@@ -133,10 +173,33 @@ def utcnow() -> datetime:
 
 
 def _cleanup_expired_sessions(now: datetime | None = None) -> None:
-    current = now or utcnow()
-    expired = [sid for sid, record in _sessions.items() if record["expires_at"] <= current]
-    for sid in expired:
-        _sessions.pop(sid, None)
+    session_store.cleanup_expired(now)
+
+
+def _record_login_rate_limit_audit() -> None:
+    """Identity.md: exhausted login bucket writes security.login_failure (rate_limited)."""
+    try:
+        db = SessionLocal()
+        try:
+            record_audit(
+                db,
+                action=ACTION_LOGIN_FAILURE,
+                actor="unknown",
+                actor_role="",
+                organization_id="org-aviation-east",
+                site_id="site-cyul",
+                target_type="auth",
+                target_id="login",
+                source="api",
+                outcome="failure",
+                origin="system",
+                details="rate_limited",
+            )
+            db.commit()
+        finally:
+            db.close()
+    except Exception:
+        logger.exception("Failed to record rate-limited login audit")
 
 
 def seed_organizations() -> None:
@@ -146,7 +209,9 @@ def seed_organizations() -> None:
         OrganizationService(db).ensure_seed_data(
             default_password_hash=hash_password(settings.auth_password),
             operator_roles=dict(_ROLE_BY_OPERATOR),
+            auth_password=settings.auth_password,
         )
+        operator_store.hydrate_from_db(db)
     finally:
         db.close()
 
@@ -196,6 +261,108 @@ def seed_maintenance() -> None:
         db.close()
 
 
+def seed_work_orders() -> None:
+    """Idempotent work package / work order / job card demo."""
+    db = SessionLocal()
+    try:
+        WorkOrderService(db).ensure_seed_data()
+    finally:
+        db.close()
+
+
+def seed_planning() -> None:
+    """Idempotent maintenance planning / MPD / AD / forecast demo."""
+    db = SessionLocal()
+    try:
+        PlanningService(db).ensure_seed_data()
+    finally:
+        db.close()
+
+
+def seed_logistics() -> None:
+    """Idempotent Program B logistics demo (warehouse, stock, tools, vendors)."""
+    db = SessionLocal()
+    try:
+        LogisticsService(db).seed_demo("org-aviation-east")
+    finally:
+        db.close()
+
+
+def seed_platform() -> None:
+    """Idempotent Program A platform foundation (templates, flags, workflow, facilities)."""
+    db = SessionLocal()
+    try:
+        PlatformService(db).seed_platform("org-aviation-east")
+    finally:
+        db.close()
+
+
+def seed_aeos_domains() -> None:
+    """Idempotent marketplace / OEM / authority readiness registries."""
+    db = SessionLocal()
+    try:
+        MarketplaceService(db).seed("org-aviation-east")
+        OemService(db).seed()
+        AuthorityService(db).seed()
+    finally:
+        db.close()
+
+
+def seed_fabric() -> None:
+    """Idempotent Program 11 Universal Data Fabric (passports, catalog, policies)."""
+    db = SessionLocal()
+    try:
+        FabricService(db).seed_fabric("org-aviation-east")
+    finally:
+        db.close()
+
+
+def seed_ecosystem() -> None:
+    """Idempotent Program 12 Aviation Digital Ecosystem + Mercury Connect."""
+    db = SessionLocal()
+    try:
+        EcosystemService(db).seed("org-aviation-east")
+        ConnectService(db).seed("org-aviation-east")
+    finally:
+        db.close()
+
+
+def seed_network() -> None:
+    """Idempotent Program 14 Mercury Aviation Network."""
+    db = SessionLocal()
+    try:
+        NetworkService(db).seed("org-aviation-east")
+    finally:
+        db.close()
+
+
+def seed_twin() -> None:
+    """Idempotent Program 15 Mercury Digital Twin."""
+    db = SessionLocal()
+    try:
+        TwinService(db).seed("org-aviation-east")
+    finally:
+        db.close()
+
+
+def seed_plugins() -> None:
+    """Idempotent Program 16 Mercury Plugin Platform."""
+    db = SessionLocal()
+    try:
+        PluginService(db).seed("org-aviation-east")
+    finally:
+        db.close()
+
+
+def seed_event_fabric() -> None:
+    """Idempotent Program 17 Mercury Enterprise Event Fabric."""
+    db = SessionLocal()
+    try:
+        EventFabricService(db).seed("org-aviation-east")
+    finally:
+        db.close()
+
+
 def _create_session(operator: str, role: str) -> tuple[str, datetime]:
     now = utcnow()
     session_id = secrets.token_urlsafe(32)
@@ -207,33 +374,25 @@ def _create_session(operator: str, role: str) -> tuple[str, datetime]:
         effective_role = svc.effective_role_for_org(operator, role, organization_id)
     finally:
         db.close()
-    _sessions[session_id] = {
+    record = {
         "operator": operator,
         "role": effective_role,
         "organization_id": organization_id,
         "site_id": site_id,
         "created_at": now,
         "expires_at": expires_at,
+        "auth_method": "session",
     }
+    session_store.save(session_id, record)
     return session_id, expires_at
 
 
 def _validate_session(session_id: str | None) -> dict[str, datetime | str] | None:
-    if not session_id:
-        return None
-    _cleanup_expired_sessions()
-    session = _sessions.get(session_id)
-    if session is None:
-        return None
-    if session["expires_at"] <= utcnow():
-        _sessions.pop(session_id, None)
-        return None
-    return session
+    return session_store.get(session_id)
 
 
 def _invalidate_session(session_id: str | None) -> None:
-    if session_id:
-        _sessions.pop(session_id, None)
+    session_store.delete(session_id)
 
 
 def _request_session_id(request: Request) -> str | None:
@@ -245,9 +404,19 @@ def _websocket_session_id(websocket: WebSocket) -> str | None:
 
 
 def require_session(request: Request) -> dict[str, datetime | str]:
-    session = _validate_session(_request_session_id(request))
+    session_id = _request_session_id(request)
+    session = _validate_session(session_id)
     if session is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+        session = resolve_api_key_session(request)
+        if session is None:
+            if api_key_configured() and extract_api_key(request):
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+        request.state.session_id = None
+        request.state.auth_method = "api_key"
+    else:
+        request.state.session_id = session_id
+        request.state.auth_method = "session"
     request.state.operator = session["operator"]
     request.state.role = session["role"]
     request.state.organization_id = session["organization_id"]
@@ -284,10 +453,11 @@ def _session_context_payload(session: dict[str, datetime | str], db: Session | N
 
 
 def require_permissions(*required: str):
-    def dependency(session: dict[str, datetime | str] = Depends(require_session)) -> dict[str, datetime | str]:
-        role = str(session.get("role", ""))
-        if not has_permissions(role, required):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+    def dependency(
+        session: dict[str, datetime | str] = Depends(require_session),
+        db: Session = Depends(get_db),
+    ) -> dict[str, datetime | str]:
+        require_allowed(db, session, required, detail="Insufficient permissions")
         return session
 
     return dependency
@@ -311,25 +481,74 @@ def _get_scoped_incident(db: Session, incident_id: str, session: dict[str, datet
     return incident
 
 
-def _create_approval(action: str, target_id: str | None, reason: str, session: dict[str, datetime | str]) -> dict[str, datetime | str | bool | None]:
-    approval_id = secrets.token_urlsafe(16)
-    record: dict[str, datetime | str | bool | None] = {
-        "approval_id": approval_id,
-        "action": action,
-        "target_id": target_id,
-        "reason": reason,
-        "status": "pending",
-        "requested_by": str(session["operator"]),
-        "requested_role": str(session["role"]),
-        "organization_id": str(session["organization_id"]),
-        "site_id": str(session["site_id"]),
-        "created_at": utcnow(),
-        "reviewed_by": None,
-        "reviewed_at": None,
-        "consumed": False,
-    }
-    _approvals[approval_id] = record
-    return record
+async def _broadcast_tenant_event(
+    payload: dict[str, object],
+    *,
+    organization_id: str,
+    site_id: str,
+) -> None:
+    """Fan-out incident/timeline events only to sockets stamped with this tenant."""
+    await manager.broadcast(
+        {**payload, "organization_id": organization_id, "site_id": site_id},
+        organization_id=organization_id,
+        site_id=site_id,
+    )
+
+
+def _approval_site_filter(session: dict[str, datetime | str]):
+    return (
+        ApprovalRequest.organization_id == str(session["organization_id"]),
+        ApprovalRequest.site_id == str(session["site_id"]),
+    )
+
+
+def _get_scoped_approval(
+    db: Session,
+    approval_id: str,
+    session: dict[str, datetime | str],
+    *,
+    for_update: bool = False,
+) -> ApprovalRequest:
+    if for_update:
+        row = db.scalar(
+            select(ApprovalRequest).where(ApprovalRequest.id == approval_id).with_for_update()
+        )
+    else:
+        row = db.get(ApprovalRequest, approval_id)
+    if (
+        row is None
+        or str(row.organization_id or "") != str(session["organization_id"])
+        or str(row.site_id or "") != str(session["site_id"])
+    ):
+        raise HTTPException(status_code=404, detail="Approval request not found")
+    return row
+
+
+def _create_approval(
+    db: Session,
+    action: str,
+    target_id: str | None,
+    reason: str,
+    session: dict[str, datetime | str],
+) -> ApprovalRequest:
+    row = ApprovalRequest(
+        id=secrets.token_urlsafe(16),
+        action=action,
+        target_id=target_id,
+        reason=reason or "",
+        status="pending",
+        requested_by=str(session["operator"]),
+        requested_role=str(session["role"]),
+        organization_id=str(session["organization_id"]),
+        site_id=str(session["site_id"]),
+        created_at=utcnow(),
+        reviewed_by=None,
+        reviewed_at=None,
+        consumed=False,
+    )
+    db.add(row)
+    db.flush()
+    return row
 
 
 def _safe_commit_audit(db: Session) -> None:
@@ -340,31 +559,42 @@ def _safe_commit_audit(db: Session) -> None:
         logger.exception("Failed to persist audit event")
 
 
-def _approve_request(approval_id: str, reviewer: str) -> dict[str, datetime | str | bool | None]:
-    record = _approvals.get(approval_id)
-    if record is None:
-        raise HTTPException(404, "Approval request not found")
-    record["status"] = "approved"
-    record["reviewed_by"] = reviewer
-    record["reviewed_at"] = utcnow()
-    return record
+def _approve_request(
+    db: Session,
+    approval_id: str,
+    reviewer: str,
+    session: dict[str, datetime | str],
+) -> ApprovalRequest:
+    row = _get_scoped_approval(db, approval_id, session, for_update=True)
+    if str(row.status) != "pending":
+        raise HTTPException(status_code=409, detail="Approval is not pending")
+    row.status = "approved"
+    row.reviewed_by = reviewer
+    row.reviewed_at = utcnow()
+    return row
 
 
-def _require_approved_action(approval_id: str | None, *, action: str, target_id: str) -> None:
+def _require_approved_action(
+    db: Session,
+    approval_id: str | None,
+    *,
+    action: str,
+    target_id: str,
+    session: dict[str, datetime | str],
+) -> ApprovalRequest:
     if not approval_id:
         raise HTTPException(status_code=400, detail="Approval required")
-    record = _approvals.get(approval_id)
-    if record is None:
-        raise HTTPException(404, "Approval request not found")
-    if bool(record.get("consumed")):
+    row = _get_scoped_approval(db, approval_id, session, for_update=True)
+    if bool(row.consumed):
         raise HTTPException(409, "Approval already used")
-    if str(record.get("status")) != "approved":
+    if str(row.status) != "approved":
         raise HTTPException(409, "Approval is not approved")
-    if str(record.get("action")) != action:
+    if str(row.action) != action:
         raise HTTPException(409, "Approval action mismatch")
-    if str(record.get("target_id") or "") != target_id:
+    if str(row.target_id or "") != target_id:
         raise HTTPException(409, "Approval target mismatch")
-    record["consumed"] = True
+    row.consumed = True
+    return row
 
 
 def seed_demo() -> None:
@@ -444,6 +674,7 @@ def seed_demo() -> None:
 async def heartbeat() -> None:
     while True:
         await asyncio.sleep(5)
+        _cleanup_expired_sessions()
         await manager.broadcast({"type": "heartbeat", "timestamp": utcnow().isoformat(), "version": settings.version})
 
 
@@ -457,6 +688,17 @@ async def lifespan(app: FastAPI):
     seed_publications()
     seed_personnel()
     seed_maintenance()
+    seed_work_orders()
+    seed_planning()
+    seed_logistics()
+    seed_platform()
+    seed_aeos_domains()
+    seed_fabric()
+    seed_ecosystem()
+    seed_network()
+    seed_twin()
+    seed_plugins()
+    seed_event_fabric()
     seed_demo()
     timeline_manager.add_event(
         event_type="mission.started",
@@ -498,8 +740,13 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=settings.app_name,
     version=settings.version,
-    description="Production-oriented reference platform. Operational feeds remain simulated unless configured otherwise.",
+    description=(
+        "Mercury AEOS REST API. Operator authentication uses an opaque HttpOnly session cookie "
+        "(not JWT access/refresh tokens). Optional machine auth: X-API-Key / Authorization Bearer "
+        "when MERCURY_API_KEY is configured. Interactive documentation: /docs (Swagger UI) and /redoc."
+    ),
     lifespan=lifespan,
+    openapi_tags=OPENAPI_TAGS,
 )
 app.include_router(connectors_router)
 app.include_router(ops_router)
@@ -511,6 +758,38 @@ app.include_router(publications_router)
 app.include_router(library_router)
 app.include_router(personnel_router)
 app.include_router(maintenance_router)
+app.include_router(work_orders_router)
+app.include_router(planning_router)
+app.include_router(logistics_router)
+app.include_router(platform_router)
+app.include_router(marketplace_router)
+app.include_router(oem_router)
+app.include_router(authority_router)
+app.include_router(fabric_router)
+app.include_router(ecosystem_router)
+app.include_router(connect_router)
+app.include_router(network_router)
+app.include_router(twin_router)
+app.include_router(plugins_router)
+app.include_router(event_fabric_router)
+
+
+def custom_openapi():
+    """Generated OpenAPI plus RC1 documentation enrichment (tags, auth, errors)."""
+    if app.openapi_schema:
+        return app.openapi_schema
+    schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+        tags=app.openapi_tags,
+    )
+    app.openapi_schema = enrich_openapi(schema, app)
+    return app.openapi_schema
+
+
+app.openapi = custom_openapi
 
 app.add_middleware(
     CORSMiddleware,
@@ -533,6 +812,8 @@ async def rate_limit_requests(request: Request, call_next):
         key = f"{bucket}:{client_key(request.client.host if request.client else None, request.headers.get('x-forwarded-for'))}"
         if not rate_limiter.allow(key, limit=limit, window_seconds=60.0):
             metrics_mod.observe_rate_limit_block(bucket)
+            if bucket == "login":
+                _record_login_rate_limit_audit()
             return JSONResponse(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 content={"detail": "Rate limit exceeded", "retry_after_seconds": 60},
@@ -572,7 +853,7 @@ async def request_context(request: Request, call_next):
             status_code=response.status_code,
             duration_seconds=elapsed,
         )
-        metrics_mod.set_active_users(len(_sessions))
+        metrics_mod.set_active_users(session_store.count())
     logger.info(
         "request method=%s path=%s status=%s duration_ms=%.1f",
         request.method,
@@ -655,9 +936,17 @@ def platform_status(
     return build_platform_status(db, connector_manager)
 
 
-@app.post("/api/v1/auth/login")
+@app.post(
+    "/api/v1/auth/login",
+    tags=["auth"],
+    summary="Operator login",
+    description=(
+        "Verifies credentials against the OrgUser directory (Argon2id; legacy SHA-256 is upgraded on success). "
+        "Creates a server-side session and sets an HttpOnly cookie. Does not return a JWT or refresh token."
+    ),
+)
 def login(payload: LoginRequest, response: Response, db: Session = Depends(get_db)):
-    role = operator_store.authenticate(payload.operator, payload.password)
+    role = authenticate_credentials(db, payload.operator, payload.password)
     if role is None:
         metrics_mod.observe_login(success=False)
         try:
@@ -709,7 +998,9 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
     metrics_mod.observe_login(success=True)
     session_id, expires_at = _create_session(payload.operator, role)
-    session = _sessions[session_id]
+    session = session_store.get(session_id)
+    if session is None:
+        raise HTTPException(status_code=500, detail="Session could not be established")
     effective_role = str(session["role"])
     # Auth cookies: always HttpOnly + SameSite=Lax (or configured); Secure required in production/HTTPS.
     response.set_cookie(
@@ -739,7 +1030,7 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
         _safe_commit_audit(db)
     except Exception:
         logger.exception("Failed to record auth.login audit")
-    metrics_mod.set_active_users(len(_sessions))
+    metrics_mod.set_active_users(session_store.count())
     return {
         "authenticated": True,
         "operator": payload.operator,
@@ -747,7 +1038,12 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
         "expires_at": expires_at.isoformat(),
     }
 
-@app.post("/api/v1/auth/logout")
+@app.post(
+    "/api/v1/auth/logout",
+    tags=["auth"],
+    summary="Operator logout",
+    description="Invalidates the server-side session and clears the session cookie. Idempotent when no session is present.",
+)
 def logout(response: Response, request: Request, db: Session = Depends(get_db)):
     session = _validate_session(_request_session_id(request))
     if session is not None:
@@ -770,7 +1066,7 @@ def logout(response: Response, request: Request, db: Session = Depends(get_db)):
         except Exception:
             logger.exception("Failed to record auth.logout audit")
     _invalidate_session(_request_session_id(request))
-    metrics_mod.set_active_users(len(_sessions))
+    metrics_mod.set_active_users(session_store.count())
     response.delete_cookie(
         key=settings.session_cookie_name,
         path="/",
@@ -781,7 +1077,12 @@ def logout(response: Response, request: Request, db: Session = Depends(get_db)):
     return {"authenticated": False}
 
 
-@app.get("/api/v1/auth/session")
+@app.get(
+    "/api/v1/auth/session",
+    tags=["auth"],
+    summary="Session probe",
+    description="Returns authenticated=false without a valid cookie (HTTP 200). Does not require a session.",
+)
 def session_status(request: Request):
     session = _validate_session(_request_session_id(request))
     if session is None:
@@ -796,7 +1097,12 @@ def session_status(request: Request):
     }
 
 
-@app.get("/api/v1/auth/context")
+@app.get(
+    "/api/v1/auth/context",
+    tags=["auth"],
+    summary="Get tenant session context",
+    description="Requires a valid session cookie. Returns operator, role, active organization/site, and switchable tenants.",
+)
 def get_session_context(
     session: dict[str, datetime | str] = Depends(require_session),
     db: Session = Depends(get_db),
@@ -808,12 +1114,20 @@ def get_session_context(
     }
 
 
-@app.post("/api/v1/auth/context")
+@app.post(
+    "/api/v1/auth/context",
+    tags=["auth"],
+    summary="Switch tenant session context",
+    description="Updates the active organization/site on the server-side session. API-key principals cannot switch context.",
+)
 def update_session_context(
     payload: SessionContextUpdate,
+    request: Request,
     session: dict[str, datetime | str] = Depends(require_session),
     db: Session = Depends(get_db),
 ):
+    if getattr(request.state, "auth_method", "session") == "api_key":
+        raise HTTPException(status_code=400, detail="API key sessions cannot switch organization context")
     old_organization_id = str(session["organization_id"])
     old_site_id = str(session["site_id"])
     current_organization_id = old_organization_id
@@ -868,6 +1182,9 @@ def update_session_context(
     session["organization_id"] = next_organization_id
     session["site_id"] = next_site_id
     session["role"] = svc.effective_role_for_org(operator, fallback_role, next_organization_id)
+    session_id = getattr(request.state, "session_id", None) or _request_session_id(request)
+    if session_id:
+        session_store.save(str(session_id), session)
 
     try:
         record_audit(
@@ -901,7 +1218,7 @@ def create_approval_request(
     session: dict[str, datetime | str] = Depends(require_session),
     db: Session = Depends(get_db),
 ):
-    record = _create_approval(payload.action, payload.target_id, payload.reason, session)
+    record = _create_approval(db, payload.action, payload.target_id, payload.reason, session)
     record_audit(
         db,
         action="approval.request",
@@ -910,39 +1227,58 @@ def create_approval_request(
         organization_id=str(session["organization_id"]),
         site_id=str(session["site_id"]),
         target_type="approval",
-        target_id=str(record["approval_id"]),
+        target_id=str(record.id),
         source="api",
         outcome="success",
         origin="operator",
         details=payload.reason or payload.action,
     )
     db.commit()
+    db.refresh(record)
     return {
-        "approval_id": str(record["approval_id"]),
-        "status": str(record["status"]),
-        "action": str(record["action"]),
-        "target_id": record["target_id"],
-        "requested_by": str(record["requested_by"]),
-        "requested_role": str(record["requested_role"]),
-        "created_at": record["created_at"].isoformat(),
+        "approval_id": str(record.id),
+        "status": str(record.status),
+        "action": str(record.action),
+        "target_id": record.target_id,
+        "requested_by": str(record.requested_by),
+        "requested_role": str(record.requested_role),
+        "organization_id": str(record.organization_id),
+        "site_id": str(record.site_id),
+        "created_at": record.created_at.isoformat(),
     }
 
 
 @app.get("/api/v1/approvals", dependencies=[Depends(require_permissions("approval.review"))])
-def list_approvals(status_filter: str | None = None):
-    records = list(_approvals.values())
+def list_approvals(
+    status_filter: str | None = None,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    session: dict[str, datetime | str] = Depends(require_session),
+    db: Session = Depends(get_db),
+):
+    stmt = (
+        select(ApprovalRequest)
+        .where(*_approval_site_filter(session))
+        .order_by(ApprovalRequest.created_at.desc())
+    )
     if status_filter:
-        records = [item for item in records if str(item.get("status")) == status_filter]
+        stmt = stmt.where(ApprovalRequest.status == status_filter)
+    lim, off = clamp_page(limit, offset)
+    records = list(db.scalars(stmt.offset(off).limit(lim)).all())
     return [
         {
-            "approval_id": str(item["approval_id"]),
-            "status": str(item["status"]),
-            "action": str(item["action"]),
-            "target_id": item["target_id"],
-            "requested_by": str(item["requested_by"]),
-            "requested_role": str(item["requested_role"]),
-            "reviewed_by": item["reviewed_by"],
-            "consumed": bool(item["consumed"]),
+            "approval_id": str(item.id),
+            "status": str(item.status),
+            "action": str(item.action),
+            "target_id": item.target_id,
+            "requested_by": str(item.requested_by),
+            "requested_role": str(item.requested_role),
+            "organization_id": str(item.organization_id),
+            "site_id": str(item.site_id),
+            "reviewed_by": item.reviewed_by,
+            "consumed": bool(item.consumed),
+            "created_at": item.created_at.isoformat() if item.created_at else None,
+            "reviewed_at": item.reviewed_at.isoformat() if item.reviewed_at else None,
         }
         for item in records
     ]
@@ -954,16 +1290,14 @@ def approve_request(
     session: dict[str, datetime | str] = Depends(require_session),
     db: Session = Depends(get_db),
 ):
-    record = _approve_request(approval_id, str(session["operator"]))
-    organization_id = str(record.get("organization_id") or session["organization_id"])
-    site_id = str(record.get("site_id") or session["site_id"])
+    record = _approve_request(db, approval_id, str(session["operator"]), session)
     record_audit(
         db,
         action="approval.approve",
         actor=str(session["operator"]),
         actor_role=str(session["role"]),
-        organization_id=organization_id,
-        site_id=site_id,
+        organization_id=str(record.organization_id),
+        site_id=str(record.site_id),
         target_type="approval",
         target_id=approval_id,
         source="api",
@@ -972,23 +1306,25 @@ def approve_request(
         details="",
     )
     db.commit()
+    db.refresh(record)
     return {
-        "approval_id": str(record["approval_id"]),
-        "status": str(record["status"]),
-        "reviewed_by": str(record["reviewed_by"]),
-        "reviewed_at": record["reviewed_at"].isoformat(),
+        "approval_id": str(record.id),
+        "status": str(record.status),
+        "reviewed_by": str(record.reviewed_by),
+        "reviewed_at": record.reviewed_at.isoformat() if record.reviewed_at else None,
+        "organization_id": str(record.organization_id),
+        "site_id": str(record.site_id),
     }
 
 
 @app.get("/api/v1/incidents", response_model=list[IncidentOut])
 def list_incidents(
-    limit: int = 100,
-    offset: int = 0,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     session: dict[str, datetime | str] = Depends(require_permissions("incident.read")),
 ):
-    capped = max(1, min(int(limit), 500))
-    start = max(0, int(offset))
+    capped, start = clamp_page(limit, offset)
     stmt = (
         select(Incident)
         .where(*_session_site_filter(session))
@@ -1028,7 +1364,11 @@ async def create_incident(
     )
     db.commit()
     db.refresh(incident)
-    await manager.broadcast({"type": "incident.created", "incident_id": incident.id, "severity": incident.severity})
+    await _broadcast_tenant_event(
+        {"type": "incident.created", "incident_id": incident.id, "severity": incident.severity},
+        organization_id=str(incident.organization_id),
+        site_id=str(incident.site_id),
+    )
     return incident
 
 
@@ -1050,26 +1390,28 @@ async def update_incident_status(
     db: Session = Depends(get_db),
     session: dict[str, datetime | str] = Depends(require_session),
 ):
-    incident = db.get(Incident, incident_id)
-    if not incident:
-        raise HTTPException(404, "Incident not found")
+    incident = _get_scoped_incident(db, incident_id, session)
     status_value = str(payload.status).lower()
     consumed_approval = False
+    approval_record: ApprovalRequest | None = None
     if status_value in {"resolved", "closed"} and str(session.get("role")) != Role.ADMINISTRATOR.value:
-        _require_approved_action(payload.approval_id, action="incident.resolve", target_id=incident_id)
+        approval_record = _require_approved_action(
+            db,
+            payload.approval_id,
+            action="incident.resolve",
+            target_id=incident_id,
+            session=session,
+        )
         consumed_approval = True
     incident.status = payload.status
-    if consumed_approval:
-        approval_record = _approvals.get(str(payload.approval_id or ""))
+    if consumed_approval and approval_record is not None:
         record_audit(
             db,
             action="approval.consume",
             actor=str(session["operator"]),
             actor_role=str(session["role"]),
-            organization_id=str(
-                (approval_record or {}).get("organization_id") or session["organization_id"]
-            ),
-            site_id=str((approval_record or {}).get("site_id") or session["site_id"]),
+            organization_id=str(approval_record.organization_id),
+            site_id=str(approval_record.site_id),
             target_type="approval",
             target_id=str(payload.approval_id),
             source="api",
@@ -1082,8 +1424,8 @@ async def update_incident_status(
         action="incident.status",
         actor=str(session["operator"]),
         actor_role=str(session["role"]),
-        organization_id=str(session["organization_id"]),
-        site_id=str(session["site_id"]),
+        organization_id=str(incident.organization_id),
+        site_id=str(incident.site_id),
         target_type="incident",
         target_id=incident_id,
         source="api",
@@ -1093,7 +1435,11 @@ async def update_incident_status(
     )
     db.commit()
     db.refresh(incident)
-    await manager.broadcast({"type": "incident.status", "incident_id": incident.id, "status": incident.status})
+    await _broadcast_tenant_event(
+        {"type": "incident.status", "incident_id": incident.id, "status": incident.status},
+        organization_id=str(incident.organization_id),
+        site_id=str(incident.site_id),
+    )
     return incident
 
 
@@ -1104,9 +1450,8 @@ async def add_event(
     db: Session = Depends(get_db),
     session: dict[str, datetime | str] = Depends(require_permissions("incident.event")),
 ):
-    if not db.get(Incident, incident_id):
-        raise HTTPException(404, "Incident not found")
-    event = TimelineEvent(incident_id=incident_id, **payload.model_dump())
+    incident = _get_scoped_incident(db, incident_id, session)
+    event = TimelineEvent(incident_id=incident.id, **payload.model_dump())
     db.add(event)
     db.flush()
     record_audit(
@@ -1114,10 +1459,10 @@ async def add_event(
         action="incident.event",
         actor=str(session["operator"]),
         actor_role=str(session["role"]),
-        organization_id=str(session["organization_id"]),
-        site_id=str(session["site_id"]),
+        organization_id=str(incident.organization_id),
+        site_id=str(incident.site_id),
         target_type="incident",
-        target_id=incident_id,
+        target_id=incident.id,
         source="api",
         outcome="success",
         origin="operator",
@@ -1125,7 +1470,11 @@ async def add_event(
     )
     db.commit()
     db.refresh(event)
-    await manager.broadcast({"type": "timeline.event", "incident_id": incident_id, "event_type": event.event_type})
+    await _broadcast_tenant_event(
+        {"type": "timeline.event", "incident_id": incident.id, "event_type": event.event_type},
+        organization_id=str(incident.organization_id),
+        site_id=str(incident.site_id),
+    )
     return event
 
 
@@ -1136,11 +1485,10 @@ def add_evidence(
     db: Session = Depends(get_db),
     session: dict[str, datetime | str] = Depends(require_permissions("incident.evidence")),
 ):
-    if not db.get(Incident, incident_id):
-        raise HTTPException(404, "Incident not found")
+    incident = _get_scoped_incident(db, incident_id, session)
     provenance = normalize_provenance(payload.provenance, default="operator_entered")
     evidence = Evidence(
-        incident_id=incident_id,
+        incident_id=incident.id,
         evidence_type=payload.evidence_type,
         source=payload.source,
         title=payload.title,
@@ -1148,8 +1496,8 @@ def add_evidence(
         confidence=payload.confidence,
         provenance=provenance,
         created_by=str(session["operator"]),
-        organization_id=str(session["organization_id"]),
-        site_id=str(session["site_id"]),
+        organization_id=str(incident.organization_id),
+        site_id=str(incident.site_id),
     )
     db.add(evidence)
     db.flush()
@@ -1158,8 +1506,8 @@ def add_evidence(
         action="incident.evidence",
         actor=str(session["operator"]),
         actor_role=str(session["role"]),
-        organization_id=str(session["organization_id"]),
-        site_id=str(session["site_id"]),
+        organization_id=str(incident.organization_id),
+        site_id=str(incident.site_id),
         target_type="evidence",
         target_id=evidence.id,
         source="api",
@@ -1269,14 +1617,29 @@ def report_history(
 def list_alerts(
     incident_id: str | None = None,
     limit: int = 50,
-    _: dict[str, datetime | str] = Depends(require_permissions("alerts.read")),
+    session: dict[str, datetime | str] = Depends(require_permissions("alerts.read")),
 ):
-    return [alert.to_dict() for alert in alert_manager.get_alerts(incident_id=incident_id, limit=limit)]
+    return [
+        alert.to_dict()
+        for alert in alert_manager.get_alerts(
+            incident_id=incident_id,
+            limit=limit,
+            organization_id=str(session["organization_id"]),
+            site_id=str(session["site_id"]),
+        )
+    ]
 
 
 @app.post("/api/v1/alerts/{alert_id}/ack")
-def acknowledge_alert(alert_id: str, _: dict[str, datetime | str] = Depends(require_permissions("alerts.ack"))):
-    alert = alert_manager.acknowledge(alert_id)
+def acknowledge_alert(
+    alert_id: str,
+    session: dict[str, datetime | str] = Depends(require_permissions("alerts.ack")),
+):
+    alert = alert_manager.acknowledge(
+        alert_id,
+        organization_id=str(session["organization_id"]),
+        site_id=str(session["site_id"]),
+    )
     if alert is None:
         raise HTTPException(404, "Alert not found")
     return alert.to_dict()
@@ -1412,14 +1775,14 @@ def dashboard_summary(
     platform_services = {"api": "online", "database": "online", "events": "online", "ai": "decision_engine_advisory"}
     connected_services = sum(1 for status in platform_services.values() if status == "online")
 
-    alerts = alert_manager.get_alerts(limit=250)
+    org_id = str(session["organization_id"])
+    site_id = str(session["site_id"])
+    alerts = alert_manager.get_alerts(limit=250, organization_id=org_id, site_id=site_id)
     active_alerts = [alert for alert in alerts if not alert.acknowledged]
     critical_alerts = [alert for alert in active_alerts if str(alert.severity).lower() == "critical"]
     acknowledged_alerts = [alert for alert in alerts if alert.acknowledged]
 
     missions = mission_service.list_missions(status=MissionStatus.ACTIVE)
-    org_id = str(session["organization_id"])
-    site_id = str(session["site_id"])
     incident_count = db.scalar(
         select(func.count()).select_from(Incident).where(
             Incident.organization_id == org_id,
@@ -1552,7 +1915,12 @@ async def websocket_gateway(websocket: WebSocket):
     if session is None:
         await websocket.close(code=1008)
         return
-    await manager.connect(websocket)
+    # Tenant stamp required by ConnectionManager (RB-02); approvals work is orthogonal.
+    await manager.connect(
+        websocket,
+        organization_id=str(session["organization_id"]),
+        site_id=str(session["site_id"]),
+    )
     try:
         context = _session_context_payload(session)
         await websocket.send_json(

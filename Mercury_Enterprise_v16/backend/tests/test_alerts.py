@@ -39,3 +39,34 @@ def test_acknowledge_and_export():
 
     exported = manager.export_json()
     assert exported[0]["acknowledged"] is True
+
+
+def test_alerts_are_tenant_filtered():
+    manager = AlertManager(max_history=10)
+    east = manager.create_alert(
+        "inc-east",
+        "high",
+        "East alert",
+        "east only",
+        organization_id="org-aviation-east",
+        site_id="site-cyul",
+    )
+    west = manager.create_alert(
+        "inc-west",
+        "critical",
+        "West alert",
+        "west only",
+        organization_id="org-aviation-west",
+        site_id="site-cyvr",
+    )
+    platform = manager.create_alert(None, "info", "System started", "platform")
+
+    east_visible = manager.get_alerts(organization_id="org-aviation-east", site_id="site-cyul")
+    east_ids = {item.id for item in east_visible}
+    assert east.id in east_ids
+    assert platform.id in east_ids
+    assert west.id not in east_ids
+
+    assert manager.get_alert(west.id, organization_id="org-aviation-east") is None
+    assert manager.acknowledge(west.id, organization_id="org-aviation-east") is None
+    assert manager.acknowledge(west.id, organization_id="org-aviation-west", site_id="site-cyvr") is not None

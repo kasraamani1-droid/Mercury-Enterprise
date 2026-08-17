@@ -28,3 +28,17 @@
 .login-card input{width:100%;background:#0a1527;color:var(--text);border:1px solid var(--border);border-radius:8px;padding:10px}
 .login-error{color:#fda4af;font-size:12px;margin:0}
 .login-error.hidden{display:none!important}
+
+/* Sprint 8 — Maintenance / hangar planning */
+.bay-board{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:10px 0 14px}
+.bay-slot{min-height:72px;padding:10px;border:1px dashed #35557f;border-radius:8px;background:#0a192e}
+.bay-slot strong{display:block;margin-bottom:6px;color:#7dd3fc;font-size:12px}
+.stack-form{display:grid;gap:8px;margin-bottom:12px}
+.stack-form label{display:grid;gap:4px;font-size:12px;color:#9fb8d6}
+.enterprise-kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin-bottom:14px}
+.enterprise-kpis article{padding:10px;background:#0b1a2f;border:1px solid #263b57;border-radius:8px}
+.enterprise-kpis .health-list{display:grid;gap:4px;font-size:11px}
+.enterprise-header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:16px}
+.enterprise-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+@media(max-width:1100px){.bay-board,.enterprise-kpis,.enterprise-grid{grid-template-columns:1fr}}
+.tl-green{color:#4ae398}.tl-yellow{color:#fbbf24}.tl-red{color:#f87171;font-weight:800}

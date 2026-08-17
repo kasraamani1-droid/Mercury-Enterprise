@@ -3,7 +3,12 @@ import { state } from "./state.js";
 import { listAudit, getReportSummary, getReportHistory } from "./api.js";
 import { refreshIntegrations } from "./enterprise8.js";
 
-const workspaces=["command","digitalTwin","radar","executive","history","admin","cloud","integrations","compliance"];
+const workspaces=[
+  "command","digitalTwin","radar","executive","history","admin","cloud","integrations","compliance",
+  "maintenance","planning","logistics",
+  "home","context","aircraft","fleet","workOrders","logbook","engineering","inventory","marketplace",
+  "assetTwin","authority","organization","ai","developer"
+];
 let serverAudits=[];
 let historyRows=[];
 let latestSummary=null;
@@ -126,7 +131,7 @@ export async function refreshEnterpriseReports(){
   await Promise.allSettled([loadExecutive(), loadHistory()]);
 }
 
-function showWorkspace(name){
+export function showWorkspace(name){
   workspaces.forEach(x=>{el(`${x}Workspace`)?.classList.toggle("hidden",x!==name);el(`${x}Workspace`)?.classList.toggle("active",x===name)});
   document.querySelectorAll(".product-tab").forEach(b=>b.classList.toggle("active",b.dataset.workspace===name));
   if(name==="admin")loadServerAudit();
@@ -134,6 +139,21 @@ function showWorkspace(name){
   if(name==="history")loadHistory();
   if(name==="integrations")refreshIntegrations();
   if(name==="digitalTwin")updateTwin();
+  if(name==="command"){
+    setTimeout(()=>{
+      try{ state.map?.invalidateSize?.(); }
+      catch(_){ /* ignore */ }
+    }, 80);
+  }
+  if(name==="maintenance"||name==="workOrders"){
+    import("./maintenance.js").then((m)=>m.refreshMaintenanceWorkspace()).catch(()=>{});
+  }
+  if(name==="planning"||name==="engineering"){
+    import("./planning.js").then((m)=>m.refreshPlanningWorkspace()).catch(()=>{});
+  }
+  if(name==="logistics"||name==="inventory"){
+    import("./logistics.js").then((m)=>m.refreshLogisticsWorkspace()).catch(()=>{});
+  }
 }
 function renderContacts(){el("radarContacts").innerHTML=contacts.map(r=>`<div class="contact-row"><b>${r[0]}</b><span>${r[1]}<small>${r[2]} · ${r[3]}</small></span><em>${r[5]}</em></div>`).join("")}
 function renderPresence(){const html=people.map(p=>`<div><span>●</span><b>${p[0]}<small>${p[1]}</small></b><em>${p[2]}</em></div>`).join("");el("operatorPresence").innerHTML=html;el("responseUnits").innerHTML=people.slice(2).map(p=>`<div><span>●</span><b>${p[0]}<small>${p[1]}</small></b><em>${p[2]}</em></div>`).join("")}

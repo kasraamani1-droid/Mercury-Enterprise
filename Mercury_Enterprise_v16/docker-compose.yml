@@ -15,6 +15,22 @@ services:
       start_period: 5s
     restart: unless-stopped
 
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - mercury_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    restart: unless-stopped
+    # Optional: publish for local debugging — leave commented in production.
+    # ports:
+    #   - "6379:6379"
+
   # Backend is Compose-network only (expose). UI must call same-origin /api via NGINX.
   backend:
     build: ./backend
@@ -22,13 +38,19 @@ services:
     environment:
       # Fail closed if critical production secrets are missing (validated at API startup).
       MERCURY_ENV: ${MERCURY_ENV:-production}
+      # Production system of record — Alembic entrypoint upgrades schema before uvicorn.
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://mercury:mercury@postgres:5432/mercury}
       HTTPS_ENABLED: ${HTTPS_ENABLED:-false}
       DOMAIN: ${DOMAIN:-}
       JWT_SECRET: ${JWT_SECRET:-}
       COOKIE_SECRET: ${COOKIE_SECRET:-}
       LETSENCRYPT_EMAIL: ${LETSENCRYPT_EMAIL:-}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      REDIS_REQUIRED: ${REDIS_REQUIRED:-false}
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     expose:
       - "8000"
@@ -106,5 +128,6 @@ services:
 
 volumes:
   mercury_postgres:
+  mercury_redis:
   certbot_www:
   certbot_certs:

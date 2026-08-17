@@ -146,7 +146,10 @@ def build_health_payload(db: Session, connector_manager: Any) -> dict[str, Any]:
     connectors = connector_summary(connector_manager)
     database_ok = db_checks.get("database") == "ok"
     redis_state = redis_checks.get("redis", "not_configured")
-    redis_ok = redis_state in {"ok", "not_configured"}
+    if settings.redis_required:
+        redis_ok = redis_state == "ok"
+    else:
+        redis_ok = redis_state in {"ok", "not_configured"}
     # Top-level status remains dependency-critical (DB / required Redis). Disk and memory are
     # reported as signals without forcing false "degraded" on healthy API hosts.
     status_value = "ok" if database_ok and redis_ok else "degraded"

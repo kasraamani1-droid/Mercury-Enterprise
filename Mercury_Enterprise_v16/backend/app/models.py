@@ -1,12 +1,32 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import String, DateTime, ForeignKey, Text, Float
+from sqlalchemy import String, DateTime, ForeignKey, Text, Float, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .database import Base
 
 
 def uid() -> str:
     return str(uuid.uuid4())
+
+
+class ApprovalRequest(Base):
+    """Durable, tenant-scoped approval requests (RC1 Blocker 03)."""
+
+    __tablename__ = "approval_requests"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=uid)
+    action: Mapped[str] = mapped_column(String(80), index=True)
+    target_id: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    reason: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(40), default="pending", index=True)
+    requested_by: Mapped[str] = mapped_column(String(120))
+    requested_role: Mapped[str] = mapped_column(String(40), default="")
+    organization_id: Mapped[str] = mapped_column(String(80), index=True)
+    site_id: Mapped[str] = mapped_column(String(80), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    reviewed_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    consumed: Mapped[bool] = mapped_column(Boolean, default=False)
+
 
 class Incident(Base):
     __tablename__ = "incidents"

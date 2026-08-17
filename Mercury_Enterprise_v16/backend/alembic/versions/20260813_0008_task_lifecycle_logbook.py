@@ -25,7 +25,8 @@ def upgrade() -> None:
         "maintenance_tasks",
         ["assigned_to_employee_id"],
     )
-    op.alter_column("maintenance_tasks", "version", server_default=None)
+    with op.batch_alter_table("maintenance_tasks") as batch_op:
+        batch_op.alter_column("version", server_default=None)
 
     op.add_column(
         "technical_log_entries",
@@ -36,5 +37,6 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_column("technical_log_entries", "independent_inspector_employee_id")
     op.drop_index("ix_maintenance_tasks_assigned_to_employee_id", table_name="maintenance_tasks")
-    op.drop_column("maintenance_tasks", "version")
-    op.drop_column("maintenance_tasks", "assigned_to_employee_id")
+    with op.batch_alter_table("maintenance_tasks") as batch_op:
+        batch_op.drop_column("version")
+        batch_op.drop_column("assigned_to_employee_id")

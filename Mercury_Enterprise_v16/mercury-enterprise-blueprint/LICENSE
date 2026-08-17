@@ -1,0 +1,31 @@
+# LICENSE
+
+Copyright (c) 2024–2026 Mercury Technologies.
+
+## Proprietary enterprise documentation
+
+This repository and its contents are proprietary and confidential materials of Mercury Technologies (“Mercury”).
+
+Permission is granted to authorized employees, contractors, customers, partners, and regulators of Mercury to use this documentation **solely** for evaluating, implementing, operating, or auditing Mercury products under a valid agreement with Mercury.
+
+### Restrictions
+
+Without prior written consent from Mercury Technologies, you may not:
+
+1. Redistribute, publish, or sublicense this repository or substantial excerpts.
+2. Use Mercury trademarks, product names, or architecture diagrams to imply certification, endorsement, or operational approval by any aviation authority.
+3. Reverse-engineer product strategy or pricing for competitive substitution beyond fair dealing permitted by applicable law.
+
+### No airworthiness warranty
+
+This documentation describes software product architecture and intended controls. It does **not** constitute approved data, Instructions for Continued Airworthiness (ICA), or a finding of compliance by the FAA, Transport Canada, EASA, ICAO, or any other authority. Operational use of Mercury software in certified aviation contexts requires independent validation, operator procedures, and applicable approvals.
+
+### Source code
+
+Application source code may be distributed under separate license terms. Where conflicts exist, the software license for a specific deliverable controls that deliverable; this LICENSE controls the blueprint documentation.
+
+### Contact
+
+Security and legal notices: see [SECURITY.md](SECURITY.md). Commercial and contractual inquiries are handled through Mercury Technologies’ official customer channels under a mutual NDA or executed agreement.
+
+All rights reserved.

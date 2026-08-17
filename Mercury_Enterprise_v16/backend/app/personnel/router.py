@@ -3,12 +3,12 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
 from ..audit import record_audit
 from ..database import get_db
-from ..security.authorization import has_permissions
+from ..security.runtime_authz import require_allowed
 from .schemas import (
     AuthorizationCreate,
     AuthorizationOut,
@@ -32,17 +32,15 @@ def _session(request: Request) -> dict[str, datetime | str]:
     return require_session(request)
 
 
-def require_personnel_read(request: Request) -> dict[str, datetime | str]:
+def require_personnel_read(request: Request, db: Session = Depends(get_db)) -> dict[str, datetime | str]:
     session = _session(request)
-    if not has_permissions(str(session.get("role")), ("personnel.read",)):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+    require_allowed(db, session, ("personnel.read",), detail="Insufficient permissions")
     return session
 
 
-def require_personnel_manage(request: Request) -> dict[str, datetime | str]:
+def require_personnel_manage(request: Request, db: Session = Depends(get_db)) -> dict[str, datetime | str]:
     session = _session(request)
-    if not has_permissions(str(session.get("role")), ("personnel.manage",)):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Personnel management required")
+    require_allowed(db, session, ("personnel.manage",), detail="Personnel management required")
     return session
 
 
@@ -93,6 +91,8 @@ def _audit(
 def list_employees(
     organization_id: str | None = None,
     status: str | None = None,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     session: dict[str, datetime | str] = Depends(require_personnel_read),
 ) -> list[EmployeeOut]:
@@ -102,6 +102,8 @@ def list_employees(
         session_org_id=str(session["organization_id"]),
         organization_id=organization_id,
         status=status,
+        limit=limit,
+        offset=offset,
     )
 
 

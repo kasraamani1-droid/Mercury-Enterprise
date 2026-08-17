@@ -169,7 +169,7 @@ OK
 1. Connector health history is **in-memory only** (lost on process restart); durable table deferred unless requested.
 2. `GET /dashboard/summary` connector category placeholders remain partially synthetic; Command panel overlays live connectors where categories match.
 3. Incident list (`GET /incidents`) is still global (not site-filtered); site scope enforced on reports/audit/evidence stamps.
-4. Approvals remain in-memory (Task 14 design); durable only via audit trail.
+4. Approvals are durable SQL (`approval_requests`); audited via `approval.request` / `approval.approve` / `approval.consume`.
 5. Auth audit writes are best-effort (login must not fail if DB audit insert fails).
 6. `datetime.utcnow()` deprecation warnings remain in SQLAlchemy/model defaults (pre-existing pattern).
 7. Frontend has no automated unit/e2e suite beyond `node --check`.

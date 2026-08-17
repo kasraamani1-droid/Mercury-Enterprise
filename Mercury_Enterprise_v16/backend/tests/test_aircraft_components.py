@@ -360,14 +360,17 @@ def test_catalog_create_requires_admin_and_audits_mutations():
     assert denied.status_code == 403
 
     login_as("admin")
-    suffix = uuid.uuid4().hex[:4]
+    suffix = uuid.uuid4().hex[:6]
     created = client.post(
         "/api/v1/components/ata-chapters",
-        json={"chapter_number": f"9{suffix[:1]}", "subchapter": "00", "title": f"Chapter {suffix}"},
+        json={"chapter_number": f"9{suffix}", "subchapter": "00", "title": f"Chapter {suffix}"},
     )
-    assert created.status_code == 201
+    assert created.status_code == 201, created.text
 
     login_as("admin")
-    events = client.get("/admin/audit", params={"action": "component.ata.create", "limit": 20})
+    events = client.get(
+        "/admin/audit",
+        params={"action": "component.ata.create", "target_id": created.json()["id"], "limit": 50},
+    )
     assert events.status_code == 200
     assert any(item["action"] == "component.ata.create" for item in events.json())

@@ -6,6 +6,7 @@ import {
   getSessionContext,
   updateSessionContext,
   login,
+  logout,
   listConnectors,
   evaluateDecision,
   getDecision,
@@ -19,13 +20,18 @@ import { onTrackingTick, updateFusion, updateThreatMatrix, acknowledgeThreat } f
 import { initializeMissionOps, updateWeather, updateProactiveBrief } from "./missionOps.js";
 import { initializeCommandCenter } from "./commandCenter.js";
 import { initializeRealtimeConsole } from "./realtimeConsole.js";
-import { initializeEnterprise, refreshEnterpriseAudit, refreshEnterpriseReports } from "./enterprise.js";
+import { initializeEnterprise, refreshEnterpriseAudit, refreshEnterpriseReports, showWorkspace } from "./enterprise.js";
 import { initializeEnterprise8, refreshIntegrations } from "./enterprise8.js";
+import { initializeMaintenance } from "./maintenance.js";
+import { initializePlanning } from "./planning.js";
+import { initializeLogistics } from "./logistics.js";
 import { initializeWebSocket } from "./websocket.js";
+import { initializeUx2 } from "./ux2/index.js";
 let currentSession = null;
 let currentContext = null;
 let latestConnectors = [];
 let selectedDecisionId = null;
+let reauthInProgress = false;
 
 async function checkHealth(){
   try{
@@ -65,6 +71,13 @@ function bindEvents(){
   if (organizationSelect) {
     organizationSelect.addEventListener("change", onOrganizationChange);
   }
+  const signOutButton = el("ux2SignOut");
+  if (signOutButton) {
+    signOutButton.addEventListener("click", signOut);
+  }
+  window.addEventListener("mercury:auth-required", () => {
+    void recoverExpiredSession();
+  });
   const evaluateButton = el("decisionEvaluateButton");
   if (evaluateButton) evaluateButton.addEventListener("click", evaluateDecisionFromUi);
   const reviewSubmit = el("decisionReviewSubmit");
@@ -386,7 +399,36 @@ async function ensureSession(){
     session = await promptInteractiveLogin();
   }
   currentSession = session;
+  renderSessionIdentity(session);
   return session;
+}
+
+function renderSessionIdentity(session){
+  const root = el("ux2Session");
+  const nameNode = el("ux2SessionOperator");
+  const roleNode = el("ux2SessionRole");
+  if (!root || !nameNode || !roleNode) return;
+  if (session && session.authenticated) {
+    nameNode.textContent = String(session.operator || "");
+    roleNode.textContent = String(session.role || "");
+    root.hidden = false;
+  } else {
+    nameNode.textContent = "";
+    roleNode.textContent = "";
+    root.hidden = true;
+  }
+}
+
+async function signOut(){
+  try {
+    await logout();
+  } catch {
+    // Cookie/session may already be gone; still return to the login overlay.
+  }
+  currentSession = null;
+  currentContext = null;
+  renderSessionIdentity(null);
+  window.location.reload();
 }
 
 function promptInteractiveLogin(){
@@ -432,6 +474,27 @@ function promptInteractiveLogin(){
   });
 }
 
+async function recoverExpiredSession(){
+  if (reauthInProgress) return;
+  const overlay = el("loginOverlay");
+  if (overlay && !overlay.classList.contains("hidden")) return;
+  reauthInProgress = true;
+  currentSession = null;
+  currentContext = null;
+  renderSessionIdentity(null);
+  try {
+    const session = await promptInteractiveLogin();
+    currentSession = session;
+    renderSessionIdentity(session);
+    await loadSessionContext();
+    applyRoleAccess();
+  } catch {
+    // Overlay remains until the operator signs in.
+  } finally {
+    reauthInProgress = false;
+  }
+}
+
 function applyRoleAccess(){
   const role = String(currentSession?.role || "Viewer");
   const isViewer = role === "Viewer";
@@ -455,5 +518,33 @@ function applyRoleAccess(){
   });
 }
 
-async function initialize(){initializeMap();bindEvents();initializeMissionOps();initializeCommandCenter();initializeRealtimeConsole();initializeEnterprise();initializeEnterprise8();await ensureSession();await loadSessionContext();applyRoleAccess();initializeWebSocket();updateFusion();updateThreatMatrix();await checkHealth();await loadDashboardSummary();await loadIncidents();setInterval(checkHealth,5000);setInterval(loadDashboardSummary,15000);setInterval(loadIncidents,10000)}
+async function initialize(){
+  initializeMap();
+  bindEvents();
+  initializeMissionOps();
+  initializeCommandCenter();
+  initializeRealtimeConsole();
+  initializeEnterprise();
+  initializeEnterprise8();
+  initializeMaintenance();
+  initializePlanning();
+  initializeLogistics();
+  initializeUx2({
+    initial: "home",
+    onNavigate: (id) => showWorkspace(id),
+  });
+  await ensureSession();
+  await loadSessionContext();
+  applyRoleAccess();
+  initializeWebSocket();
+  updateFusion();
+  updateThreatMatrix();
+  await checkHealth();
+  await loadDashboardSummary();
+  await loadIncidents();
+  import("./ux2/workspaces.js").then((m) => m.refreshHomeWorkspace()).catch(() => {});
+  setInterval(checkHealth,5000);
+  setInterval(loadDashboardSummary,15000);
+  setInterval(loadIncidents,10000);
+}
 initialize();

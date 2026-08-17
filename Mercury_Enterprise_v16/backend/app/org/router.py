@@ -4,13 +4,15 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
 from ..audit import record_audit
 from ..database import get_db
 from ..security.authorization import has_permissions
 from ..security.operators import operator_store
+from ..security.runtime_authz import require_allowed
+from ..shared import clamp_page
 from .schemas import (
     CompanyCreate,
     CompanyOut,
@@ -39,10 +41,9 @@ def _session(request: Request) -> dict[str, datetime | str]:
     return require_session(request)
 
 
-def require_org_read(request: Request) -> dict[str, datetime | str]:
+def require_org_read(request: Request, db: Session = Depends(get_db)) -> dict[str, datetime | str]:
     session = _session(request)
-    if not has_permissions(str(session.get("role")), ("org.read",)):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+    require_allowed(db, session, ("org.read",), detail="Insufficient permissions")
     return session
 
 
@@ -103,18 +104,22 @@ def _audit_org(
 
 @router.get("/companies", response_model=list[CompanyOut])
 def list_companies(
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     session: dict[str, datetime | str] = Depends(require_org_read),
 ) -> list[CompanyOut]:
     svc = _svc(db)
     actor = str(session["operator"])
     role = str(session["role"])
+    lim, off = clamp_page(limit, offset)
     if not svc.is_platform_admin(actor, role):
         allowed = svc.allowed_organization_ids(actor, role) or set()
         orgs = [o for o in svc.repo.list_organizations(active_only=True) if o.id in allowed]
         company_ids = {o.company_id for o in orgs}
-        return [svc.company_out(c) for c in svc.repo.list_companies() if c.id in company_ids]
-    return [svc.company_out(c) for c in svc.repo.list_companies()]
+        rows = [c for c in svc.repo.list_companies() if c.id in company_ids]
+        return [svc.company_out(c) for c in rows[off : off + lim]]
+    return [svc.company_out(c) for c in svc.repo.list_companies(limit=lim, offset=off)]
 
 
 @router.post("/companies", response_model=CompanyOut, status_code=201)
@@ -131,6 +136,8 @@ def create_company(
 @router.get("/organizations", response_model=list[OrganizationOut])
 def list_organizations(
     company_id: str | None = None,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     session: dict[str, datetime | str] = Depends(require_org_read),
 ) -> list[OrganizationOut]:
@@ -139,6 +146,8 @@ def list_organizations(
     allowed = svc.allowed_organization_ids(str(session["operator"]), str(session["role"]))
     if allowed is not None:
         rows = [r for r in rows if r.id in allowed]
+    lim, off = clamp_page(limit, offset)
+    rows = rows[off : off + lim]
     return [svc.organization_out(r) for r in rows]
 
 
@@ -179,21 +188,33 @@ def get_organization(
 @router.get("/organizations/{organization_id}/sites", response_model=list[SiteOut])
 def list_organization_sites(
     organization_id: str,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     session: dict[str, datetime | str] = Depends(require_org_read),
 ) -> list[SiteOut]:
-    return _svc(db).sites_for_session(str(session["operator"]), str(session["role"]), organization_id)
+    return _svc(db).sites_for_session(
+        str(session["operator"]),
+        str(session["role"]),
+        organization_id,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get("/sites", response_model=list[SiteOut])
 def list_sites(
     organization_id: str | None = None,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     session: dict[str, datetime | str] = Depends(require_org_read),
 ) -> list[SiteOut]:
     svc = _svc(db)
     org_id = organization_id or str(session["organization_id"])
-    return svc.sites_for_session(str(session["operator"]), str(session["role"]), org_id)
+    return svc.sites_for_session(
+        str(session["operator"]), str(session["role"]), org_id, limit=limit, offset=offset
+    )
 
 
 @router.post("/sites", response_model=SiteOut, status_code=201)
@@ -219,6 +240,8 @@ def create_site(
 @router.get("/departments", response_model=list[DepartmentOut])
 def list_departments(
     organization_id: str | None = None,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     session: dict[str, datetime | str] = Depends(require_org_read),
 ) -> list[DepartmentOut]:
@@ -229,7 +252,7 @@ def list_departments(
         session_role=str(session["role"]),
         organization_id=org_id,
     )
-    rows = svc.repo.list_departments(organization_id=org_id, active_only=True)
+    rows = svc.repo.list_departments(organization_id=org_id, active_only=True, limit=limit, offset=offset)
     return [svc.department_out(r) for r in rows]
 
 
@@ -257,6 +280,8 @@ def create_department(
 def list_teams(
     organization_id: str | None = None,
     department_id: str | None = None,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     session: dict[str, datetime | str] = Depends(require_org_read),
 ) -> list[TeamOut]:
@@ -267,7 +292,9 @@ def list_teams(
         session_role=str(session["role"]),
         organization_id=org_id,
     )
-    rows = svc.repo.list_teams(organization_id=org_id, department_id=department_id, active_only=True)
+    rows = svc.repo.list_teams(
+        organization_id=org_id, department_id=department_id, active_only=True, limit=limit, offset=offset
+    )
     return [svc.team_out(r) for r in rows]
 
 
@@ -292,10 +319,12 @@ def create_team(
 
 @router.get("/org/users", response_model=list[UserOut])
 def list_org_users(
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     session: dict[str, datetime | str] = Depends(require_org_manage),
 ) -> list[UserOut]:
-    return [_svc(db).user_out(r) for r in _svc(db).repo.list_users()]
+    return [_svc(db).user_out(r) for r in _svc(db).repo.list_users(limit=limit, offset=offset)]
 
 
 @router.post("/org/users", response_model=UserOut, status_code=201)
@@ -307,8 +336,7 @@ def create_org_user(
     svc = _svc(db)
     out = svc.create_user(payload)
     try:
-        if operator_store.get(out.username) is None:
-            operator_store.create(out.username, payload.password, "Viewer")
+        operator_store.register_role(out.username, "Viewer")
     except ValueError as exc:
         logger.exception("operator_store sync failed for %s", out.username)
         raise HTTPException(status_code=500, detail="User directory sync failed") from exc
@@ -320,6 +348,8 @@ def create_org_user(
 def list_memberships(
     organization_id: str | None = None,
     username: str | None = None,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     session: dict[str, datetime | str] = Depends(require_org_read),
 ) -> list[MembershipOut]:
@@ -347,6 +377,9 @@ def list_memberships(
     if not is_admin:
         allowed = svc.allowed_organization_ids(actor, role) or set()
         rows = [m for m in rows if m.organization_id in allowed]
+
+    lim, off = clamp_page(limit, offset)
+    rows = rows[off : off + lim]
 
     return [
         svc.membership_out(row, row.user.username if row.user else "")

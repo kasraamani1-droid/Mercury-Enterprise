@@ -30,7 +30,13 @@ def upgrade() -> None:
     op.create_index("ix_aircraft_families_status", "aircraft_families", ["status"])
 
     op.add_column("aircraft_models", sa.Column("family_id", sa.String(length=80), nullable=True))
-    op.create_foreign_key("fk_aircraft_models_family_id", "aircraft_models", "aircraft_families", ["family_id"], ["id"])
+    with op.batch_alter_table("aircraft_models") as batch_op:
+        batch_op.create_foreign_key(
+            "fk_aircraft_models_family_id",
+            "aircraft_families",
+            ["family_id"],
+            ["id"],
+        )
     op.create_index("ix_aircraft_models_family_id", "aircraft_models", ["family_id"])
 
     op.create_table(
@@ -277,7 +283,8 @@ def downgrade() -> None:
     op.drop_table("personnel_qualifications")
     op.drop_table("personnel_employees")
     op.drop_table("alternate_parts")
-    op.drop_constraint("fk_aircraft_models_family_id", "aircraft_models", type_="foreignkey")
     op.drop_index("ix_aircraft_models_family_id", table_name="aircraft_models")
-    op.drop_column("aircraft_models", "family_id")
+    with op.batch_alter_table("aircraft_models") as batch_op:
+        batch_op.drop_constraint("fk_aircraft_models_family_id", type_="foreignkey")
+        batch_op.drop_column("family_id")
     op.drop_table("aircraft_families")

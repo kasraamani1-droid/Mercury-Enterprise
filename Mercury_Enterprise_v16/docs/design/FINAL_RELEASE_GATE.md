@@ -59,7 +59,7 @@ RELEASE STATUS: NO GO
 
 | ID | Issue | Evidence |
 |----|--------|----------|
-| M1 | Decision/approval/mission/connector runtime state mostly process-local | decision store, `_approvals`, mission manager |
+| M1 | Decision/mission/connector runtime state mostly process-local; **approvals are durable SQL** | decision store, mission manager |
 | M2 | `MERCURY_API_KEY` reserved but not enforced on routes | config + SECURITY.md |
 | M3 | CORS `allow_headers=["*"]`; credentials enabled | `main.py` |
 | M4 | Simulated feeds / non-certified AI — unsuitable for live safety decisions | product scope |

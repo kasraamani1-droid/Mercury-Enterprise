@@ -8,10 +8,22 @@
 5. API documentation: `http://127.0.0.1:8000/docs`.
 
 ## RC verification (smoke)
+
+Automated sequential smoke (API + static UI, no Playwright):
+
+```powershell
+cd backend
+python -m pytest -q tests/test_rc1_e2e_smoke.py
+```
+
+Report: [docs/engineering/RC1_SMOKE_TEST.md](engineering/RC1_SMOKE_TEST.md) (RC1 Blocker 06).
+
+Manual / Compose:
+
 1. `GET /api/v1/health` — status ok/degraded, connectors + advisory flags present.
 2. `GET /api/v1/ready` — ready true when DB is up.
-3. Login as Operator → Command Decision Timeline → Evaluate → Review.
-4. Admin audit shows `decision.evaluate` / `decision.review`.
+3. Sign in → Landing Dashboard KPIs → Aircraft list → Planning → Work Orders → Sign out.
+4. Admin/Reviewer audit shows `auth.login` / domain mutations.
 5. Executive/History reports load for the selected site.
 6. Integrations connector lifecycle remains human-controlled.
 

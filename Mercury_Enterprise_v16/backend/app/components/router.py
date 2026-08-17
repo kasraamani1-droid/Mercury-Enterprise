@@ -10,6 +10,7 @@ from ..audit import record_audit
 from ..database import get_db
 from ..security.authorization import has_permissions
 from ..security.operators import operator_store
+from ..security.runtime_authz import require_allowed
 from .schemas import (
     AircraftConfigurationOut,
     AlternatePartCreate,
@@ -39,24 +40,21 @@ def _session(request: Request) -> dict[str, datetime | str]:
     return require_session(request)
 
 
-def require_component_read(request: Request) -> dict[str, datetime | str]:
+def require_component_read(request: Request, db: Session = Depends(get_db)) -> dict[str, datetime | str]:
     session = _session(request)
-    if not has_permissions(str(session.get("role")), ("component.read",)):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+    require_allowed(db, session, ("component.read",), detail="Insufficient permissions")
     return session
 
 
-def require_component_manage(request: Request) -> dict[str, datetime | str]:
+def require_component_manage(request: Request, db: Session = Depends(get_db)) -> dict[str, datetime | str]:
     session = _session(request)
-    if not has_permissions(str(session.get("role")), ("component.manage",)):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Component management required")
+    require_allowed(db, session, ("component.manage",), detail="Component management required")
     return session
 
 
-def require_configuration_read(request: Request) -> dict[str, datetime | str]:
+def require_configuration_read(request: Request, db: Session = Depends(get_db)) -> dict[str, datetime | str]:
     session = _session(request)
-    if not has_permissions(str(session.get("role")), ("configuration.read",)):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+    require_allowed(db, session, ("configuration.read",), detail="Insufficient permissions")
     return session
 
 
