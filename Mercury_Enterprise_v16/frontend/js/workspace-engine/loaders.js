@@ -37,11 +37,26 @@ export async function loadObjectRecord(type, id) {
     materialRequest: `/logistics/material-requests/${encodeURIComponent(id)}`,
     purchaseOrder: `/logistics/purchase-orders/${encodeURIComponent(id)}`,
     tool: `/logistics/tools/${encodeURIComponent(id)}`,
+    finding: `/planning/deferred-defects/${encodeURIComponent(id)}`,
+    check: `/planning/checks/${encodeURIComponent(id)}`,
+    airworthinessDirective: `/planning/ads/${encodeURIComponent(id)}`,
+    serviceBulletin: `/planning/service-bulletins/${encodeURIComponent(id)}`,
+    engineeringOrder: `/planning/engineering-orders/${encodeURIComponent(id)}`,
+    melItem: `/planning/mel-items/${encodeURIComponent(id)}`,
   };
 
   if (routes[type]) {
     const res = await softGet(routes[type]);
     if (res.ok && res.data) return { ...res, source: "api" };
+    if (type === "finding") {
+      const listed = await softGet("/planning/deferred-defects?limit=100");
+      const hit = listify(listed.data).find(
+        (row) => String(row.id) === String(id) || String(row.defect_number || "") === String(id)
+      );
+      if (hit) {
+        return { ok: true, status: 200, source: "api", data: { ...hit, name: hit.defect_number || hit.title || id }, error: null };
+      }
+    }
     return {
       ok: false,
       status: res.status,
@@ -55,22 +70,6 @@ export async function loadObjectRecord(type, id) {
       },
       error: res.error,
     };
-  }
-
-  if (type === "finding") {
-    const res = await softGet("/planning/deferred-defects?limit=100");
-    const hit = listify(res.data).find(
-      (row) => String(row.id) === String(id) || String(row.defect_number || "") === String(id)
-    );
-    if (hit) {
-      return {
-        ok: true,
-        status: 200,
-        source: "api",
-        data: { ...hit, name: hit.defect_number || hit.title || id },
-        error: null,
-      };
-    }
   }
 
   // Persona / synthetic / unresolved — local context shell
@@ -99,7 +98,7 @@ export async function loadRelatedBundle(type, id, record) {
   };
 
   if (type === "aircraft") {
-    const [wos, due, twins, cfg, serialized, ata, catalog, fleet, session, logbook, cards] = await Promise.all([
+    const [wos, due, twins, cfg, serialized, ata, catalog, fleet, session, logbook, cards, checks, ads, sbs, eos, defects, mels] = await Promise.all([
       softGet(`/work-orders/orders?aircraft_id=${encodeURIComponent(id)}&limit=20`),
       softGet(`/planning/due-list?limit=20`),
       softGet(`/twin/twins?limit=40`),
@@ -111,6 +110,12 @@ export async function loadRelatedBundle(type, id, record) {
       softGet(`/auth/session`),
       softGet(`/maintenance/logbook?aircraft_id=${encodeURIComponent(id)}&limit=40`),
       softGet(`/work-orders/job-cards?aircraft_id=${encodeURIComponent(id)}&limit=50`),
+      softGet(`/planning/checks?aircraft_id=${encodeURIComponent(id)}&limit=50`),
+      softGet(`/planning/ads?limit=40`),
+      softGet(`/planning/service-bulletins?limit=40`),
+      softGet(`/planning/engineering-orders?limit=40`),
+      softGet(`/planning/deferred-defects?aircraft_id=${encodeURIComponent(id)}&limit=50`),
+      softGet(`/planning/mel-items?limit=40`),
     ]);
     bundle.workOrdersLoad = { ok: wos.ok, status: wos.status, error: wos.error || "" };
     bundle.workOrders = listify(wos.data);
@@ -128,6 +133,12 @@ export async function loadRelatedBundle(type, id, record) {
     bundle.catalog = listify(catalog.data);
     bundle.fleetAircraft = listify(fleet.data);
     bundle.sessionRole = session.ok ? session.data?.role || "" : "";
+    bundle.checks = listify(checks.data);
+    bundle.ads = listify(ads.data);
+    bundle.serviceBulletins = listify(sbs.data);
+    bundle.engineeringOrders = listify(eos.data);
+    bundle.defects = listify(defects.data);
+    bundle.melItems = listify(mels.data);
     const twinList = listify(twins.data);
     bundle.twin =
       twinList.find(
@@ -344,6 +355,39 @@ export async function loadRelatedBundle(type, id, record) {
     }));
   }
 
+  if (
+    type === "finding" ||
+    type === "check" ||
+    type === "airworthinessDirective" ||
+    type === "serviceBulletin" ||
+    type === "engineeringOrder" ||
+    type === "melItem"
+  ) {
+    const aircraftId = record?.aircraft_id;
+    const woId = record?.linked_work_order_id;
+    const wpId = record?.generated_work_package_id || record?.work_package_id;
+    const [session, mels, aircraft, order, pkgOrders] = await Promise.all([
+      softGet(`/auth/session`),
+      softGet(`/planning/mel-items?limit=40`),
+      aircraftId ? softGet(`/fleet/aircraft/${encodeURIComponent(aircraftId)}`) : Promise.resolve({ ok: false, data: null }),
+      woId ? softGet(`/work-orders/orders/${encodeURIComponent(woId)}`) : Promise.resolve({ ok: false, data: null }),
+      wpId
+        ? softGet(`/work-orders/orders?work_package_id=${encodeURIComponent(wpId)}&limit=20`)
+        : Promise.resolve({ ok: false, data: null }),
+    ]);
+    bundle.sessionRole = session.ok ? session.data?.role || "" : "";
+    bundle.melItems = listify(mels.data);
+    bundle.aircraft = aircraft.ok ? aircraft.data : null;
+    bundle.workOrder = order.ok ? order.data : null;
+    const fromPackage = pkgOrders.ok ? listify(pkgOrders.data) : [];
+    if (order.ok && order.data) {
+      bundle.workOrders = [order.data, ...fromPackage.filter((row) => String(row.id) !== String(order.data.id))];
+    } else if (fromPackage.length) {
+      bundle.workOrders = fromPackage;
+      bundle.workOrder = fromPackage[0];
+    }
+  }
+
   // Synthetic timeline seed from record
   if (!bundle.timeline.length) {
     bundle.timeline = [
@@ -432,5 +476,11 @@ function mapSearchType(kind) {
   if (k.includes("material")) return "materialRequest";
   if (k.includes("purchase") || k.includes("po")) return "purchaseOrder";
   if (k.includes("tool")) return "tool";
+  if (k.includes("defect") || k.includes("finding")) return "finding";
+  if (k.includes("check")) return "check";
+  if (k.includes("directive") || k === "ad") return "airworthinessDirective";
+  if (k.includes("bulletin") || k === "sb") return "serviceBulletin";
+  if (k.includes("engineering") || k === "eo") return "engineeringOrder";
+  if (k.includes("mel")) return "melItem";
   return "project";
 }

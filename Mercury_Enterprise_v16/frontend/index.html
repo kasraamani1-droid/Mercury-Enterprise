@@ -394,21 +394,42 @@
     <div>
       <span class="eyebrow">Sprint 9 · Maintenance planning</span>
       <h1>Aircraft Maintenance Program &amp; Forecast</h1>
-      <p>Programs → MPD → Checks → Forecast → Work Packages → Sprint 8 execution.</p>
+      <p>Due / forecast → AD / SB / EO → MEL / deferred defect → hangar → generate WP → work order / job card → logistics.</p>
     </div>
     <button id="planRefresh" class="ghost">Refresh planning</button>
   </div>
+  <p class="muted" id="planStatus">Loading…</p>
+  <div class="form-row" id="planFilters">
+    <input id="planSearch" placeholder="Search due / forecast / title" />
+    <select id="planAircraftFilter"><option value="">All aircraft</option></select>
+    <select id="planUrgencyFilter">
+      <option value="">All urgency</option>
+      <option value="overdue">overdue</option>
+      <option value="due_soon">due_soon</option>
+      <option value="future">future</option>
+    </select>
+    <select id="planSourceFilter">
+      <option value="">All sources</option>
+      <option value="check">check</option>
+      <option value="ad">ad</option>
+      <option value="sb">sb</option>
+      <option value="eo">eo</option>
+      <option value="deferred_defect">deferred_defect</option>
+    </select>
+    <button id="planApplyFilters" class="ghost small" type="button">Apply</button>
+  </div>
   <section class="enterprise-kpis" id="planDashKpis"></section>
+  <div id="planOpsDesk"></div>
   <div class="enterprise-grid">
     <article class="card"><h3>Aircraft status</h3><div id="planAircraftStatus" class="integration-list"></div></article>
     <article class="card"><h3>Due list</h3><div id="planDueList" class="integration-list"></div></article>
     <article class="card"><h3>Maintenance programs &amp; MPD</h3><div id="planPrograms" class="integration-list"></div><div id="planMpd" class="integration-list"></div></article>
-    <article class="card"><h3>Checks · AD · SB · EO</h3>
-      <div id="planChecks" class="integration-list"></div>
-      <div id="planAds" class="integration-list"></div>
-      <button id="planGeneratePkg" class="ghost small">Generate WP from first due check</button>
-    </article>
-    <article class="card"><h3>Deferred defects / MEL</h3><div id="planDefects" class="integration-list"></div></article>
+    <article class="card"><h3>Checks</h3><div id="planChecks" class="integration-list"></div></article>
+    <article class="card"><h3>Airworthiness directives</h3><div id="planAds" class="integration-list"></div></article>
+    <article class="card"><h3>Service bulletins</h3><div id="planSbs" class="integration-list"></div></article>
+    <article class="card"><h3>Engineering orders</h3><div id="planEos" class="integration-list"></div></article>
+    <article class="card"><h3>Deferred defects</h3><div id="planDefects" class="integration-list"></div></article>
+    <article class="card"><h3>MEL / CDL</h3><div id="planMel" class="integration-list"></div></article>
     <article class="card"><h3>Delayed work orders</h3><div id="planDelayedWo" class="integration-list"></div></article>
     <article class="card"><h3>Hangar plans</h3><div id="planHangar" class="integration-list"></div></article>
     <article class="card admin-wide"><h3>Forecast (90 days)</h3>

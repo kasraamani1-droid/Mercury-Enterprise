@@ -36,6 +36,11 @@ import {
   logisticsOpsCacheKeys,
   sessionCanStores,
 } from "./logistics-ops.js";
+import {
+  bindPlanningOpsPanel,
+  planningOpsCacheKeys,
+  sessionCanManagePlanning,
+} from "./planning-ops.js";
 
 let host = null;
 let active = null; // { key, type, id, label, tab, record, bundle }
@@ -165,15 +170,22 @@ async function refreshActiveObject(mutation = {}) {
   const keys = configurationMutationCacheKeys(active, mutation);
   const opsKeys = maintenanceOpsCacheKeys(active, mutation);
   const logKeys = logisticsOpsCacheKeys(active, mutation);
+  const planKeys = planningOpsCacheKeys(active, mutation);
   cache.delete(sessionKey(type, id));
   keys.components.forEach((componentId) => cache.delete(sessionKey("component", componentId)));
-  [...keys.aircraft, ...opsKeys.aircraft, ...logKeys.aircraft].forEach((aircraftId) => cache.delete(sessionKey("aircraft", aircraftId)));
-  [...opsKeys.workOrders, ...logKeys.workOrders].forEach((orderId) => cache.delete(sessionKey("workOrder", orderId)));
+  [...keys.aircraft, ...opsKeys.aircraft, ...logKeys.aircraft, ...planKeys.aircraft].forEach((aircraftId) => cache.delete(sessionKey("aircraft", aircraftId)));
+  [...opsKeys.workOrders, ...logKeys.workOrders, ...planKeys.workOrders].forEach((orderId) => cache.delete(sessionKey("workOrder", orderId)));
   [...opsKeys.jobCards, ...logKeys.jobCards].forEach((cardId) => cache.delete(sessionKey("jobCard", cardId)));
   logKeys.parts.forEach((partId) => cache.delete(sessionKey("part", partId)));
   logKeys.materialRequests.forEach((requestId) => cache.delete(sessionKey("materialRequest", requestId)));
   logKeys.purchaseOrders.forEach((poId) => cache.delete(sessionKey("purchaseOrder", poId)));
   logKeys.tools.forEach((toolId) => cache.delete(sessionKey("tool", toolId)));
+  planKeys.findings.forEach((findingId) => cache.delete(sessionKey("finding", findingId)));
+  planKeys.checks.forEach((checkId) => cache.delete(sessionKey("check", checkId)));
+  planKeys.ads.forEach((adId) => cache.delete(sessionKey("airworthinessDirective", adId)));
+  planKeys.sbs.forEach((sbId) => cache.delete(sessionKey("serviceBulletin", sbId)));
+  planKeys.eos.forEach((eoId) => cache.delete(sessionKey("engineeringOrder", eoId)));
+  planKeys.mels.forEach((melId) => cache.delete(sessionKey("melItem", melId)));
   await openObject(type, id, { refresh: true, tab, label });
 }
 
@@ -206,6 +218,9 @@ function mountActive() {
       if (action.id === "requestMaterial") {
         return sessionCanStores(sessionRole) && (active.type === "workOrder" || active.type === "jobCard");
       }
+      if (action.id === "logDefect" || action.id === "generateWp" || action.id === "approveEo") {
+        return sessionCanManagePlanning(sessionRole);
+      }
       return true;
     }),
   };
@@ -225,6 +240,7 @@ function mountActive() {
   bindConfigurationPanel(active, { onRefresh: refreshActiveObject });
   bindMaintenanceOpsPanel(active, { onRefresh: refreshActiveObject });
   bindLogisticsOpsPanel(active, { onRefresh: refreshActiveObject });
+  bindPlanningOpsPanel(active, { onRefresh: refreshActiveObject });
 
   const search = document.getElementById("weObjectSearch");
   if (search) {
@@ -255,6 +271,11 @@ function handleAction(action) {
     return;
   }
   if (action === "createWo") {
+    const linked = active.record?.linked_work_order_id;
+    if (linked) {
+      void openObject("workOrder", linked, { refresh: true });
+      return;
+    }
     void createWorkOrderFromContext();
     return;
   }
@@ -268,12 +289,44 @@ function handleAction(action) {
   }
   if (action === "logDefect") {
     if (active.type === "aircraft") {
-      setObjectTab("logbook");
-      toast("Technical log entries are created by ACA release. Amend is append-only when manage is granted.");
+      setObjectTab("maintenance");
+      document.getElementById("wePlanDefectForm")?.scrollIntoView({ block: "nearest" });
       return;
     }
-    onAreaNavigate?.("logbook");
-    toast("Open Digital Logbook — entries are created by ACA release, not a free-form create API");
+    onAreaNavigate?.("planning");
+    return;
+  }
+  if (action === "defer") {
+    if (active.type === "finding") {
+      toast("This finding is already a deferred defect. Link MEL from the aircraft or planning desk.");
+      return;
+    }
+    if (active.type === "aircraft") {
+      setObjectTab("maintenance");
+      document.getElementById("wePlanDefectForm")?.scrollIntoView({ block: "nearest" });
+      return;
+    }
+    onAreaNavigate?.("planning");
+    return;
+  }
+  if (action === "generateWp") {
+    if (active.type === "check") {
+      document.getElementById("wePlanGenerateForm")?.scrollIntoView({ block: "nearest" });
+      return;
+    }
+    onAreaNavigate?.("planning");
+    return;
+  }
+  if (action === "approveEo") {
+    if (active.type === "engineeringOrder") {
+      document.getElementById("wePlanEoApproveForm")?.scrollIntoView({ block: "nearest" });
+      return;
+    }
+    onAreaNavigate?.("engineering");
+    return;
+  }
+  if (action === "newEo") {
+    onAreaNavigate?.("planning");
     return;
   }
   if (action === "openAircraft") {
@@ -399,11 +452,12 @@ async function removeComponentFromHeader() {
 }
 
 async function createWorkOrderFromContext() {
-  if (!active || active.type !== "aircraft") {
-    toast("Create work order requires an aircraft object");
+  const aircraftId =
+    active?.type === "aircraft" ? active.id : active?.record?.aircraft_id || active?.bundle?.aircraft?.id;
+  if (!aircraftId) {
+    toast("Create work order requires an aircraft on this record");
     return;
   }
-  const aircraftId = active.id;
   const title = window.prompt("Work order title", `WO · ${active.label || aircraftId}`);
   if (!title) return;
   try {
@@ -417,7 +471,7 @@ async function createWorkOrderFromContext() {
     const order = await createWorkOrder({
       work_package_id: packageId,
       title: String(title).trim(),
-      description: `Created from aircraft workspace ${active.label || aircraftId}`,
+      description: `Created from ${active.type} workspace ${active.label || aircraftId}`,
       priority: "normal",
     });
     const orderId = order?.id;

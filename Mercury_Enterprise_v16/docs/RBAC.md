@@ -29,7 +29,7 @@ Personas guide documentation and future override engines:
 
 Org · Fleet · Components/Configuration · Publications · Personnel · Maintenance · Work Orders / Job Cards · Certification · Logbook · Signatures · Store/Planner/Inspector/Engineering/QA permissions · Logistics (session: Viewer/Reviewer read; Operator/Administrator stores & purchase; Reviewer tools)
 
-Aviation persona names (Technician, Store, Planner, …) are **not** session principals. The Logistics operator UI hides stores mutations unless the session role is Operator or Administrator.
+Aviation persona names (Technician, Store, Planner, …) are **not** session principals. The Logistics operator UI hides stores mutations unless the session role is Operator or Administrator. The Planning operator UI hides generate/create mutations unless the session role is Operator or Administrator (`planning.manage`).
 
 ## Isolation
 

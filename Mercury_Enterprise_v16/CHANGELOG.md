@@ -2,6 +2,23 @@
 
 All notable changes to Mercury Enterprise are summarized here. Package/API version remains `16.0.0` unless noted; sprint tags mark security/ops increments.
 
+## Maintenance planning operator integration
+
+### Added
+- Planning Ops desk: live dashboard KPIs, aircraft/urgency/source filters, role-gated generate WP, AD/SB/EO create, deferred defect, MEL/CDL, check, hangar plan, utilization
+- Workspace Engine objects for check, AD, SB, EO, MEL item, and finding (deferred defect) on existing `/api/v1/planning` routes
+- Aircraft Maintenance tab logs deferred defects; AD/SB tabs list organization directives
+- Engineering workspace rows open the same AD/SB/EO objects
+- Generate WP from a **selected** due/planned check (not “first only”); 409 on duplicate
+- GET-by-id for checks, ADs, SBs, EOs, deferred defects, and MEL items
+- Utilization PUT keeps existing FH/FC (and related counters) when those fields are omitted
+- Contract suite `backend/tests/test_planning_operator_ui.py`
+
+### Notes
+- No new planning domain. Aviation Planner persona remains documentation-only; mutations follow session Operator/Administrator (`planning.manage`).
+- AD/SB records are organization-scoped (applicability is text). They are not stored per aircraft.
+- Workforce plan CRUD remains deferred. Command/Radar/Cloud stay labeled SIM.
+
 ## Enterprise logistics operator integration
 
 ### Added
