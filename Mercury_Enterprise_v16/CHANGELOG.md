@@ -2,6 +2,20 @@
 
 All notable changes to Mercury Enterprise are summarized here. Package/API version remains `16.0.0` unless noted; sprint tags mark security/ops increments.
 
+## Aircraft Components & Configuration Operator UI
+
+### Added
+- Aircraft Workspace Engine Configuration and Components tabs load live installed configuration from `/api/v1/components/aircraft/{id}/configuration`
+- ATA/system identification via client-side join of catalog + ATA chapters
+- Operator install / remove / transfer / register-to-stores forms on existing serialized APIs
+- Component object overview and install-history tabs bound to serialized detail and history APIs
+
+### Notes
+- No parallel `#componentWorkspace`; PR #8 DD-1001 due-list finding chips remain on the Components tab
+- Mutate controls follow session Operator/Administrator roles; 409 details are shown and not retried automatically
+- Installed rows are grouped by ATA/system; remove/transfer confirm; occupied positions are blocked before submit
+- Workspace Engine ignores stale aircraft loads and keeps the active tab across refresh
+
 ## QA-1 — CI pipeline green (RC1)
 
 ### Changed

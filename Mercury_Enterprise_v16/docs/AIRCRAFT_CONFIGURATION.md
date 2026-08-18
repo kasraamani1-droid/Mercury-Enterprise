@@ -60,6 +60,18 @@ Hours use `Numeric(12,2)` decimal storage. Removal advances TSN/CSN/TSO/CSO by t
 | GET | `/history` |
 | GET | `/aircraft/{aircraft_id}/configuration` |
 
+## Operator UI (Workspace Engine)
+
+Aircraft Registry → open aircraft → **Configuration** or **Components** tab.
+
+| Surface | Behavior |
+|---------|----------|
+| Configuration | Installed table grouped by ATA/system (PN, SN, position, status, remaining life) |
+| Components | Same table plus planning due / finding chips (DD-1001 Finding navigation from PR #8) |
+| Component object | Overview + install history; remove when installed and session role is Operator/Administrator |
+
+Install, remove, and transfer call the existing serialized endpoints. ATA is joined in the browser (`GET /catalog` + `GET /ata-chapters`) because the configuration DTO does not include chapter ids. Viewer/Reviewer see the table without mutate forms. There is **no** `#componentWorkspace` area.
+
 ## Database
 
 - Models: `backend/app/components/models.py`

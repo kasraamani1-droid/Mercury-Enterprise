@@ -185,4 +185,24 @@ export async function uxApproveRequest(approvalId) {
   return softMutate(`/approvals/${encodeURIComponent(approvalId)}/approve`, { method: "POST" });
 }
 
+export async function uxFetchAircraftConfiguration(aircraftId) {
+  return softGet(`/components/aircraft/${encodeURIComponent(aircraftId)}/configuration`);
+}
+
+export async function uxCreateSerializedComponent(payload) {
+  return softMutate("/components/serialized", { body: payload });
+}
+
+export async function uxInstallSerializedComponent(id, payload) {
+  return softMutate(`/components/serialized/${encodeURIComponent(id)}/install`, { body: payload });
+}
+
+export async function uxRemoveSerializedComponent(id, payload) {
+  return softMutate(`/components/serialized/${encodeURIComponent(id)}/remove`, { body: payload });
+}
+
+export async function uxTransferSerializedComponent(id, payload) {
+  return softMutate(`/components/serialized/${encodeURIComponent(id)}/transfer`, { body: payload });
+}
+
 export { listify, softGet, softMutate };

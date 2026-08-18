@@ -21,13 +21,15 @@ import {
 } from "./render.js";
 import { toast } from "../utils.js";
 import { createWorkOrder, createWorkPackage } from "../api.js";
-import { uxAddMarketplaceCart, uxCreateMarketplaceQuote, uxCreateTwin } from "../ux2/api.js";
+import { uxAddMarketplaceCart, uxCreateMarketplaceQuote, uxCreateTwin, uxRemoveSerializedComponent } from "../ux2/api.js";
+import { bindConfigurationPanel, configurationMutationCacheKeys, resolveInstallationHoursCycles, sessionCanManageComponents } from "./configuration.js";
 
 let host = null;
 let active = null; // { key, type, id, label, tab, record, bundle }
 let onAreaNavigate = null;
 let onSessionsChanged = null;
 const cache = new Map();
+let openGeneration = 0;
 
 function ensureHost() {
   host = document.getElementById("contextWorkspace");
@@ -64,7 +66,9 @@ export async function openObject(type, id, options = {}) {
 
   ensureHost();
   const key = sessionKey(type, oid);
-  const tab = options.tab || "overview";
+  const generation = ++openGeneration;
+  const existingTab = getSessions().find((s) => s.key === key)?.tab;
+  const tab = options.tab || existingTab || "overview";
 
   let record;
   let bundle;
@@ -72,10 +76,13 @@ export async function openObject(type, id, options = {}) {
     ({ record, bundle } = cache.get(key));
   } else {
     const loaded = await loadObjectRecord(type, oid);
+    if (generation !== openGeneration) return null;
     record = loaded.data || { id: oid };
     bundle = await loadRelatedBundle(type, oid, record);
+    if (generation !== openGeneration) return null;
     cache.set(key, { record, bundle });
   }
+  if (generation !== openGeneration) return null;
 
   const label =
     options.label ||
@@ -139,6 +146,16 @@ function showArea(id) {
   if (typeof onAreaNavigate === "function") onAreaNavigate(id);
 }
 
+async function refreshActiveObject(mutation = {}) {
+  if (!active) return;
+  const { type, id, tab, label } = active;
+  const keys = configurationMutationCacheKeys(active, mutation);
+  cache.delete(sessionKey(type, id));
+  keys.components.forEach((componentId) => cache.delete(sessionKey("component", componentId)));
+  keys.aircraft.forEach((aircraftId) => cache.delete(sessionKey("aircraft", aircraftId)));
+  await openObject(type, id, { refresh: true, tab, label });
+}
+
 function mountActive() {
   if (!ensureHost() || !active) return;
   const typeDef = getObjectType(active.type);
@@ -150,7 +167,18 @@ function mountActive() {
   const rail = document.getElementById("weRail");
   if (!header || !tabs || !main || !rail) return;
 
-  header.innerHTML = renderHeader(active, typeDef, active.record);
+  const headerTypeDef = {
+    ...typeDef,
+    quickActions: (typeDef.quickActions || []).filter((action) => {
+      const canManage = sessionCanManageComponents(active.bundle?.sessionRole);
+      if (action.id === "installComponent") return canManage;
+      if (action.id === "remove") {
+        return canManage && String(active.record?.component_status || "").toLowerCase() === "installed";
+      }
+      return true;
+    }),
+  };
+  header.innerHTML = renderHeader(active, headerTypeDef, active.record);
   tabs.innerHTML = renderTabs(typeDef, active.tab);
   main.innerHTML = renderMainTab(active, typeDef, active.record, active.bundle, active.tab);
   rail.innerHTML = renderRail(active, typeDef, active.record, active.bundle);
@@ -170,6 +198,7 @@ function mountActive() {
   });
   bindCommentForm(active.key, () => mountActive());
   bindAiPanel(active, active.record);
+  bindConfigurationPanel(active, { onRefresh: refreshActiveObject });
 
   const search = document.getElementById("weObjectSearch");
   if (search) {
@@ -216,11 +245,60 @@ function handleAction(action) {
     toast("Open Digital Logbook — create tech-log entry for this aircraft");
     return;
   }
+  if (action === "installComponent") {
+    if (active.type !== "aircraft") {
+      toast("Install component requires an aircraft object");
+      return;
+    }
+    setObjectTab("configuration");
+    document.getElementById("weCfgInstallForm")?.scrollIntoView({ block: "nearest" });
+    return;
+  }
+  if (action === "remove") {
+    void removeComponentFromHeader();
+    return;
+  }
   if (action === "attach" || action === "assign" || action === "transition") {
     toast(`${action} — use MRO Execution (object context preserved)`);
     return;
   }
   toast(`${action} queued for ${active.label}`);
+}
+
+async function removeComponentFromHeader() {
+  if (!active || active.type !== "component") {
+    toast("Remove requires a component object");
+    return;
+  }
+  if (!sessionCanManageComponents(active.bundle?.sessionRole)) {
+    toast("Component management required");
+    return;
+  }
+  if (String(active.record?.component_status || "").toLowerCase() !== "installed") {
+    toast("Component is not installed");
+    return;
+  }
+  const ok = window.confirm(`Remove ${active.label || active.id} from the aircraft to stores?`);
+  if (!ok) return;
+  const resolved = resolveInstallationHoursCycles(active.record, "", "");
+  if (!resolved.ok) {
+    toast(resolved.error);
+    return;
+  }
+  const result = await uxRemoveSerializedComponent(active.id, {
+    destination_status: "stores",
+    aircraft_hours: resolved.hours,
+    aircraft_cycles: resolved.cycles,
+  });
+  if (!result.ok) {
+    toast(result.error || "Remove failed");
+    return;
+  }
+  toast("Component removed");
+  await refreshActiveObject({
+    componentId: active.id,
+    sourceAircraftId: active.record?.current_aircraft_id || "",
+  });
 }
 
 async function createWorkOrderFromContext() {

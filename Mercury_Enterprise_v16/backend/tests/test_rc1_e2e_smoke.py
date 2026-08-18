@@ -35,6 +35,9 @@ def test_ui_shell_exposes_rc1_workflow_surfaces() -> None:
     registry = (FRONTEND / "js" / "ux2" / "registry.js").read_text(encoding="utf-8")
     workspaces = (FRONTEND / "js" / "ux2" / "workspaces.js").read_text(encoding="utf-8")
     command = (FRONTEND / "js" / "commandCenter.js").read_text(encoding="utf-8")
+    loaders = (FRONTEND / "js" / "workspace-engine" / "loaders.js").read_text(encoding="utf-8")
+    we_render = (FRONTEND / "js" / "workspace-engine" / "render.js").read_text(encoding="utf-8")
+    configuration = (FRONTEND / "js" / "workspace-engine" / "configuration.js").read_text(encoding="utf-8")
 
     assert 'id="loginOverlay"' in html
     assert 'id="loginForm"' in html
@@ -58,6 +61,11 @@ def test_ui_shell_exposes_rc1_workflow_surfaces() -> None:
     assert 'id="roleSelect"' in html
     assert 'type="file"' not in html
     assert 'id="componentWorkspace"' not in html
+    assert "/components/aircraft/" in loaders
+    assert "renderAircraftConfigurationPanel" in we_render
+    assert "dueOpenTarget" in we_render
+    assert "deferred_defect" in we_render
+    assert "uxInstallSerializedComponent" in configuration
 
     assert "async function signOut()" in app_js
     assert 'addEventListener("click", signOut)' in app_js
@@ -181,6 +189,11 @@ def test_rc1_sequential_smoke_twenty_one_workflows() -> None:
     serialized = _ok(client.get("/api/v1/components/serialized", params={"limit": 50})).json()
     assert isinstance(catalog, list)
     assert isinstance(serialized, list)
+    config = _ok(client.get(f"/api/v1/components/aircraft/{aircraft_id}/configuration")).json()
+    assert config["aircraft_id"] == aircraft_id
+    assert isinstance(config["installed"], list)
+    gmea = _ok(client.get("/api/v1/components/aircraft/ac-c-gmea/configuration")).json()
+    assert any(item["serial_number"] == "ENG-SN-1001" for item in gmea["installed"])
 
     # --- 8. Inventory ---
     stock = _ok(client.get("/api/v1/logistics/dashboard")).json()
