@@ -39,6 +39,20 @@ Creating the first work order promotes a package from `draft` → `planned`. Cre
 
 Reports: `open_work_orders`, `delayed_work_orders`, `labor_hours`, `aircraft_status`, `technician_productivity`, `inspection_status`, `release_status`.
 
+## Operator UI
+
+Aircraft Registry or Home → **Work Orders** area, or open an aircraft object → **Work Orders** tab.
+
+| Surface | Behavior |
+|---------|----------|
+| Work Orders board | Live list from `GET /orders` with search/status/priority/aircraft/due filters. Create package+order is Operator/Administrator only. Row opens the work-order object. |
+| Work-order object | Overview (status, priority, due, aircraft, planner/supervisor), job-card list, inspection/release queue, history joined to tech-log via `maintenance_task_id`. |
+| Job-card object | Execution actions on existing endpoints: assign, `/transition`, `/complete-work`, `/inspect`, `/release`. Certification-gated statuses are not offered on `/transition`. |
+
+There is **no** `#jobCardWorkspace` area. Context is preserved in Workspace Engine sessions (`data-we-tab`, cache invalidation on mutation). Backend RBAC remains authoritative.
+
+## Isolation & audit
+
 ## Isolation & audit
 
 Every package/order is org-scoped. Cross-org access returns 403. Create/assign/transition/inspect/release actions emit audit events (`work_package.create`, `work_order.create`, `job_card.*`).

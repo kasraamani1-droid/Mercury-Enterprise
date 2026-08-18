@@ -30,6 +30,10 @@ Offline-ready: technician transitions and notes can queue in `localStorage` and 
 
 KPIs: open WOs, delayed WOs, job cards by status, awaiting inspection, awaiting release.
 
+Landing Dashboard (Home) also reads this endpoint together with `/dashboard/summary` and `/planning/dashboard`. Missing live data is shown as **unavailable**, never invented.
+
+## Reports
+
 ## Reports
 
 `GET /api/v1/work-orders/reports/{name}` — open/delayed work orders, labor hours, aircraft status, technician productivity, inspection status, release status.
@@ -43,7 +47,7 @@ Session roles map to permissions `work_order.read|manage|execute` plus certifica
 - Package: `backend/app/work_orders/` — models, repository, service, thin router  
 - Reuses `MaintenanceService.sign_action` for certify/logbook (no duplicated engine)  
 - Alembic: `20260813_0009_work_orders_job_cards`  
-- Frontend: `frontend/js/maintenance.js` + Maintenance product tab  
+- Frontend: `frontend/js/maintenance.js` + Maintenance product tab + Workspace Engine `maintenance-ops.js` (work-order / job-card / aircraft logbook object UI)  
 
 ## Related
 

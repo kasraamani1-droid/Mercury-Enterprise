@@ -27,6 +27,7 @@ export async function loadObjectRecord(type, id) {
   const routes = {
     aircraft: `/fleet/aircraft/${encodeURIComponent(id)}`,
     workOrder: `/work-orders/orders/${encodeURIComponent(id)}`,
+    jobCard: `/work-orders/job-cards/${encodeURIComponent(id)}`,
     component: `/components/serialized/${encodeURIComponent(id)}`,
     marketplaceListing: `/marketplace/products/${encodeURIComponent(id)}`,
     organization: `/organizations/${encodeURIComponent(id)}`,
@@ -37,6 +38,19 @@ export async function loadObjectRecord(type, id) {
   if (routes[type]) {
     const res = await softGet(routes[type]);
     if (res.ok && res.data) return { ...res, source: "api" };
+    return {
+      ok: false,
+      status: res.status,
+      source: "api",
+      data: {
+        id,
+        type,
+        name: id,
+        status: "unavailable",
+        note: res.error || `HTTP ${res.status || 0}`,
+      },
+      error: res.error,
+    };
   }
 
   if (type === "finding") {
@@ -81,7 +95,7 @@ export async function loadRelatedBundle(type, id, record) {
   };
 
   if (type === "aircraft") {
-    const [wos, due, twins, cfg, serialized, ata, catalog, fleet, session] = await Promise.all([
+    const [wos, due, twins, cfg, serialized, ata, catalog, fleet, session, logbook, cards] = await Promise.all([
       softGet(`/work-orders/orders?aircraft_id=${encodeURIComponent(id)}&limit=20`),
       softGet(`/planning/due-list?limit=20`),
       softGet(`/twin/twins?limit=40`),
@@ -91,8 +105,15 @@ export async function loadRelatedBundle(type, id, record) {
       softGet(`/components/catalog`),
       softGet(`/fleet/aircraft?limit=100`),
       softGet(`/auth/session`),
+      softGet(`/maintenance/logbook?aircraft_id=${encodeURIComponent(id)}&limit=40`),
+      softGet(`/work-orders/job-cards?aircraft_id=${encodeURIComponent(id)}&limit=50`),
     ]);
+    bundle.workOrdersLoad = { ok: wos.ok, status: wos.status, error: wos.error || "" };
     bundle.workOrders = listify(wos.data);
+    bundle.logbookLoad = { ok: logbook.ok, status: logbook.status, error: logbook.error || "" };
+    bundle.logbook = listify(logbook.data);
+    bundle.jobCardsLoad = { ok: cards.ok, status: cards.status, error: cards.error || "" };
+    bundle.jobCards = listify(cards.data);
     bundle.due = listify(due.data?.items || due.data?.due || due.data);
     bundle.configurationLoad = { ok: cfg.ok, status: cfg.status, error: cfg.error || "" };
     bundle.configuration = cfg.ok ? cfg.data : { aircraft_id: id, installed: [] };
@@ -117,8 +138,60 @@ export async function loadRelatedBundle(type, id, record) {
   }
 
   if (type === "workOrder") {
-    const cards = await softGet(`/work-orders/job-cards?work_order_id=${encodeURIComponent(id)}&limit=30`);
+    const aircraftId = record?.aircraft_id;
+    const [cards, session, employees, aircraft, logbook] = await Promise.all([
+      softGet(`/work-orders/job-cards?work_order_id=${encodeURIComponent(id)}&limit=50`),
+      softGet(`/auth/session`),
+      softGet(`/personnel/employees?limit=80`),
+      aircraftId ? softGet(`/fleet/aircraft/${encodeURIComponent(aircraftId)}`) : Promise.resolve({ ok: false, data: null }),
+      aircraftId
+        ? softGet(`/maintenance/logbook?aircraft_id=${encodeURIComponent(aircraftId)}&limit=40`)
+        : Promise.resolve({ ok: true, status: 200, data: [], error: null }),
+    ]);
+    bundle.jobCardsLoad = { ok: cards.ok, status: cards.status, error: cards.error || "" };
     bundle.jobCards = listify(cards.data);
+    bundle.sessionRole = session.ok ? session.data?.role || "" : "";
+    bundle.employees = listify(employees.data);
+    bundle.aircraft = aircraft.ok ? aircraft.data : null;
+    bundle.logbookLoad = { ok: logbook.ok, status: logbook.status, error: logbook.error || "" };
+    bundle.logbook = listify(logbook.data);
+    bundle.timeline = bundle.jobCards.slice(0, 12).map((card) => ({
+      title: `${card.job_card_number || card.id} · ${card.status || ""}`,
+      at: card.updated_at || card.created_at || "",
+      detail: [card.title, card.technician_employee_id].filter(Boolean).join(" · "),
+    }));
+  }
+
+  if (type === "jobCard") {
+    const orderId = record?.work_order_id;
+    const aircraftId = record?.aircraft_id;
+    const taskId = record?.maintenance_task_id;
+    const [session, employees, attachments, order, aircraft, logbook, audit] = await Promise.all([
+      softGet(`/auth/session`),
+      softGet(`/personnel/employees?limit=80`),
+      softGet(`/work-orders/job-cards/${encodeURIComponent(id)}/attachments`),
+      orderId ? softGet(`/work-orders/orders/${encodeURIComponent(orderId)}`) : Promise.resolve({ ok: false, data: null }),
+      aircraftId ? softGet(`/fleet/aircraft/${encodeURIComponent(aircraftId)}`) : Promise.resolve({ ok: false, data: null }),
+      aircraftId
+        ? softGet(`/maintenance/logbook?aircraft_id=${encodeURIComponent(aircraftId)}&limit=40`)
+        : Promise.resolve({ ok: true, status: 200, data: [], error: null }),
+      taskId ? softGet(`/maintenance/tasks/${encodeURIComponent(taskId)}/audit-trail`) : Promise.resolve({ ok: false, data: null }),
+    ]);
+    bundle.sessionRole = session.ok ? session.data?.role || "" : "";
+    bundle.employees = listify(employees.data);
+    bundle.attachmentsLoad = { ok: attachments.ok, status: attachments.status, error: attachments.error || "" };
+    bundle.attachments = listify(attachments.data);
+    bundle.workOrder = order.ok ? order.data : null;
+    bundle.aircraft = aircraft.ok ? aircraft.data : null;
+    bundle.logbookLoad = { ok: logbook.ok, status: logbook.status, error: logbook.error || "" };
+    bundle.logbook = listify(logbook.data);
+    bundle.auditTrail = audit.ok ? audit.data : null;
+    const events = listify(audit.data?.certification_events);
+    bundle.timeline = events.slice(0, 12).map((event) => ({
+      title: event.step || event.event_type || "Certification event",
+      at: event.occurred_at || event.created_at || "",
+      detail: [event.actor_employee_id, event.actor_username, event.notes].filter(Boolean).join(" · "),
+    }));
   }
 
   if (type === "component") {
@@ -211,12 +284,27 @@ export async function searchObjects(query) {
         });
       });
   }
+  const orders = await softGet(`/work-orders/orders?limit=50`);
+  if (orders.ok) {
+    listify(orders.data)
+      .filter((row) => `${row.wo_number || ""} ${row.title || ""} ${row.aircraft_id || ""} ${row.id || ""}`.toLowerCase().includes(q.toLowerCase()))
+      .slice(0, 8)
+      .forEach((row) => {
+        results.push({
+          type: "workOrder",
+          id: String(row.id),
+          label: row.wo_number || row.title || row.id,
+          meta: row.status || "work order",
+        });
+      });
+  }
   return results;
 }
 
 function mapSearchType(kind) {
   const k = String(kind || "").toLowerCase();
   if (k.includes("aircraft")) return "aircraft";
+  if (k.includes("job")) return "jobCard";
   if (k.includes("work")) return "workOrder";
   if (k.includes("twin")) return "digitalTwin";
   if (k.includes("product") || k.includes("listing")) return "marketplaceListing";

@@ -192,8 +192,11 @@
   margin: 8px 0 0;
   font-size: 13px;
 }
-.we-cfg-msg.is-error { color: var(--mx-danger); }
-.we-cfg-msg.is-ok { color: var(--mx-ok); }
+.we-ops-jumps { margin: 12px 0; }
+.we-ops-form-card { margin-top: 16px; }
+.we-ops-sign-form { margin-top: 8px; }
+#weOpsMsg.is-error { color: var(--mx-danger); }
+#weOpsMsg.is-ok { color: var(--mx-ok); }
 
 .we-cfg-group td {
   font-weight: 600;

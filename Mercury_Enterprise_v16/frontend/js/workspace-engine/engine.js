@@ -23,6 +23,14 @@ import { toast } from "../utils.js";
 import { createWorkOrder, createWorkPackage } from "../api.js";
 import { uxAddMarketplaceCart, uxCreateMarketplaceQuote, uxCreateTwin, uxRemoveSerializedComponent } from "../ux2/api.js";
 import { bindConfigurationPanel, configurationMutationCacheKeys, resolveInstallationHoursCycles, sessionCanManageComponents } from "./configuration.js";
+import {
+  bindMaintenanceOpsPanel,
+  maintenanceOpsCacheKeys,
+  sessionCanExecuteWork,
+  sessionCanInspect,
+  sessionCanManageWorkOrders,
+  sessionCanRelease,
+} from "./maintenance-ops.js";
 
 let host = null;
 let active = null; // { key, type, id, label, tab, record, bundle }
@@ -150,9 +158,12 @@ async function refreshActiveObject(mutation = {}) {
   if (!active) return;
   const { type, id, tab, label } = active;
   const keys = configurationMutationCacheKeys(active, mutation);
+  const opsKeys = maintenanceOpsCacheKeys(active, mutation);
   cache.delete(sessionKey(type, id));
   keys.components.forEach((componentId) => cache.delete(sessionKey("component", componentId)));
-  keys.aircraft.forEach((aircraftId) => cache.delete(sessionKey("aircraft", aircraftId)));
+  [...keys.aircraft, ...opsKeys.aircraft].forEach((aircraftId) => cache.delete(sessionKey("aircraft", aircraftId)));
+  opsKeys.workOrders.forEach((orderId) => cache.delete(sessionKey("workOrder", orderId)));
+  opsKeys.jobCards.forEach((cardId) => cache.delete(sessionKey("jobCard", cardId)));
   await openObject(type, id, { refresh: true, tab, label });
 }
 
@@ -170,11 +181,18 @@ function mountActive() {
   const headerTypeDef = {
     ...typeDef,
     quickActions: (typeDef.quickActions || []).filter((action) => {
-      const canManage = sessionCanManageComponents(active.bundle?.sessionRole);
-      if (action.id === "installComponent") return canManage;
+      const sessionRole = active.bundle?.sessionRole;
+      const canManageComponents = sessionCanManageComponents(sessionRole);
+      const canManageWo = sessionCanManageWorkOrders(sessionRole);
+      const canExecute = sessionCanExecuteWork(sessionRole);
+      if (action.id === "installComponent") return canManageComponents;
       if (action.id === "remove") {
-        return canManage && String(active.record?.component_status || "").toLowerCase() === "installed";
+        return canManageComponents && String(active.record?.component_status || "").toLowerCase() === "installed";
       }
+      if (action.id === "assign") return canManageWo && (active.type === "workOrder" || active.type === "jobCard");
+      if (action.id === "transition") return canExecute && (active.type === "workOrder" || active.type === "jobCard");
+      if (action.id === "inspect") return sessionCanInspect(sessionRole);
+      if (action.id === "release") return sessionCanRelease(sessionRole);
       return true;
     }),
   };
@@ -189,16 +207,10 @@ function mountActive() {
   tabs.querySelectorAll("[data-we-tab]").forEach((btn) => {
     btn.addEventListener("click", () => setObjectTab(btn.getAttribute("data-we-tab")));
   });
-  document.querySelectorAll("[data-we-open]").forEach((el) => {
-    el.addEventListener("click", () => {
-      const raw = el.getAttribute("data-we-open");
-      const parsed = parseSessionKey(raw);
-      if (parsed) openObject(parsed.type, parsed.id);
-    });
-  });
   bindCommentForm(active.key, () => mountActive());
   bindAiPanel(active, active.record);
   bindConfigurationPanel(active, { onRefresh: refreshActiveObject });
+  bindMaintenanceOpsPanel(active, { onRefresh: refreshActiveObject });
 
   const search = document.getElementById("weObjectSearch");
   if (search) {
@@ -241,8 +253,47 @@ function handleAction(action) {
     return;
   }
   if (action === "logDefect") {
+    if (active.type === "aircraft") {
+      setObjectTab("logbook");
+      toast("Technical log entries are created by ACA release. Amend is append-only when manage is granted.");
+      return;
+    }
     onAreaNavigate?.("logbook");
-    toast("Open Digital Logbook — create tech-log entry for this aircraft");
+    toast("Open Digital Logbook — entries are created by ACA release, not a free-form create API");
+    return;
+  }
+  if (action === "openAircraft") {
+    const aircraftId = active.record?.aircraft_id || active.bundle?.aircraft?.id;
+    if (!aircraftId) {
+      toast("No aircraft on this record");
+      return;
+    }
+    void openObject("aircraft", aircraftId, {
+      refresh: true,
+      label: active.record?.registration || active.bundle?.aircraft?.registration || aircraftId,
+    });
+    return;
+  }
+  if (action === "openLogbook") {
+    const aircraftId = active.type === "aircraft" ? active.id : active.record?.aircraft_id || active.bundle?.aircraft?.id;
+    if (!aircraftId) {
+      onAreaNavigate?.("logbook");
+      return;
+    }
+    void openObject("aircraft", aircraftId, {
+      refresh: true,
+      tab: "logbook",
+      label: active.record?.registration || active.bundle?.aircraft?.registration || aircraftId,
+    });
+    return;
+  }
+  if (action === "openWorkOrder") {
+    const orderId = active.record?.work_order_id;
+    if (!orderId) {
+      toast("No work order on this job card");
+      return;
+    }
+    void openObject("workOrder", orderId, { refresh: true, label: active.bundle?.workOrder?.wo_number || orderId });
     return;
   }
   if (action === "installComponent") {
@@ -258,8 +309,20 @@ function handleAction(action) {
     void removeComponentFromHeader();
     return;
   }
-  if (action === "attach" || action === "assign" || action === "transition") {
-    toast(`${action} — use MRO Execution (object context preserved)`);
+  if (action === "assign") {
+    if (active.type === "workOrder") setObjectTab("tasks");
+    else if (active.type === "jobCard") setObjectTab("overview");
+    document.getElementById("weOpsAssignForm")?.scrollIntoView({ block: "nearest" });
+    return;
+  }
+  if (action === "transition") {
+    if (active.type === "workOrder") setObjectTab("tasks");
+    else if (active.type === "jobCard") setObjectTab("overview");
+    document.getElementById("weOpsTransitionForm")?.scrollIntoView({ block: "nearest" });
+    return;
+  }
+  if (action === "attach") {
+    toast("Attachment metadata lives on the job card and MRO Execution board");
     return;
   }
   toast(`${action} queued for ${active.label}`);
@@ -414,7 +477,12 @@ export function initializeWorkspaceEngine(options = {}) {
     if (open) {
       e.preventDefault();
       const parsed = parseSessionKey(open.getAttribute("data-we-open"));
-      if (parsed) openObject(parsed.type, parsed.id, { label: open.getAttribute("data-we-label") || undefined });
+      if (parsed) {
+        openObject(parsed.type, parsed.id, {
+          label: open.getAttribute("data-we-label") || undefined,
+          tab: open.getAttribute("data-we-tab") || undefined,
+        });
+      }
     }
   });
 

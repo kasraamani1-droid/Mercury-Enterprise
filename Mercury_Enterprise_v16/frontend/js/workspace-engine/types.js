@@ -101,10 +101,31 @@ export const OBJECT_TYPES = {
     ],
     quickActions: [
       { id: "assign", label: "Assign technician" },
-      { id: "transition", label: "Transition status" },
+      { id: "transition", label: "Progress work" },
+      { id: "openAircraft", label: "Open aircraft" },
+      { id: "openLogbook", label: "Aircraft logbook" },
       { id: "pin", label: "Pin object" },
     ],
-    resolveLabel: (o) => o.number || o.work_order_number || o.id,
+    resolveLabel: (o) => o.wo_number || o.number || o.work_order_number || o.id,
+  },
+  jobCard: {
+    type: "jobCard",
+    label: "Job Card",
+    icon: "⚒",
+    tabs: [
+      { id: "overview", label: "Execution" },
+      { id: "inspections", label: "Inspection / release" },
+      { id: "history", label: "History" },
+      { id: "documents", label: "Documents" },
+      { id: "aiAssistant", label: "AI Assistant" },
+    ],
+    quickActions: [
+      { id: "openWorkOrder", label: "Open work order" },
+      { id: "openAircraft", label: "Open aircraft" },
+      { id: "openLogbook", label: "Aircraft logbook" },
+      { id: "pin", label: "Pin object" },
+    ],
+    resolveLabel: (o) => o.job_card_number || o.title || o.id,
   },
   inspection: {
     type: "inspection",

@@ -145,7 +145,7 @@ export function showWorkspace(name){
       catch(_){ /* ignore */ }
     }, 80);
   }
-  if(name==="maintenance"||name==="workOrders"){
+  if(name==="maintenance"){
     import("./maintenance.js").then((m)=>m.refreshMaintenanceWorkspace()).catch(()=>{});
   }
   if(name==="planning"||name==="engineering"){
