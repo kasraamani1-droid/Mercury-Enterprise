@@ -1,6 +1,4 @@
 /* Mercury Enterprise UX 2.0 — Design System tokens & primitives */
-@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap");
-
 :root,
 [data-theme="dark"] {
   --mx-font-sans: "IBM Plex Sans", "Segoe UI", sans-serif;

@@ -190,7 +190,7 @@ export function renderMainTab(session, typeDef, record, bundle, tabId) {
       <article class="mx-card">
         <div class="mx-card-header"><h3>${esc(tabLabel(typeDef, tabId))}</h3></div>
         <p class="mx-subtitle">Context tab for <strong>${esc(String(label))}</strong>. Domain boards remain available via area navigation; this tab keeps the object in focus.</p>
-        ${bundle.due?.length ? `<div class="mx-stack" style="margin-top:12px">${bundle.due.slice(0, 6).map((d) => `<div class="mx-chip">${esc(d.task_code || d.title || d.id || "Due")}</div>`).join("")}</div>` : ""}
+        ${bundle.due?.length ? `<div class="mx-stack" style="margin-top:12px">${bundle.due.slice(0, 6).map((d) => dueChip(d)).join("")}</div>` : ""}
         ${bundle.configurations?.length ? `<pre class="we-json">${esc(JSON.stringify(bundle.configurations.slice(0, 3), null, 2))}</pre>` : ""}
       </article>
     `;
@@ -290,6 +290,9 @@ function pickSummary(record) {
     "twin_uuid",
     "lifecycle_state",
     "description",
+    "title",
+    "defect_number",
+    "aircraft_id",
     "sku",
     "code",
     "note",
@@ -319,6 +322,28 @@ function timelineHtml(items) {
       <div class="mx-timeline-meta">${esc(String(i.at || ""))}</div></div></div>`
     )
     .join("")}</div>`;
+}
+
+function dueOpenTarget(item) {
+  const source = String(item?.source_type || "").toLowerCase();
+  const id = item?.source_id || item?.id;
+  if (!id) return null;
+  // Due-list mixes checks / AD / SB / EO / deferred defects. Only types that
+  // already exist in the Workspace Engine catalog get data-we-open (same
+  // contract as related work-order chips). Others stay informational.
+  if (source === "deferred_defect") {
+    return { key: `finding:${id}`, label: item.title || item.defect_number || String(id) };
+  }
+  return null;
+}
+
+function dueChip(item) {
+  const text = item.task_code || item.title || item.id || "Due";
+  const open = dueOpenTarget(item);
+  if (open) {
+    return `<button type="button" class="mx-chip" data-we-open="${esc(open.key)}" data-we-label="${esc(open.label)}">${esc(String(text))}</button>`;
+  }
+  return `<div class="mx-chip">${esc(String(text))}</div>`;
 }
 
 function relatedStrip(bundle) {

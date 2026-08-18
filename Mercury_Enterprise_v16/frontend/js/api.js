@@ -4,10 +4,12 @@ const DEFAULT_TIMEOUT_MS = 8000;
 
 export function notifyAuthRequired() {
   if (typeof window === "undefined") return;
+  const overlay = document.getElementById("loginOverlay");
+  if (overlay && !overlay.classList.contains("hidden")) return;
   window.dispatchEvent(new CustomEvent("mercury:auth-required"));
 }
 
-async function request(path, options = {}) {
+export async function request(path, options = {}) {
   const controller = new AbortController();
   const timeoutId = setTimeout(
     () => controller.abort(),

@@ -16,6 +16,16 @@
   <link rel="stylesheet" href="css/responsive.css">
 </head>
 <body class="ux2">
+<div id="loginOverlay" class="login-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
+  <form id="loginForm" class="login-card" method="post" action="/" autocomplete="on">
+    <h2 id="loginTitle">Operator sign-in</h2>
+    <p class="muted">Session required. Demo auto-login is disabled.</p>
+    <label>Operator <input id="loginOperator" name="operator" autocomplete="username" required></label>
+    <label>Password <input id="loginPassword" name="password" type="password" autocomplete="current-password" required></label>
+    <p id="loginError" class="login-error hidden" role="alert"></p>
+    <button type="submit" id="loginSubmit">Sign in</button>
+  </form>
+</div>
 <div id="criticalAlert" class="critical-alert hidden"><strong>CRITICAL AIRSPACE ALERT</strong><span id="criticalAlertText">UAV approaching protected runway zone.</span><button id="dismissAlert">Dismiss</button></div>
 
 <div id="ux2App" class="ux2-app">
@@ -448,7 +458,7 @@
     </article>
     <article class="card"><h3>Technician — my work</h3>
       <label class="muted">Employee id <input id="mroTechEmployeeId"></label>
-      <label class="muted">Credential <input id="mroCredential" type="password" autocomplete="current-password"></label>
+      <label class="muted">Credential <input id="mroCredential" type="password" name="mro-credential" autocomplete="off"></label>
       <div id="mroTechCards" class="integration-list"></div>
       <h3>Notes / photos</h3>
       <label>Job card id <input id="mroNoteCardId"></label>
@@ -587,17 +597,6 @@
 </div><!-- /#ux2App -->
 
 <div id="toast" class="toast" role="status"></div>
-
-<div id="loginOverlay" class="login-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
-  <form id="loginForm" class="login-card">
-    <h2 id="loginTitle">Operator sign-in</h2>
-    <p class="muted">Session required. Demo auto-login is disabled.</p>
-    <label>Operator <input id="loginOperator" name="operator" autocomplete="username" required></label>
-    <label>Password <input id="loginPassword" name="password" type="password" autocomplete="current-password" required></label>
-    <p id="loginError" class="login-error hidden" role="alert"></p>
-    <button type="submit" id="loginSubmit">Sign in</button>
-  </form>
-</div>
 
 <script src="js/config.local.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>

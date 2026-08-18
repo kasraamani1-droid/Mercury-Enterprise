@@ -32,6 +32,7 @@ let currentContext = null;
 let latestConnectors = [];
 let selectedDecisionId = null;
 let reauthInProgress = false;
+let eventsBound = false;
 
 async function checkHealth(){
   try{
@@ -60,6 +61,8 @@ async function checkHealth(){
   }
 }
 function bindEvents(){
+  if (eventsBound) return;
+  eventsBound = true;
   el("incidentSearch").addEventListener("input",renderIncidentList);el("severityFilter").addEventListener("change",renderIncidentList);el("sortFilter").addEventListener("change",renderIncidentList);el("simulateButton").addEventListener("click",simulateIncident);
   el("incidentList").addEventListener("click",event=>{const card=event.target.closest("[data-incident-id]");if(card)loadIncident(card.dataset.incidentId).then(()=>{updateFusion();updateThreatMatrix()})});
   document.querySelectorAll(".tab").forEach(button=>button.addEventListener("click",()=>showTab(button.dataset.tab)));document.querySelectorAll("[data-action]").forEach(button=>button.addEventListener("click",()=>performOperatorAction(button.dataset.action,addLog)));
@@ -431,47 +434,80 @@ async function signOut(){
   window.location.reload();
 }
 
+let loginPromptPromise = null;
+let loginSubmitInFlight = false;
+
+function readLoginCredentials(form, operatorInput, passwordInput) {
+  const data = form ? new FormData(form) : null;
+  const operator = String((data && data.get("operator")) ?? operatorInput?.value ?? "").trim();
+  const namedPassword = data ? data.get("password") : null;
+  const password = namedPassword != null ? String(namedPassword) : String(passwordInput?.value ?? "");
+  return { operator, password };
+}
+
+function clearLoginPromptLock() {
+  loginPromptPromise = null;
+  if (typeof window !== "undefined") window.__mercuryLoginPrompt = null;
+}
+
 function promptInteractiveLogin(){
-  return new Promise((resolve, reject) => {
+  // Boot and 401 recovery both call this. form.onsubmit cannot stack; window lock
+  // covers a second module graph; in-flight flag guarantees one POST per click.
+  if (loginPromptPromise) return loginPromptPromise;
+  if (typeof window !== "undefined" && window.__mercuryLoginPrompt) {
+    return window.__mercuryLoginPrompt;
+  }
+  loginPromptPromise = new Promise((resolve, reject) => {
     const overlay = el("loginOverlay");
     const form = el("loginForm");
     const errorNode = el("loginError");
     const operatorInput = el("loginOperator");
     const passwordInput = el("loginPassword");
+    const submitBtn = el("loginSubmit");
     if (!overlay || !form || !operatorInput || !passwordInput) {
+      clearLoginPromptLock();
       reject(new Error("Login UI unavailable"));
       return;
     }
+    const overlayWasHidden = overlay.classList.contains("hidden");
     overlay.classList.remove("hidden");
     if (errorNode) {
       errorNode.textContent = "";
       errorNode.classList.add("hidden");
     }
-    passwordInput.value = "";
+    if (overlayWasHidden) passwordInput.value = "";
     operatorInput.focus();
 
     const onSubmit = async event => {
       event.preventDefault();
+      event.stopImmediatePropagation();
+      if (loginSubmitInFlight) return;
+      loginSubmitInFlight = true;
+      if (submitBtn) submitBtn.disabled = true;
       try {
-        const session = await login({
-          operator: operatorInput.value.trim(),
-          password: passwordInput.value,
-        });
+        const { operator, password } = readLoginCredentials(form, operatorInput, passwordInput);
+        const session = await login({ operator, password });
         if (!session.authenticated) {
           throw new Error("Authentication failed");
         }
-        form.removeEventListener("submit", onSubmit);
+        form.onsubmit = null;
         overlay.classList.add("hidden");
+        clearLoginPromptLock();
         resolve(session);
       } catch (error) {
         if (errorNode) {
           errorNode.textContent = error.message || "Invalid credentials";
           errorNode.classList.remove("hidden");
         }
+      } finally {
+        loginSubmitInFlight = false;
+        if (submitBtn) submitBtn.disabled = false;
       }
     };
-    form.addEventListener("submit", onSubmit);
+    form.onsubmit = onSubmit;
   });
+  if (typeof window !== "undefined") window.__mercuryLoginPrompt = loginPromptPromise;
+  return loginPromptPromise;
 }
 
 async function recoverExpiredSession(){
@@ -519,7 +555,11 @@ function applyRoleAccess(){
 }
 
 async function initialize(){
-  initializeMap();
+  try {
+    initializeMap();
+  } catch {
+    // Command map depends on Leaflet. A CSP/CDN miss must not skip UX2 navigate() binding.
+  }
   bindEvents();
   initializeMissionOps();
   initializeCommandCenter();
@@ -529,13 +569,13 @@ async function initialize(){
   initializeMaintenance();
   initializePlanning();
   initializeLogistics();
+  await ensureSession();
+  await loadSessionContext();
+  applyRoleAccess();
   initializeUx2({
     initial: "home",
     onNavigate: (id) => showWorkspace(id),
   });
-  await ensureSession();
-  await loadSessionContext();
-  applyRoleAccess();
   initializeWebSocket();
   updateFusion();
   updateThreatMatrix();

@@ -142,7 +142,7 @@ export const OBJECT_TYPES = {
       { id: "createWo", label: "Raise work order" },
       { id: "pin", label: "Pin object" },
     ],
-    resolveLabel: (o) => o.code || o.title || o.id,
+    resolveLabel: (o) => o.defect_number || o.code || o.title || o.id,
   },
   component: {
     type: "component",

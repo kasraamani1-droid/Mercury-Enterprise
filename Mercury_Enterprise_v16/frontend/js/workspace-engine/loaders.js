@@ -31,6 +31,22 @@ export async function loadObjectRecord(type, id) {
     if (res.ok && res.data) return { ...res, source: "api" };
   }
 
+  if (type === "finding") {
+    const res = await softGet("/planning/deferred-defects?limit=100");
+    const hit = listify(res.data).find(
+      (row) => String(row.id) === String(id) || String(row.defect_number || "") === String(id)
+    );
+    if (hit) {
+      return {
+        ok: true,
+        status: 200,
+        source: "api",
+        data: { ...hit, name: hit.defect_number || hit.title || id },
+        error: null,
+      };
+    }
+  }
+
   // Persona / synthetic / unresolved — local context shell
   return {
     ok: true,
