@@ -164,6 +164,43 @@
 .we-row-open { cursor: pointer; }
 .we-row-open:hover td { background: var(--mx-bg-hover); }
 
+.we-cfg-filters,
+.we-cfg-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 8px 12px;
+  margin: 12px 0;
+}
+
+.we-cfg-forms {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.we-cfg-form-card { margin: 0; }
+
+.we-cfg-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.we-cfg-msg {
+  min-height: 1.2em;
+  margin: 8px 0 0;
+  font-size: 13px;
+}
+.we-cfg-msg.is-error { color: var(--mx-danger); }
+.we-cfg-msg.is-ok { color: var(--mx-ok); }
+
+.we-cfg-group td {
+  font-weight: 600;
+  font-size: 12px;
+  background: color-mix(in srgb, var(--mx-bg-hover) 80%, transparent);
+}
+
 .ux2-tab.we-object-tab {
   border-style: solid;
   border-color: color-mix(in srgb, var(--mx-accent) 35%, var(--mx-border));

@@ -1,6 +1,11 @@
 import { esc } from "../utils.js";
 import { getObjectType } from "./types.js";
 import { addComment, getComments, getPinnedWidgets } from "./store.js";
+import {
+  renderAircraftConfigurationPanel,
+  renderComponentInstallHistory,
+  renderComponentOverview,
+} from "./configuration.js";
 
 export function renderShellSkeleton() {
   return `
@@ -17,7 +22,7 @@ export function renderShellSkeleton() {
 
 export function renderHeader(session, typeDef, record) {
   const label = session.label || typeDef.resolveLabel?.(record) || session.id;
-  const status = record?.status || record?.status_code || record?.lifecycle_state || "open";
+  const status = record?.status || record?.status_code || record?.lifecycle_state || record?.component_status || "open";
   const actions = (typeDef.quickActions || [])
     .map((a) => `<button type="button" class="mx-btn mx-btn-ghost mx-btn-sm" data-we-action="${esc(a.id)}">${esc(a.label)}</button>`)
     .join("");
@@ -45,6 +50,25 @@ export function renderTabs(typeDef, activeTab) {
 
 export function renderMainTab(session, typeDef, record, bundle, tabId) {
   const label = session.label || typeDef.resolveLabel?.(record) || session.id;
+  if (session.type === "component" && tabId === "overview") {
+    return renderComponentOverview(session, record, bundle);
+  }
+  if (session.type === "component" && (tabId === "installHistory" || tabId === "history")) {
+    return renderComponentInstallHistory(bundle);
+  }
+  if (session.type === "aircraft" && (tabId === "configuration" || tabId === "components")) {
+    const dueHtml =
+      tabId === "components" && bundle.due?.length
+        ? `<article class="mx-card" style="margin-top:16px">
+            <div class="mx-card-header"><h3>Due / findings</h3></div>
+            <p class="mx-subtitle">Planning due items remain available while the aircraft stays in focus.</p>
+            <div class="mx-stack" style="margin-top:12px">${bundle.due.slice(0, 6).map((d) => dueChip(d)).join("")}</div>
+          </article>`
+        : tabId === "components"
+          ? `<article class="mx-card" style="margin-top:16px"><div class="mx-card-header"><h3>Due / findings</h3></div><div class="mx-empty">No due items for this aircraft context.</div></article>`
+          : "";
+    return renderAircraftConfigurationPanel(session, bundle, { dueHtml });
+  }
   if (tabId === "overview") {
     return `
       <div class="mx-grid mx-grid-3" style="margin-bottom:16px">

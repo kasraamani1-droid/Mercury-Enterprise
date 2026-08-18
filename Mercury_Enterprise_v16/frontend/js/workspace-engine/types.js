@@ -33,6 +33,7 @@ export const OBJECT_TYPES = {
     quickActions: [
       { id: "createWo", label: "Create work order" },
       { id: "openTwin", label: "Open twin" },
+      { id: "installComponent", label: "Install component" },
       { id: "logDefect", label: "Log defect" },
       { id: "pin", label: "Pin object" },
     ],
@@ -159,11 +160,11 @@ export const OBJECT_TYPES = {
       { id: "aiAssistant", label: "AI Assistant" },
     ],
     quickActions: [
-      { id: "remove", label: "Plan remove" },
+      { id: "remove", label: "Remove from aircraft" },
       { id: "openTwin", label: "Open twin" },
       { id: "pin", label: "Pin object" },
     ],
-    resolveLabel: (o) => o.part_number || o.serial_number || o.name || o.id,
+    resolveLabel: (o) => o.serial_number || o.part_number || o.name || o.id,
   },
   marketplaceListing: {
     type: "marketplaceListing",

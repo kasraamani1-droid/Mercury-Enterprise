@@ -7,7 +7,15 @@ async function softGet(path) {
     const response = await fetch(`${API_BASE}${path}`, { credentials: "include" });
     if (!response.ok) {
       if (response.status === 401) notifyAuthRequired();
-      return { ok: false, status: response.status, data: null, error: `HTTP ${response.status}` };
+      let error = `HTTP ${response.status}`;
+      try {
+        const payload = await response.json();
+        const detail = payload?.detail;
+        if (typeof detail === "string" && detail.trim()) error = detail;
+      } catch {
+        /* keep HTTP status */
+      }
+      return { ok: false, status: response.status, data: null, error };
     }
     return { ok: true, status: response.status, data: await response.json(), error: null };
   } catch (error) {
@@ -73,13 +81,28 @@ export async function loadRelatedBundle(type, id, record) {
   };
 
   if (type === "aircraft") {
-    const [wos, due, twins] = await Promise.all([
+    const [wos, due, twins, cfg, serialized, ata, catalog, fleet, session] = await Promise.all([
       softGet(`/work-orders/orders?aircraft_id=${encodeURIComponent(id)}&limit=20`),
       softGet(`/planning/due-list?limit=20`),
       softGet(`/twin/twins?limit=40`),
+      softGet(`/components/aircraft/${encodeURIComponent(id)}/configuration`),
+      softGet(`/components/serialized`),
+      softGet(`/components/ata-chapters`),
+      softGet(`/components/catalog`),
+      softGet(`/fleet/aircraft?limit=100`),
+      softGet(`/auth/session`),
     ]);
     bundle.workOrders = listify(wos.data);
     bundle.due = listify(due.data?.items || due.data?.due || due.data);
+    bundle.configurationLoad = { ok: cfg.ok, status: cfg.status, error: cfg.error || "" };
+    bundle.configuration = cfg.ok ? cfg.data : { aircraft_id: id, installed: [] };
+    bundle.serializedLoad = { ok: serialized.ok, status: serialized.status, error: serialized.error || "" };
+    bundle.serialized = listify(serialized.data);
+    bundle.ataLoad = { ok: ata.ok, status: ata.status, error: ata.error || "" };
+    bundle.ataChapters = listify(ata.data);
+    bundle.catalog = listify(catalog.data);
+    bundle.fleetAircraft = listify(fleet.data);
+    bundle.sessionRole = session.ok ? session.data?.role || "" : "";
     const twinList = listify(twins.data);
     bundle.twin =
       twinList.find(
@@ -96,6 +119,24 @@ export async function loadRelatedBundle(type, id, record) {
   if (type === "workOrder") {
     const cards = await softGet(`/work-orders/job-cards?work_order_id=${encodeURIComponent(id)}&limit=30`);
     bundle.jobCards = listify(cards.data);
+  }
+
+  if (type === "component") {
+    const hostId = record?.current_aircraft_id;
+    const [history, session, host] = await Promise.all([
+      softGet(`/components/serialized/${encodeURIComponent(id)}/history`),
+      softGet(`/auth/session`),
+      hostId ? softGet(`/fleet/aircraft/${encodeURIComponent(hostId)}`) : Promise.resolve({ ok: false, data: null }),
+    ]);
+    bundle.historyLoad = { ok: history.ok, status: history.status, error: history.error || "" };
+    bundle.installHistory = listify(history.data);
+    bundle.sessionRole = session.ok ? session.data?.role || "" : "";
+    bundle.hostAircraft = host.ok ? host.data : null;
+    bundle.timeline = bundle.installHistory.slice(0, 12).map((h) => ({
+      title: h.event_type || "History",
+      at: h.occurred_at || "",
+      detail: [h.position, h.reason, h.actor].filter(Boolean).join(" · "),
+    }));
   }
 
   if (type === "digitalTwin") {
