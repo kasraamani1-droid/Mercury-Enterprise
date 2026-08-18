@@ -18,6 +18,7 @@ import {
   uxFetchFleets,
   uxFetchFleetStatuses,
   uxFetchLogbook,
+  uxFetchLogisticsDashboard,
   uxFetchMarketplaceCart,
   uxFetchMarketplaceProducts,
   uxFetchMarketplaceQuotes,
@@ -42,6 +43,8 @@ import {
   listWorkPackages,
 } from "../api.js";
 import { sessionCanManageWorkOrders } from "../workspace-engine/maintenance-ops.js";
+import { qtyAvailable } from "../workspace-engine/logistics-ops.js";
+import { refreshLogisticsWorkspace } from "../logistics.js";
 
 function setHtml(id, html) {
   const node = document.getElementById(id);
@@ -112,7 +115,7 @@ function kpiValue(ok, value, fallback = "unavailable") {
 }
 
 export async function refreshHomeWorkspace() {
-  const [health, dash, notes, due, woDash, planDash, approvals] = await Promise.all([
+  const [health, dash, notes, due, woDash, planDash, approvals, logDash] = await Promise.all([
     getHealth().catch(() => null),
     getDashboardSummary().catch(() => null),
     uxFetchPlatformNotifications(),
@@ -120,6 +123,7 @@ export async function refreshHomeWorkspace() {
     uxFetchWorkOrderDashboard(),
     uxFetchPlanningDashboard(),
     uxFetchApprovals(),
+    uxFetchLogisticsDashboard(),
   ]);
   setHtml("homeKpiHealth", health?.status || "unavailable");
   setHtml("homeKpiAlerts", dash ? String(dash.active_alerts ?? dash.alerts?.active ?? "—") : "unavailable");
@@ -131,6 +135,12 @@ export async function refreshHomeWorkspace() {
   setHtml("homeKpiRelease", kpiValue(woDash.ok, woDash.data?.awaiting_release));
   const hint = document.getElementById("homeKpiMroHint");
   if (hint) hint.textContent = woDash.ok ? "Live work-order dashboard" : woDash.error || "Work-order dashboard unavailable";
+  setHtml("homeKpiLowStock", kpiValue(logDash.ok, logDash.data?.low_stock_parts));
+  setHtml("homeKpiOpenMr", kpiValue(logDash.ok, logDash.data?.open_material_requests));
+  setHtml("homeKpiOpenRsv", kpiValue(logDash.ok, logDash.data?.open_reservations));
+  setHtml("homeKpiOpenPo", kpiValue(logDash.ok, logDash.data?.open_purchase_orders));
+  const logHint = document.getElementById("homeKpiLogHint");
+  if (logHint) logHint.textContent = logDash.ok ? "Live logistics dashboard" : logDash.error || "Logistics dashboard unavailable";
 
   const dueItems = listify(due.data?.items || due.data?.due || due.data);
   const forecastHint = planDash.ok
@@ -536,30 +546,33 @@ export async function refreshEngineeringWorkspace() {
 }
 
 export async function refreshInventoryWorkspace() {
-  const [balances, warehouses] = await Promise.all([
-    softGet("/logistics/stock/balances?limit=30"),
+  const [balances, warehouses, shortages] = await Promise.all([
+    softGet("/logistics/stock/balances?limit=40"),
     softGet("/logistics/warehouses?limit=20"),
+    softGet("/logistics/shortages"),
   ]);
   const balItems = listify(balances.data);
   const whItems = listify(warehouses.data);
+  const shortageItems = listify(shortages.data?.items || shortages.data);
   setHtml(
     "inventoryHero",
     `<div class="mx-grid mx-grid-3">
       <article class="mx-kpi"><div class="mx-label">Balance rows</div><div class="mx-kpi-value">${balances.ok ? balItems.length : "—"}</div><div class="mx-kpi-hint">${balances.ok ? "Logistics stock" : esc(balances.error || "API error")}</div></article>
       <article class="mx-kpi"><div class="mx-label">Warehouses</div><div class="mx-kpi-value">${warehouses.ok ? whItems.length : "—"}</div><div class="mx-kpi-hint">Sites &amp; cribs</div></article>
-      <article class="mx-kpi"><div class="mx-label">Deep ops</div><div class="mx-kpi-value">Scan</div><div class="mx-kpi-hint">Barcode / QR / RFID</div></article>
+      <article class="mx-kpi"><div class="mx-label">Shortage items</div><div class="mx-kpi-value">${shortages.ok ? shortageItems.length : "—"}</div><div class="mx-kpi-hint">${shortages.ok ? "Below reorder / no stock" : esc(shortages.error || "API error")}</div></article>
     </div>
     <div style="margin-top:16px">${
       balItems.length
         ? table(
-            ["Part", "On hand", "Reserved", "Condition", "Location"],
+            ["Part", "On hand", "Reserved", "Available", "Condition", "Location"],
             balItems
               .slice(0, 25)
               .map(
-                (b) => `<tr>
-              <td>${esc(b.oem_part_number || b.part_master_id || "—")}</td>
+                (b) => `<tr class="we-row-open" data-we-open="part:${esc(String(b.part_master_id || ""))}" data-we-label="${esc(b.oem_part_number || b.part_number || b.part_master_id || "")}">
+              <td>${esc(b.oem_part_number || b.part_number || b.part_master_id || "—")}</td>
               <td>${esc(String(b.qty_on_hand ?? "—"))}</td>
               <td>${esc(String(b.qty_reserved ?? "—"))}</td>
+              <td>${esc(String(qtyAvailable(b)))}</td>
               <td>${esc(b.condition || "—")}</td>
               <td>${esc(b.location_code || b.location_id || "—")}</td>
             </tr>`
@@ -568,6 +581,7 @@ export async function refreshInventoryWorkspace() {
           )
         : `<div class="mx-empty">${balances.ok ? "No stock balances." : esc(balances.error || "Logistics unavailable")}</div>`
     }</div>
+    <p class="mx-subtitle" style="margin-top:12px">Mutations (receive/issue/reserve/PO) are on Logistics Ops. Inventory does not duplicate the stores desk.</p>
     <div style="margin-top:16px"><button type="button" class="mx-btn" data-ux2-goto="logistics">Open Logistics Ops</button></div>`
   );
 }
@@ -881,6 +895,7 @@ const LOADERS = {
   logbook: refreshLogbookWorkspace,
   engineering: refreshEngineeringWorkspace,
   inventory: refreshInventoryWorkspace,
+  logistics: refreshLogisticsWorkspace,
   marketplace: refreshMarketplaceWorkspace,
   assetTwin: refreshAssetTwinWorkspace,
   authority: refreshAuthorityWorkspace,

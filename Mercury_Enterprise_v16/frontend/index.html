@@ -114,6 +114,12 @@
     <article class="mx-kpi"><div class="mx-label">Awaiting inspection</div><div class="mx-kpi-value" id="homeKpiInspect">—</div><div class="mx-kpi-hint">Job cards waiting inspection</div></article>
     <article class="mx-kpi"><div class="mx-label">Awaiting release</div><div class="mx-kpi-value" id="homeKpiRelease">—</div><div class="mx-kpi-hint">Completed, awaiting ACA</div></article>
   </div>
+  <div class="mx-grid mx-grid-4" style="margin-bottom:16px">
+    <article class="mx-kpi"><div class="mx-label">Low stock</div><div class="mx-kpi-value" id="homeKpiLowStock">—</div><div class="mx-kpi-hint" id="homeKpiLogHint">Logistics dashboard</div></article>
+    <article class="mx-kpi"><div class="mx-label">Open material requests</div><div class="mx-kpi-value" id="homeKpiOpenMr">—</div><div class="mx-kpi-hint">Stores demand</div></article>
+    <article class="mx-kpi"><div class="mx-label">Open reservations</div><div class="mx-kpi-value" id="homeKpiOpenRsv">—</div><div class="mx-kpi-hint">Committed stock</div></article>
+    <article class="mx-kpi"><div class="mx-label">Open purchase orders</div><div class="mx-kpi-value" id="homeKpiOpenPo">—</div><div class="mx-kpi-hint">Receiving pipeline</div></article>
+  </div>
   <div class="mx-grid mx-grid-2">
     <article class="mx-card"><div class="mx-card-header"><h3>Due / forecast focus</h3><button type="button" class="mx-btn mx-btn-ghost mx-btn-sm" data-ux2-goto="planning">Open</button></div><p class="mx-subtitle" id="homeForecastHint"></p><div id="homeDueList" class="mx-stack"></div></article>
     <article class="mx-card"><div class="mx-card-header"><h3>Recent activity</h3></div><div id="homeActivity" class="mx-timeline"></div></article>
@@ -126,6 +132,8 @@
     <button type="button" class="mx-chip" data-ux2-goto="logbook">Technical Logbook</button>
     <button type="button" class="mx-chip" data-ux2-goto="approvals">Approvals</button>
     <button type="button" class="mx-chip" data-ux2-goto="maintenance">MRO Execution</button>
+    <button type="button" class="mx-chip" data-ux2-goto="logistics">Logistics Ops</button>
+    <button type="button" class="mx-chip" data-ux2-goto="inventory">Inventory</button>
     <button type="button" class="mx-chip" data-ux2-goto="marketplace">Marketplace</button>
     <button type="button" class="mx-chip" data-ux2-goto="assetTwin">Digital Twin</button>
     <button type="button" class="mx-chip" data-ux2-goto="developer">Developer</button>
@@ -414,23 +422,48 @@
     <div>
       <span class="eyebrow">Program B · Enterprise logistics</span>
       <h1>Stores, Stock, Tools &amp; Purchasing</h1>
-      <p>Warehouse → Part master → Stock ledger → Material requests → PO → Receiving. Tool crib and planning shortages.</p>
+      <p>Warehouse → Part master → Stock ledger → Material request (job card / work order) → reserve/issue → PO receive → inspect → putaway. Scan resolves barcode/QR/RFID identifiers already stored in Mercury — not a hardware driver.</p>
     </div>
     <button id="logRefresh" class="ghost">Refresh logistics</button>
   </div>
+  <p class="muted" id="logStatus">Loading…</p>
+  <div class="form-row" id="logFilters">
+    <input id="logSearch" placeholder="Search part / MR / description" />
+    <select id="logLocationFilter"><option value="">All locations</option></select>
+    <select id="logConditionFilter">
+      <option value="">All conditions</option>
+      <option value="serviceable">serviceable</option>
+      <option value="unserviceable">unserviceable</option>
+      <option value="quarantine">quarantine</option>
+    </select>
+    <select id="logMrStatus">
+      <option value="">All MR status</option>
+      <option value="requested">requested</option>
+      <option value="approved">approved</option>
+      <option value="reserved">reserved</option>
+      <option value="issued">issued</option>
+      <option value="returned">returned</option>
+      <option value="cancelled">cancelled</option>
+    </select>
+    <button id="logApplyFilters" class="ghost small" type="button">Apply</button>
+  </div>
   <section class="enterprise-kpis" id="logDashKpis"></section>
+  <div id="logOpsDesk"></div>
   <div class="enterprise-grid">
     <article class="card"><h3>Warehouses &amp; locations</h3><div id="logWarehouses" class="integration-list"></div><div id="logLocations" class="integration-list"></div></article>
     <article class="card"><h3>Part master</h3><div id="logParts" class="integration-list"></div></article>
     <article class="card"><h3>Stock balances</h3><div id="logBalances" class="integration-list"></div></article>
-    <article class="card"><h3>Tools &amp; calibration</h3><div id="logTools" class="integration-list"></div></article>
+    <article class="card"><h3>Waiting parts (job cards)</h3><div id="logWaitingParts" class="integration-list"></div></article>
     <article class="card"><h3>Material requests</h3><div id="logMaterialRequests" class="integration-list"></div></article>
+    <article class="card"><h3>Reservations</h3><div id="logReservations" class="integration-list"></div></article>
+    <article class="card"><h3>Recent movements</h3><div id="logMovements" class="integration-list"></div></article>
+    <article class="card"><h3>Tools &amp; calibration</h3><div id="logTools" class="integration-list"></div></article>
     <article class="card"><h3>Purchasing</h3><div id="logPurchaseOrders" class="integration-list"></div><div id="logVendors" class="integration-list"></div></article>
     <article class="card"><h3>Shortages</h3><div id="logShortages" class="integration-list"></div></article>
-    <article class="card"><h3>Scan</h3>
+    <article class="card"><h3>Scan (identifier lookup)</h3>
       <div class="form-row">
-        <input id="logScanValue" placeholder="Barcode / QR / RFID" />
-        <button id="logScanBtn" class="ghost small">Scan</button>
+        <input id="logScanValue" placeholder="Barcode / QR / RFID value already in Mercury" />
+        <button id="logScanBtn" class="ghost small" type="button">Scan</button>
       </div>
       <div id="logScanResult" class="integration-list"></div>
     </article>
@@ -544,7 +577,8 @@
 </section>
 
 <section id="inventoryWorkspace" class="workspace-page ux2-page hidden">
-  <div class="ux2-page-header"><div><div class="mx-label">Inventory</div><h1>Parts, Tools &amp; Stock</h1><p>Stock balances from Logistics; deep scan/PO flows remain in Logistics Ops.</p></div></div>
+  <div class="ux2-page-header"><div><div class="mx-label">Inventory</div><h1>Parts, Tools &amp; Stock</h1><p>Read-only stock view. Receive, reserve, issue, and PO receiving stay in Logistics Ops and Workspace Engine objects.</p></div>
+    <button type="button" class="mx-btn" data-ux2-goto="logistics">Open Logistics Ops</button></div>
   <div id="inventoryHero"></div>
 </section>
 

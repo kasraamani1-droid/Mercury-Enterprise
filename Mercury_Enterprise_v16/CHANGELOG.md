@@ -2,6 +2,25 @@
 
 All notable changes to Mercury Enterprise are summarized here. Package/API version remains `16.0.0` unless noted; sprint tags mark security/ops increments.
 
+## Enterprise logistics operator integration
+
+### Added
+- Logistics Ops operator desk: live dashboard KPIs, search/location/condition filters, waiting-parts job cards, role-gated receive/issue/reserve/release/adjust/warehouse transfer
+- Workspace Engine objects for part, material request, purchase order, and tool on existing `/api/v1/logistics` routes
+- Work order / job card **Materials** tab: create MR with `job_card_id`/`work_order_id`, approve → reserve → issue → return
+- Home logistics KPIs from `GET /logistics/dashboard` (unavailable when live data cannot load)
+- Inventory remains a read-only stock table that opens part objects (no second mutation UI)
+- Scan lookup opens the resolved part/tool object; identifier APIs only — not a hardware scanner
+- Optional `work_order_id` / `job_card_id` filters on `GET /logistics/material-requests`
+- `GET /logistics/receipts/{id}` so inspect/putaway can load receipt lines
+- Contract suite `backend/tests/test_logistics_operator_ui.py`
+
+### Notes
+- No new logistics domain. Direct `/stock/issue` still has no typed work-order fields; job-card linkage is the material-request header.
+- Transfers require two distinct warehouses. Same-bin moves are not a separate API.
+- Aviation personas remain documentation-only. Stores mutations follow session Operator/Administrator (`logistics.stores`). Reviewer has tools read/mutate, not stock receive/issue.
+- Command/Radar/Cloud stay labeled SIM. Payments and OIDC are out of scope.
+
 ## Maintenance operations integration
 
 ### Added

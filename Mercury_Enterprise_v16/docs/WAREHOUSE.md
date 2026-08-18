@@ -16,7 +16,7 @@ Warehouses may be `physical`, `virtual`, or `bonded`.
 
 ## Transfers
 
-`POST /api/v1/logistics/transfers` creates a transfer; `.../complete` moves qty between locations and writes immutable stock movements.
+`POST /api/v1/logistics/transfers` creates a transfer; `.../complete` moves qty between locations and writes immutable stock movements. The API requires **two distinct warehouses**. Same-warehouse bin-to-bin is not a separate endpoint; the operator UI blocks identical source/destination warehouse ids before submit.
 
 ## API
 

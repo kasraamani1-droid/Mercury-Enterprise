@@ -16,6 +16,15 @@ import {
   renderWorkOrderOverview,
   renderWorkOrderTasks,
 } from "./maintenance-ops.js";
+import {
+  renderJobCardMaterials,
+  renderJobCardMaterialsBridge,
+  renderMaterialRequestWorkspace,
+  renderPartWorkspace,
+  renderPurchaseOrderWorkspace,
+  renderToolWorkspace,
+  renderWorkOrderMaterials,
+} from "./logistics-ops.js";
 
 export function renderShellSkeleton() {
   return `
@@ -100,8 +109,27 @@ export function renderMainTab(session, typeDef, record, bundle, tabId) {
   if (session.type === "workOrder" && tabId === "history") {
     return renderWorkOrderHistory(session, record, bundle);
   }
+  if (session.type === "workOrder" && tabId === "materials") {
+    return renderWorkOrderMaterials(session, record, bundle);
+  }
+  if (session.type === "jobCard" && tabId === "materials") {
+    return renderJobCardMaterials(session, record, bundle);
+  }
   if (session.type === "jobCard" && (tabId === "overview" || tabId === "inspections" || tabId === "history")) {
-    return renderJobCardWorkspace(session, record, bundle);
+    const body = renderJobCardWorkspace(session, record, bundle);
+    return tabId === "overview" ? `${body}${renderJobCardMaterialsBridge(session, record, bundle)}` : body;
+  }
+  if (session.type === "part" && tabId === "overview") {
+    return renderPartWorkspace(session, record, bundle);
+  }
+  if (session.type === "materialRequest" && tabId === "overview") {
+    return renderMaterialRequestWorkspace(session, record, bundle);
+  }
+  if (session.type === "purchaseOrder" && tabId === "overview") {
+    return renderPurchaseOrderWorkspace(session, record, bundle);
+  }
+  if (session.type === "tool" && tabId === "overview") {
+    return renderToolWorkspace(session, record, bundle);
   }
   if (tabId === "overview") {
     return `

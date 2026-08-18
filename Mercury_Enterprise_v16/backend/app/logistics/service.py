@@ -2044,6 +2044,8 @@ class LogisticsService:
         organization_id: str | None = None,
         status: str | None = None,
         work_package_id: str | None = None,
+        work_order_id: str | None = None,
+        job_card_id: str | None = None,
         limit: int = 100,
         offset: int = 0,
     ) -> list[MaterialRequestOut]:
@@ -2054,6 +2056,8 @@ class LogisticsService:
                 organization_id=org_id,
                 status=status,
                 work_package_id=work_package_id,
+                work_order_id=work_order_id,
+                job_card_id=job_card_id,
                 limit=limit,
                 offset=offset,
             )
@@ -2636,6 +2640,13 @@ class LogisticsService:
             **ReceiptOut.model_validate(receipt).model_dump(),
             lines=[ReceiptLineOut.model_validate(line) for line in lines],
         )
+
+    def get_receipt(self, receipt_id: str, actor: ActorContext) -> ReceiptDetailOut:
+        org_id = self.resolve_org_id(actor)
+        receipt = self.repo.get_receipt(org_id, receipt_id)
+        if receipt is None:
+            raise HTTPException(status_code=404, detail="Receipt not found")
+        return self._receipt_detail(org_id, receipt)
 
     def receive_purchase_order(
         self, po_id: str, payload: ReceiptCreate, actor: ActorContext

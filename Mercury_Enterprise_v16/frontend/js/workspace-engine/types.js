@@ -102,6 +102,7 @@ export const OBJECT_TYPES = {
     quickActions: [
       { id: "assign", label: "Assign technician" },
       { id: "transition", label: "Progress work" },
+      { id: "requestMaterial", label: "Request material" },
       { id: "openAircraft", label: "Open aircraft" },
       { id: "openLogbook", label: "Aircraft logbook" },
       { id: "pin", label: "Pin object" },
@@ -114,12 +115,14 @@ export const OBJECT_TYPES = {
     icon: "⚒",
     tabs: [
       { id: "overview", label: "Execution" },
+      { id: "materials", label: "Materials" },
       { id: "inspections", label: "Inspection / release" },
       { id: "history", label: "History" },
       { id: "documents", label: "Documents" },
       { id: "aiAssistant", label: "AI Assistant" },
     ],
     quickActions: [
+      { id: "requestMaterial", label: "Request material" },
       { id: "openWorkOrder", label: "Open work order" },
       { id: "openAircraft", label: "Open aircraft" },
       { id: "openLogbook", label: "Aircraft logbook" },
@@ -333,6 +336,59 @@ export const OBJECT_TYPES = {
       { id: "pin", label: "Pin object" },
     ],
     resolveLabel: (o) => o.name || o.code || o.id,
+  },
+  part: {
+    type: "part",
+    label: "Part",
+    icon: "▦",
+    tabs: [
+      { id: "overview", label: "Stock" },
+      { id: "documents", label: "Documents" },
+      { id: "history", label: "History" },
+      { id: "aiAssistant", label: "AI Assistant" },
+    ],
+    quickActions: [{ id: "pin", label: "Pin object" }],
+    resolveLabel: (o) => o.oem_part_number || o.part_number || o.name || o.id,
+  },
+  materialRequest: {
+    type: "materialRequest",
+    label: "Material Request",
+    icon: "⇄",
+    tabs: [
+      { id: "overview", label: "Demand" },
+      { id: "history", label: "History" },
+      { id: "aiAssistant", label: "AI Assistant" },
+    ],
+    quickActions: [
+      { id: "openWorkOrder", label: "Open work order" },
+      { id: "openJobCard", label: "Open job card" },
+      { id: "pin", label: "Pin object" },
+    ],
+    resolveLabel: (o) => o.request_number || o.id,
+  },
+  purchaseOrder: {
+    type: "purchaseOrder",
+    label: "Purchase Order",
+    icon: "☰",
+    tabs: [
+      { id: "overview", label: "Receiving" },
+      { id: "history", label: "History" },
+      { id: "aiAssistant", label: "AI Assistant" },
+    ],
+    quickActions: [{ id: "pin", label: "Pin object" }],
+    resolveLabel: (o) => o.po_number || o.id,
+  },
+  tool: {
+    type: "tool",
+    label: "Tool",
+    icon: "⚒",
+    tabs: [
+      { id: "overview", label: "Crib" },
+      { id: "history", label: "History" },
+      { id: "aiAssistant", label: "AI Assistant" },
+    ],
+    quickActions: [{ id: "pin", label: "Pin object" }],
+    resolveLabel: (o) => o.tool_code || o.description || o.id,
   },
   digitalTwin: {
     type: "digitalTwin",

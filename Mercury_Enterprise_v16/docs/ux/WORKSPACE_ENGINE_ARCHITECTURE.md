@@ -21,6 +21,7 @@ frontend/js/workspace-engine/
   render.js     Header, tabs, main, rail HTML
   configuration.js  Aircraft configuration / components operator UI
   maintenance-ops.js  Work order, job card, logbook, planning-context operator UI
+  logistics-ops.js  Part, material request, PO receiving, tool crib, WO/JC materials
   engine.js     openObject / close / tab / mount
   index.js      Public exports
 frontend/css/workspace-engine.css

@@ -47,7 +47,7 @@ Area menus discover work. **Objects** are where work happens:
 
 - Open from lists, Home, palette (`aircraft C-GMEA`), or `#/object/aircraft/{id}`
 - Context tabs + shared rail (timeline, widgets, comments, AI)
-- Cross-module: Aircraft → Work Order → Job Card → Logbook (aircraft tab) and Planning → Work Order → Aircraft → Configuration. Area tabs stay open; `data-we-tab` selects an object tab without resetting unrelated sessions.
+- Cross-module: Aircraft → Work Order → Job Card → Materials (MR) → Logistics part/PO; Logbook (aircraft tab) and Planning → Work Order → Aircraft → Configuration. Area tabs stay open; `data-we-tab` selects an object tab without resetting unrelated sessions.
 - See [WORKSPACE_ENGINE_NAVIGATION.md](WORKSPACE_ENGINE_NAVIGATION.md)
 
 ## Legacy compatibility

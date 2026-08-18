@@ -31,6 +31,11 @@ import {
   sessionCanManageWorkOrders,
   sessionCanRelease,
 } from "./maintenance-ops.js";
+import {
+  bindLogisticsOpsPanel,
+  logisticsOpsCacheKeys,
+  sessionCanStores,
+} from "./logistics-ops.js";
 
 let host = null;
 let active = null; // { key, type, id, label, tab, record, bundle }
@@ -159,11 +164,16 @@ async function refreshActiveObject(mutation = {}) {
   const { type, id, tab, label } = active;
   const keys = configurationMutationCacheKeys(active, mutation);
   const opsKeys = maintenanceOpsCacheKeys(active, mutation);
+  const logKeys = logisticsOpsCacheKeys(active, mutation);
   cache.delete(sessionKey(type, id));
   keys.components.forEach((componentId) => cache.delete(sessionKey("component", componentId)));
-  [...keys.aircraft, ...opsKeys.aircraft].forEach((aircraftId) => cache.delete(sessionKey("aircraft", aircraftId)));
-  opsKeys.workOrders.forEach((orderId) => cache.delete(sessionKey("workOrder", orderId)));
-  opsKeys.jobCards.forEach((cardId) => cache.delete(sessionKey("jobCard", cardId)));
+  [...keys.aircraft, ...opsKeys.aircraft, ...logKeys.aircraft].forEach((aircraftId) => cache.delete(sessionKey("aircraft", aircraftId)));
+  [...opsKeys.workOrders, ...logKeys.workOrders].forEach((orderId) => cache.delete(sessionKey("workOrder", orderId)));
+  [...opsKeys.jobCards, ...logKeys.jobCards].forEach((cardId) => cache.delete(sessionKey("jobCard", cardId)));
+  logKeys.parts.forEach((partId) => cache.delete(sessionKey("part", partId)));
+  logKeys.materialRequests.forEach((requestId) => cache.delete(sessionKey("materialRequest", requestId)));
+  logKeys.purchaseOrders.forEach((poId) => cache.delete(sessionKey("purchaseOrder", poId)));
+  logKeys.tools.forEach((toolId) => cache.delete(sessionKey("tool", toolId)));
   await openObject(type, id, { refresh: true, tab, label });
 }
 
@@ -193,6 +203,9 @@ function mountActive() {
       if (action.id === "transition") return canExecute && (active.type === "workOrder" || active.type === "jobCard");
       if (action.id === "inspect") return sessionCanInspect(sessionRole);
       if (action.id === "release") return sessionCanRelease(sessionRole);
+      if (action.id === "requestMaterial") {
+        return sessionCanStores(sessionRole) && (active.type === "workOrder" || active.type === "jobCard");
+      }
       return true;
     }),
   };
@@ -211,6 +224,7 @@ function mountActive() {
   bindAiPanel(active, active.record);
   bindConfigurationPanel(active, { onRefresh: refreshActiveObject });
   bindMaintenanceOpsPanel(active, { onRefresh: refreshActiveObject });
+  bindLogisticsOpsPanel(active, { onRefresh: refreshActiveObject });
 
   const search = document.getElementById("weObjectSearch");
   if (search) {
@@ -290,10 +304,30 @@ function handleAction(action) {
   if (action === "openWorkOrder") {
     const orderId = active.record?.work_order_id;
     if (!orderId) {
-      toast("No work order on this job card");
+      toast("No work order on this record");
       return;
     }
-    void openObject("workOrder", orderId, { refresh: true, label: active.bundle?.workOrder?.wo_number || orderId });
+    const options = { refresh: true, label: active.bundle?.workOrder?.wo_number || orderId };
+    if (active.type === "materialRequest") options.tab = "materials";
+    void openObject("workOrder", orderId, options);
+    return;
+  }
+  if (action === "openJobCard") {
+    const cardId = active.record?.job_card_id;
+    if (!cardId) {
+      toast("No job card on this record");
+      return;
+    }
+    void openObject("jobCard", cardId, { refresh: true, tab: "materials" });
+    return;
+  }
+  if (action === "requestMaterial") {
+    if (active.type === "workOrder" || active.type === "jobCard") {
+      setObjectTab("materials");
+      document.getElementById("weLogMrCreateForm")?.scrollIntoView({ block: "nearest" });
+      return;
+    }
+    onAreaNavigate?.("logistics");
     return;
   }
   if (action === "installComponent") {
