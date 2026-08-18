@@ -108,14 +108,24 @@
     <article class="mx-kpi"><div class="mx-label">Missions</div><div class="mx-kpi-value" id="homeKpiMissions">—</div><div class="mx-kpi-hint">Active missions</div></article>
     <article class="mx-kpi"><div class="mx-label">Decisions</div><div class="mx-kpi-value" id="homeKpiDecisions">—</div><div class="mx-kpi-hint">Pending review</div></article>
   </div>
+  <div class="mx-grid mx-grid-4" style="margin-bottom:16px">
+    <article class="mx-kpi"><div class="mx-label">Open work orders</div><div class="mx-kpi-value" id="homeKpiOpenWo">—</div><div class="mx-kpi-hint" id="homeKpiMroHint">Work-order dashboard</div></article>
+    <article class="mx-kpi"><div class="mx-label">Delayed WOs</div><div class="mx-kpi-value" id="homeKpiDelayedWo">—</div><div class="mx-kpi-hint">Status delayed</div></article>
+    <article class="mx-kpi"><div class="mx-label">Awaiting inspection</div><div class="mx-kpi-value" id="homeKpiInspect">—</div><div class="mx-kpi-hint">Job cards waiting inspection</div></article>
+    <article class="mx-kpi"><div class="mx-label">Awaiting release</div><div class="mx-kpi-value" id="homeKpiRelease">—</div><div class="mx-kpi-hint">Completed, awaiting ACA</div></article>
+  </div>
   <div class="mx-grid mx-grid-2">
-    <article class="mx-card"><div class="mx-card-header"><h3>Due / forecast focus</h3><button type="button" class="mx-btn mx-btn-ghost mx-btn-sm" data-ux2-goto="planning">Open</button></div><div id="homeDueList" class="mx-stack"></div></article>
+    <article class="mx-card"><div class="mx-card-header"><h3>Due / forecast focus</h3><button type="button" class="mx-btn mx-btn-ghost mx-btn-sm" data-ux2-goto="planning">Open</button></div><p class="mx-subtitle" id="homeForecastHint"></p><div id="homeDueList" class="mx-stack"></div></article>
     <article class="mx-card"><div class="mx-card-header"><h3>Recent activity</h3></div><div id="homeActivity" class="mx-timeline"></div></article>
   </div>
   <div class="ux2-context-bar" style="margin-top:16px">
     <button type="button" class="mx-chip" data-ux2-goto="aircraft">Aircraft</button>
     <button type="button" class="mx-chip" data-ux2-goto="fleet">Fleet</button>
     <button type="button" class="mx-chip" data-ux2-goto="workOrders">Work Orders</button>
+    <button type="button" class="mx-chip" data-ux2-goto="planning">Maintenance Planning</button>
+    <button type="button" class="mx-chip" data-ux2-goto="logbook">Technical Logbook</button>
+    <button type="button" class="mx-chip" data-ux2-goto="approvals">Approvals</button>
+    <button type="button" class="mx-chip" data-ux2-goto="maintenance">MRO Execution</button>
     <button type="button" class="mx-chip" data-ux2-goto="marketplace">Marketplace</button>
     <button type="button" class="mx-chip" data-ux2-goto="assetTwin">Digital Twin</button>
     <button type="button" class="mx-chip" data-ux2-goto="developer">Developer</button>
@@ -391,6 +401,7 @@
       <button id="planGeneratePkg" class="ghost small">Generate WP from first due check</button>
     </article>
     <article class="card"><h3>Deferred defects / MEL</h3><div id="planDefects" class="integration-list"></div></article>
+    <article class="card"><h3>Delayed work orders</h3><div id="planDelayedWo" class="integration-list"></div></article>
     <article class="card"><h3>Hangar plans</h3><div id="planHangar" class="integration-list"></div></article>
     <article class="card admin-wide"><h3>Forecast (90 days)</h3>
       <div id="planForecast" class="integration-list"></div>

@@ -2,6 +2,20 @@
 
 All notable changes to Mercury Enterprise are summarized here. Package/API version remains `16.0.0` unless noted; sprint tags mark security/ops increments.
 
+## Maintenance operations integration
+
+### Added
+- Workspace Engine work-order, job-card, aircraft logbook, and aircraft maintenance-context operator UI on existing work-order, maintenance, and planning APIs
+- Home operational KPIs from `/work-orders/dashboard` and `/planning/dashboard` (unavailable when live data cannot load)
+- Planning due/forecast rows link to aircraft and related work orders; delayed WO list uses order status `delayed`
+- Technical Logbook area aircraft filter (`aircraft_id`) and work-order join via job-card `maintenance_task_id`
+- Contract suite `backend/tests/test_maintenance_operations_ui.py`
+
+### Notes
+- No new backend modules or create-logbook API. ACA release still writes tech-log entries. Job cards have no parallel `#jobCardWorkspace`.
+- Mutate controls follow session roles (Operator manage/execute, Reviewer inspect/release, Viewer read). 409 conflicts are shown and not retried automatically.
+- PR #8 DD-1001 finding chips and PR #9 Configuration/Components UI remain on the aircraft object.
+
 ## Aircraft Components & Configuration Operator UI
 
 ### Added

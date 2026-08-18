@@ -19,6 +19,8 @@ frontend/js/workspace-engine/
   store.js      Sessions, pins, comments, widgets (localStorage)
   loaders.js    Soft API fetch + related bundles
   render.js     Header, tabs, main, rail HTML
+  configuration.js  Aircraft configuration / components operator UI
+  maintenance-ops.js  Work order, job card, logbook, planning-context operator UI
   engine.js     openObject / close / tab / mount
   index.js      Public exports
 frontend/css/workspace-engine.css

@@ -293,7 +293,10 @@ function bindChrome() {
   });
   document.addEventListener("click", (e) => {
     const goto = e.target?.closest?.("[data-ux2-goto]");
-    if (goto) navigate(goto.getAttribute("data-ux2-goto"));
+    if (goto) {
+      e.preventDefault();
+      navigate(goto.getAttribute("data-ux2-goto"));
+    }
   });
 }
 

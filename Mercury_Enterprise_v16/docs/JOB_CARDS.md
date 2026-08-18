@@ -46,6 +46,14 @@ Validated transitions are enforced in `WorkOrderService.JC_TRANSITIONS`. Invalid
 | POST | `/api/v1/work-orders/job-cards/{id}/release` | `certification.release` |
 | GET/POST | `/api/v1/work-orders/job-cards/{id}/attachments` | read / execute |
 
+## Operator UI
+
+Open a work order → **Tasks / Job cards** → open a job-card object (or MRO Execution boards).
+
+Allowed `/transition` edges match `WorkOrderService.JC_TRANSITIONS`. Complete-work, inspect, and release use the credentialed endpoints above. Session roles: Operator can manage/execute/inspect (not ACA `/release`); Reviewer can execute/inspect/release (not create/assign); Viewer is read-only. Personnel qualifications still apply on the server.
+
+## Certify bridge
+
 ## Certify bridge
 
 - Create job card → creates linked `MaintenanceTask` with same publication revision binding  

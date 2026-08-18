@@ -22,12 +22,14 @@ import {
   uxFetchMarketplaceProducts,
   uxFetchMarketplaceQuotes,
   uxFetchOrgTree,
+  uxFetchPlanningDashboard,
   uxFetchPlanningDue,
   uxFetchPluginInstallations,
   uxFetchPlugins,
   uxFetchPlatformNotifications,
   uxFetchServiceBulletins,
   uxFetchTwins,
+  uxFetchWorkOrderDashboard,
   uxFetchWorkOrders,
 } from "./api.js";
 import {
@@ -35,10 +37,11 @@ import {
   createWorkPackage,
   getDashboardSummary,
   getHealth,
+  getSessionStatus,
   listPublications,
-  listWorkOrders,
   listWorkPackages,
 } from "../api.js";
+import { sessionCanManageWorkOrders } from "../workspace-engine/maintenance-ops.js";
 
 function setHtml(id, html) {
   const node = document.getElementById(id);
@@ -102,36 +105,73 @@ function bindToolbar(idPrefix, onApply) {
   });
 }
 
+function kpiValue(ok, value, fallback = "unavailable") {
+  if (!ok) return fallback;
+  if (value === null || value === undefined || value === "") return "—";
+  return String(value);
+}
+
 export async function refreshHomeWorkspace() {
-  const [health, dash, notes, due] = await Promise.all([
+  const [health, dash, notes, due, woDash, planDash, approvals] = await Promise.all([
     getHealth().catch(() => null),
     getDashboardSummary().catch(() => null),
     uxFetchPlatformNotifications(),
     uxFetchPlanningDue(),
+    uxFetchWorkOrderDashboard(),
+    uxFetchPlanningDashboard(),
+    uxFetchApprovals(),
   ]);
-  setHtml("homeKpiHealth", health?.status || "—");
-  setHtml("homeKpiAlerts", String(dash?.active_alerts ?? dash?.alerts?.active ?? "—"));
-  setHtml("homeKpiMissions", String(dash?.active_missions ?? "—"));
-  setHtml("homeKpiDecisions", String(dash?.pending_decisions ?? dash?.decisions?.pending_human_review ?? "—"));
+  setHtml("homeKpiHealth", health?.status || "unavailable");
+  setHtml("homeKpiAlerts", dash ? String(dash.active_alerts ?? dash.alerts?.active ?? "—") : "unavailable");
+  setHtml("homeKpiMissions", dash ? String(dash.active_missions ?? dash.missions?.active ?? "—") : "unavailable");
+  setHtml("homeKpiDecisions", dash ? String(dash.pending_decisions ?? dash.decisions?.pending_human_review ?? "—") : "unavailable");
+  setHtml("homeKpiOpenWo", kpiValue(woDash.ok, woDash.data?.open_work_orders));
+  setHtml("homeKpiDelayedWo", kpiValue(woDash.ok, woDash.data?.delayed_work_orders));
+  setHtml("homeKpiInspect", kpiValue(woDash.ok, woDash.data?.awaiting_inspection));
+  setHtml("homeKpiRelease", kpiValue(woDash.ok, woDash.data?.awaiting_release));
+  const hint = document.getElementById("homeKpiMroHint");
+  if (hint) hint.textContent = woDash.ok ? "Live work-order dashboard" : woDash.error || "Work-order dashboard unavailable";
 
   const dueItems = listify(due.data?.items || due.data?.due || due.data);
+  const forecastHint = planDash.ok
+    ? `Checks due ${planDash.data?.checks_due ?? "—"} · AD ${planDash.data?.ads_due ?? "—"} · grounded ${planDash.data?.grounded ?? "—"}`
+    : planDash.error || "Planning dashboard unavailable";
+  const forecastEl = document.getElementById("homeForecastHint");
+  if (forecastEl) forecastEl.textContent = forecastHint;
   setHtml(
     "homeDueList",
     rowsFrom(dueItems.slice(0, 8), (item) => {
       const title = item.task_code || item.check_code || item.title || item.id || "Due item";
       const when = item.due_at || item.due_date || item.window || "";
-      return `<div class="mx-card" style="padding:10px 12px"><strong>${esc(String(title))}</strong><div class="mx-subtitle">${esc(String(when))}</div></div>`;
+      const aircraftId = item.aircraft_id || "";
+      const finding =
+        String(item.source_type || "").toLowerCase() === "deferred_defect" && (item.source_id || item.id)
+          ? `<button type="button" class="mx-btn mx-btn-ghost mx-btn-sm" data-we-open="finding:${esc(String(item.source_id || item.id))}" data-we-label="${esc(String(title))}">Finding</button>`
+          : "";
+      const acBtn = aircraftId
+        ? `<button type="button" class="mx-btn mx-btn-ghost mx-btn-sm" data-we-open="aircraft:${esc(String(aircraftId))}" data-we-tab="maintenance">${esc(String(aircraftId))}</button>`
+        : "";
+      return `<div class="mx-card" style="padding:10px 12px"><strong>${esc(String(title))}</strong><div class="mx-subtitle">${esc(String(item.urgency || ""))} · ${esc(String(when))}</div><div class="mx-row" style="gap:8px;margin-top:8px">${acBtn}${finding}</div></div>`;
     }) || `<div class="mx-empty">${due.ok ? "No due items." : esc(due.error || "Planning unavailable")}</div>`
   );
 
   const notifications = listify(notes.data);
+  const approvalItems = listify(approvals.data);
+  const activity = [
+    ...approvalItems.slice(0, 5).map((n) => ({
+      title: `Approval ${n.status || ""} · ${n.action || n.id}`,
+      when: n.created_at || "",
+    })),
+    ...notifications.slice(0, 8).map((n) => ({
+      title: n.title || n.subject || n.channel || "Notification",
+      when: n.created_at || n.sent_at || "",
+    })),
+  ];
   setHtml(
     "homeActivity",
-    rowsFrom(notifications.slice(0, 10), (n) => {
-      const title = n.title || n.subject || n.channel || "Notification";
-      const when = n.created_at || n.sent_at || "";
-      return `<div class="mx-timeline-item"><div><div>${esc(String(title))}</div><div class="mx-timeline-meta">${esc(String(when))}</div></div></div>`;
-    }) || `<div class="mx-empty">${notes.ok ? "No recent notifications." : "Notifications unavailable."}</div>`
+    rowsFrom(activity.slice(0, 10), (n) => {
+      return `<div class="mx-timeline-item"><div><div>${esc(String(n.title))}</div><div class="mx-timeline-meta">${esc(String(n.when))}</div></div></div>`;
+    }) || `<div class="mx-empty">${notes.ok || approvals.ok ? "No recent operational activity." : "Activity unavailable."}</div>`
   );
 }
 
@@ -267,75 +307,103 @@ function renderWoTable(items) {
   setHtml(
     "workOrdersTableBody",
     table(
-      ["Order", "Package", "Status", "Aircraft", "Priority"],
+      ["Order", "Title", "Status", "Aircraft", "Priority", "Due", "Cards"],
       items.length
         ? items
             .map((o) => {
               const id = o.id || o.work_order_id || "";
               return `<tr class="we-row-open" data-we-open="workOrder:${esc(String(id))}" data-we-label="${esc(String(o.wo_number || id))}">
             <td class="mx-mono">${esc(String(o.wo_number || id))}</td>
-            <td>${esc(o.package_id || o.work_package_id || "—")}</td>
+            <td>${esc(o.title || "—")}</td>
             <td><span class="mx-chip">${esc(o.status || "—")}</span></td>
-            <td>${esc(o.aircraft_id || "—")}</td>
+            <td>${o.aircraft_id ? `<button type="button" class="mx-btn mx-btn-ghost mx-btn-sm" data-we-open="aircraft:${esc(String(o.aircraft_id))}">${esc(o.aircraft_id)}</button>` : "—"}</td>
             <td>${esc(o.priority || "—")}</td>
+            <td>${esc(o.due_date ? String(o.due_date).slice(0, 10) : "—")}</td>
+            <td>${esc(String(o.job_card_count ?? "—"))}</td>
           </tr>`;
             })
             .join("")
-        : `<tr><td colspan="5">No work orders.</td></tr>`
+        : `<tr><td colspan="7">No work orders.</td></tr>`
     )
   );
 }
 
 export async function refreshWorkOrdersWorkspace() {
-  let items = [];
-  let loadError = null;
-  try {
-    items = await listWorkOrders({ limit: 40 });
-    if (!Array.isArray(items)) items = listify(items);
-  } catch (err) {
-    const soft = await uxFetchWorkOrders();
-    items = listify(soft.data);
-    if (!soft.ok) loadError = soft.error || err?.message;
-  }
-
+  const [soft, session] = await Promise.all([uxFetchWorkOrders("?limit=100"), getSessionStatus().catch(() => null)]);
+  const items = listify(soft.data);
+  const loadError = soft.ok ? null : soft.error;
+  const canManage = sessionCanManageWorkOrders(session?.role);
   const aircraft = listify((await uxFetchFleetAircraft("?limit=50")).data);
+  let createBusy = false;
 
   setHtml(
     "workOrdersControls",
     `${toolbarHtml("wo", {
-      searchPlaceholder: "Search WO / aircraft / package…",
+      searchPlaceholder: "Search WO / aircraft / package / title…",
       statuses: [...new Set(items.map((o) => o.status).filter(Boolean))],
       sorts: [
         { value: "wo_number:asc", label: "WO number" },
         { value: "status:asc", label: "Status" },
         { value: "priority:asc", label: "Priority" },
         { value: "aircraft_id:asc", label: "Aircraft" },
+        { value: "due_date:asc", label: "Due date" },
       ],
     })}
-    <details class="mx-card" style="margin-bottom:12px;padding:12px">
+    <div class="mx-row" style="gap:8px;flex-wrap:wrap;margin-bottom:12px">
+      <select class="mx-input" id="woPriority" style="max-width:160px">
+        <option value="">All priority</option>
+        <option value="low">low</option>
+        <option value="normal">normal</option>
+        <option value="high">high</option>
+        <option value="critical">critical</option>
+      </select>
+      <select class="mx-input" id="woAircraft" style="max-width:220px">
+        <option value="">All aircraft</option>
+        ${aircraft.map((a) => `<option value="${esc(a.id)}">${esc(a.registration || a.registration_mark || a.id)}</option>`).join("")}
+      </select>
+    </div>
+    ${
+      canManage
+        ? `<details class="mx-card" style="margin-bottom:12px;padding:12px">
       <summary><strong>Create work package + order</strong></summary>
       <form id="woCreateForm" class="mx-stack" style="margin-top:12px;gap:8px">
         <div class="mx-grid mx-grid-2">
           <label class="mx-field">Aircraft<select class="mx-input" name="aircraft_id" required>
             ${aircraft.map((a) => `<option value="${esc(a.id)}">${esc(a.registration || a.registration_mark || a.id)}</option>`).join("") || "<option value=''>No aircraft</option>"}
           </select></label>
-          <label class="mx-field">Priority<select class="mx-input" name="priority"><option value="normal">normal</option><option value="high">high</option><option value="low">low</option></select></label>
+          <label class="mx-field">Priority<select class="mx-input" name="priority"><option value="normal">normal</option><option value="high">high</option><option value="low">low</option><option value="critical">critical</option></select></label>
         </div>
         <label class="mx-field">Title<input class="mx-input" name="title" required maxlength="300" placeholder="Work order title" /></label>
         <label class="mx-field">Description<input class="mx-input" name="description" placeholder="Optional description" /></label>
         <button class="mx-btn" type="submit">Create &amp; open</button>
         <p class="mx-subtitle" id="woCreateMsg"></p>
       </form>
-    </details>
+    </details>`
+        : `<p class="mx-subtitle">Create is limited to Operator / Administrator. Viewer and Reviewer can open existing orders.</p>`
+    }
     <div id="workOrdersTableBody"></div>`
   );
 
+  const applyFilters = ({ q, status, sortKey, sortDir }) => {
+    const priority = document.getElementById("woPriority")?.value || "";
+    const aircraftId = document.getElementById("woAircraft")?.value || "";
+    let rows = filterSortSearch(items, { q, status, sortKey: sortKey || "wo_number", sortDir });
+    if (priority) rows = rows.filter((row) => String(row.priority || "").toLowerCase() === priority.toLowerCase());
+    if (aircraftId) rows = rows.filter((row) => String(row.aircraft_id || "") === aircraftId);
+    renderWoTable(rows);
+  };
+
   if (loadError) {
-    setHtml("workOrdersTableBody", `<div class="mx-empty">${esc(loadError)}</div>`);
+    setHtml("workOrdersTableBody", `<div class="mx-empty">${esc(loadError)} <button type="button" class="mx-btn mx-btn-ghost mx-btn-sm" id="woRetry">Retry</button></div>`);
+    document.getElementById("woRetry")?.addEventListener("click", () => refreshWorkOrdersWorkspace());
   } else {
     renderWoTable(items);
-    bindToolbar("wo", ({ q, status, sortKey, sortDir }) => {
-      renderWoTable(filterSortSearch(items, { q, status, sortKey: sortKey || "wo_number", sortDir }));
+    bindToolbar("wo", applyFilters);
+    document.getElementById("woPriority")?.addEventListener("change", () => {
+      document.getElementById("woApply")?.click();
+    });
+    document.getElementById("woAircraft")?.addEventListener("change", () => {
+      document.getElementById("woApply")?.click();
     });
   }
 
@@ -347,18 +415,20 @@ export async function refreshWorkOrdersWorkspace() {
       rowsFrom(list.slice(0, 6), (p) => `<div class="mx-chip">${esc(p.description || p.package_number || p.id)} · ${esc(p.status || "")}</div>`) ||
         `<span class="mx-subtitle">No packages</span>`
     );
-  } catch {
-    setHtml("workPackageStrip", `<span class="mx-subtitle">Packages unavailable</span>`);
+  } catch (err) {
+    setHtml("workPackageStrip", `<span class="mx-subtitle">${esc(err?.message || "Packages unavailable")}</span>`);
   }
 
   document.getElementById("woCreateForm")?.addEventListener("submit", async (e) => {
     e.preventDefault();
+    if (createBusy) return;
     const fd = new FormData(e.target);
     const aircraftId = String(fd.get("aircraft_id") || "");
     const title = String(fd.get("title") || "").trim();
     const description = String(fd.get("description") || "");
     const priority = String(fd.get("priority") || "normal");
     const msg = document.getElementById("woCreateMsg");
+    createBusy = true;
     try {
       const pkg = await createWorkPackage({ aircraft_id: aircraftId, description: description || `Package · ${title}`, priority });
       const order = await createWorkOrder({
@@ -381,32 +451,62 @@ export async function refreshWorkOrdersWorkspace() {
     } catch (err) {
       if (msg) msg.textContent = err?.message || "Create failed";
       toast(err?.message || "Create failed");
+    } finally {
+      createBusy = false;
     }
   });
 }
 
 export async function refreshLogbookWorkspace() {
-  const res = await uxFetchLogbook("?limit=40");
+  const aircraft = listify((await uxFetchFleetAircraft("?limit=50")).data);
+  const selected = document.getElementById("logbookAircraftFilter")?.value || "";
+  const query = selected ? `?aircraft_id=${encodeURIComponent(selected)}&limit=80` : "?limit=80";
+  const res = await uxFetchLogbook(query);
   const items = listify(res.data);
+  const options = [`<option value="">All aircraft in session org</option>`]
+    .concat(aircraft.map((a) => `<option value="${esc(a.id)}"${selected === a.id ? " selected" : ""}>${esc(a.registration || a.registration_mark || a.id)}</option>`))
+    .join("");
   setHtml(
     "logbookTimeline",
-    res.ok
-      ? items.length
-        ? `<div class="mx-timeline">${items
-            .map((e) => {
-              const title = e.summary || e.id || "Tech log entry";
-              const meta = [e.registration || e.aircraft_id, e.occurred_at].filter(Boolean).join(" · ");
-              return `<div class="mx-timeline-item"><div>
+    `<div class="ux2-toolbar mx-row" style="gap:8px;flex-wrap:wrap;margin-bottom:12px">
+      <select class="mx-input" id="logbookAircraftFilter" style="max-width:240px">${options}</select>
+      <input class="mx-input" id="logbookSearch" placeholder="Search summary / registration / task…" style="flex:1;min-width:180px" />
+      <button type="button" class="mx-btn mx-btn-ghost mx-btn-sm" id="logbookApply">Apply</button>
+    </div>
+    ${
+      res.ok
+        ? items.length
+          ? `<div class="mx-timeline" id="logbookEntries">${items
+              .map((e) => {
+                const title = e.summary || e.id || "Tech log entry";
+                const meta = [e.registration || e.aircraft_id, e.occurred_at, e.mechanic_employee_id ? `mech ${e.mechanic_employee_id}` : "", e.release_signature_id ? "signed" : ""]
+                  .filter(Boolean)
+                  .join(" · ");
+                return `<div class="mx-timeline-item" data-log-text="${esc(`${title} ${e.details || ""} ${e.aircraft_id || ""} ${e.task_id || ""}`.toLowerCase())}"><div>
                 <strong>${esc(String(title))}</strong>
                 <div class="mx-subtitle">${esc(e.details || "Technical log entry")}</div>
-                <div class="mx-timeline-meta">${esc(meta)}${e.release_signature_id ? " · released" : ""}</div>
-                ${e.aircraft_id ? `<button type="button" class="mx-btn mx-btn-ghost mx-btn-sm" data-we-open="aircraft:${esc(e.aircraft_id)}" data-we-label="${esc(e.registration || e.aircraft_id)}">Open aircraft</button>` : ""}
+                <div class="mx-timeline-meta">${esc(meta)}</div>
+                <div class="mx-row" style="gap:8px;margin-top:8px">
+                  ${e.aircraft_id ? `<button type="button" class="mx-btn mx-btn-ghost mx-btn-sm" data-we-open="aircraft:${esc(e.aircraft_id)}" data-we-tab="logbook" data-we-label="${esc(e.registration || e.aircraft_id)}">Aircraft logbook</button>` : ""}
+                  ${e.task_id ? `<span class="mx-chip">task ${esc(e.task_id)}</span>` : ""}
+                </div>
               </div></div>`;
-            })
-            .join("")}</div>`
-        : `<div class="mx-empty">No technical log entries yet. ACA release in MRO Execution writes here.</div>`
-      : `<div class="mx-empty">${esc(res.error || "Logbook API unavailable")}</div>`
+              })
+              .join("")}</div>`
+          : `<div class="mx-empty">No technical log entries yet. ACA release in job-card / MRO Execution writes here. There is no free-form create API.</div>`
+        : `<div class="mx-empty">${esc(res.error || "Logbook API unavailable")} <button type="button" class="mx-btn mx-btn-ghost mx-btn-sm" id="logbookRetry">Retry</button></div>`
+    }`
   );
+  document.getElementById("logbookApply")?.addEventListener("click", () => refreshLogbookWorkspace());
+  document.getElementById("logbookAircraftFilter")?.addEventListener("change", () => refreshLogbookWorkspace());
+  document.getElementById("logbookRetry")?.addEventListener("click", () => refreshLogbookWorkspace());
+  document.getElementById("logbookSearch")?.addEventListener("input", (event) => {
+    const q = String(event.target.value || "").trim().toLowerCase();
+    document.querySelectorAll("#logbookEntries .mx-timeline-item").forEach((node) => {
+      const hay = node.getAttribute("data-log-text") || "";
+      node.style.display = !q || hay.includes(q) ? "" : "none";
+    });
+  });
 }
 
 export async function refreshEngineeringWorkspace() {

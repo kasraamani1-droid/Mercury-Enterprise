@@ -7,7 +7,9 @@
 3. **Home** — “Open Aircraft C-GMEA”  
 4. **Sidebar** — Pinned objects / Recent objects  
 5. **Deep link** — `#/object/aircraft/ac-c-gmea`  
-6. **Related chips** inside an open workspace (e.g. related work orders)
+6. **Related chips** inside an open workspace (e.g. related work orders, job cards, logbook)
+
+Job cards open as `jobCard:{id}` object sessions (not a separate area page). `data-we-tab` on `data-we-open` jumps to a specific object tab (for example aircraft logbook) while keeping other object sessions.
 
 ## Tab bar model
 

@@ -6,6 +6,16 @@ import {
   renderComponentInstallHistory,
   renderComponentOverview,
 } from "./configuration.js";
+import {
+  renderAircraftLogbook,
+  renderAircraftMaintenance,
+  renderAircraftWorkOrders,
+  renderJobCardWorkspace,
+  renderWorkOrderHistory,
+  renderWorkOrderInspections,
+  renderWorkOrderOverview,
+  renderWorkOrderTasks,
+} from "./maintenance-ops.js";
 
 export function renderShellSkeleton() {
   return `
@@ -68,6 +78,30 @@ export function renderMainTab(session, typeDef, record, bundle, tabId) {
           ? `<article class="mx-card" style="margin-top:16px"><div class="mx-card-header"><h3>Due / findings</h3></div><div class="mx-empty">No due items for this aircraft context.</div></article>`
           : "";
     return renderAircraftConfigurationPanel(session, bundle, { dueHtml });
+  }
+  if (session.type === "aircraft" && tabId === "workOrders") {
+    return renderAircraftWorkOrders(session, bundle);
+  }
+  if (session.type === "aircraft" && tabId === "logbook") {
+    return renderAircraftLogbook(session, bundle);
+  }
+  if (session.type === "aircraft" && tabId === "maintenance") {
+    return renderAircraftMaintenance(session, bundle);
+  }
+  if (session.type === "workOrder" && tabId === "overview") {
+    return renderWorkOrderOverview(session, record, bundle);
+  }
+  if (session.type === "workOrder" && tabId === "tasks") {
+    return renderWorkOrderTasks(session, record, bundle);
+  }
+  if (session.type === "workOrder" && tabId === "inspections") {
+    return renderWorkOrderInspections(session, record, bundle);
+  }
+  if (session.type === "workOrder" && tabId === "history") {
+    return renderWorkOrderHistory(session, record, bundle);
+  }
+  if (session.type === "jobCard" && (tabId === "overview" || tabId === "inspections" || tabId === "history")) {
+    return renderJobCardWorkspace(session, record, bundle);
   }
   if (tabId === "overview") {
     return `
@@ -317,6 +351,9 @@ function pickSummary(record) {
     "title",
     "defect_number",
     "aircraft_id",
+    "wo_number",
+    "job_card_number",
+    "work_order_id",
     "sku",
     "code",
     "note",
@@ -376,7 +413,7 @@ function relatedStrip(bundle) {
   return `<article class="mx-card" style="margin-top:16px"><div class="mx-card-header"><h3>Related work orders</h3></div>
     <div class="mx-row" style="flex-wrap:wrap">${wos
       .slice(0, 8)
-      .map((w) => `<button type="button" class="mx-chip" data-we-open="workOrder:${esc(String(w.id))}">${esc(String(w.id))}</button>`)
+      .map((w) => `<button type="button" class="mx-chip" data-we-open="workOrder:${esc(String(w.id))}" data-we-label="${esc(String(w.wo_number || w.id))}">${esc(String(w.wo_number || w.id))}</button>`)
       .join("")}</div></article>`;
 }
 

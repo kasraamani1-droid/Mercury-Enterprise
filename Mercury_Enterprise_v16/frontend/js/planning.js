@@ -1,5 +1,5 @@
 import { el, esc } from "./utils.js";
-import { request } from "./api.js";
+import { listWorkOrders, request } from "./api.js";
 
 function qs(params = {}) {
   const sp = new URLSearchParams();
@@ -32,7 +32,7 @@ function renderRows(hostId, rows, empty) {
 
 export async function refreshPlanningWorkspace() {
   try {
-    const [dash, aircraft, due, programs, mpd, checks, ads, defects, hangar, forecast] = await Promise.all([
+    const [dash, aircraft, due, programs, mpd, checks, ads, defects, hangar, forecast, workOrders] = await Promise.all([
       getJson("/planning/dashboard"),
       getJson("/planning/aircraft-status"),
       getJson("/planning/due-list"),
@@ -43,7 +43,19 @@ export async function refreshPlanningWorkspace() {
       getJson("/planning/deferred-defects?limit=20"),
       getJson("/planning/hangar-plans"),
       getJson("/planning/forecast?horizon_days=90"),
+      listWorkOrders({ limit: 80 }).catch(() => []),
     ]);
+    const orders = Array.isArray(workOrders) ? workOrders : [];
+    const delayed = orders.filter((row) => String(row.status || "") === "delayed");
+    const byAircraft = (aircraftId) => orders.filter((row) => String(row.aircraft_id) === String(aircraftId)).slice(0, 3);
+
+    const woButtons = (rows) =>
+      rows
+        .map(
+          (row) =>
+            `<button type="button" class="ghost small" data-we-open="workOrder:${esc(row.id)}" data-we-label="${esc(row.wo_number || row.id)}">${esc(row.wo_number || row.id)}</button>`
+        )
+        .join(" ");
 
     const kpi = el("planDashKpis");
     if (kpi) {
@@ -58,19 +70,34 @@ export async function refreshPlanningWorkspace() {
 
     renderRows(
       "planAircraftStatus",
-      aircraft.map(
-        (a) =>
-          `<div class="contact-row"><b>${esc(a.registration || a.aircraft_id)}</b><span>${esc(a.ops_status)} · ${esc(a.location)} · FH ${esc(String(a.flight_hours))}</span><em class="tl-${esc(a.traffic_light)}">${esc(a.traffic_light)}</em></div>`
-      ),
+      aircraft.map((a) => {
+        const related = byAircraft(a.aircraft_id);
+        return `<div class="contact-row"><b>${esc(a.registration || a.aircraft_id)}</b><span>${esc(a.ops_status)} · ${esc(a.location)} · FH ${esc(String(a.flight_hours))}</span><em class="tl-${esc(a.traffic_light)}">${esc(a.traffic_light)}</em>
+          <div>${a.aircraft_id ? `<button type="button" class="ghost small" data-we-open="aircraft:${esc(a.aircraft_id)}" data-we-tab="maintenance" data-we-label="${esc(a.registration || a.aircraft_id)}">Aircraft</button>` : ""} ${woButtons(related)}</div></div>`;
+      }),
       "No utilization rows."
     );
 
     renderRows(
       "planDueList",
-      due.items.slice(0, 40).map(
-        (i) =>
-          `<div class="contact-row"><b>${esc(i.urgency)}</b><span>${esc(i.source_type)} · ${esc(i.title)}</span><em>${esc(i.due_at || "—")}</em></div>`
-      ),
+      (due.items || []).slice(0, 40).map((i) => {
+        const related =
+          i.source_type === "check"
+            ? orders.filter((row) => {
+                const check = checks.find((c) => String(c.id) === String(i.source_id));
+                return check?.generated_work_package_id && String(row.work_package_id) === String(check.generated_work_package_id);
+              })
+            : byAircraft(i.aircraft_id);
+        const ac = i.aircraft_id
+          ? `<button type="button" class="ghost small" data-we-open="aircraft:${esc(i.aircraft_id)}" data-we-tab="maintenance">Aircraft</button>`
+          : "";
+        const finding =
+          String(i.source_type || "").toLowerCase() === "deferred_defect"
+            ? `<button type="button" class="ghost small" data-we-open="finding:${esc(i.source_id || i.id)}" data-we-label="${esc(i.title || i.id)}">Finding</button>`
+            : "";
+        return `<div class="contact-row"><b>${esc(i.urgency)}</b><span>${esc(i.source_type)} · ${esc(i.title)}</span><em>${esc(i.due_at || "—")}</em>
+          <div>${ac} ${finding} ${woButtons(related)}</div></div>`;
+      }),
       "Due list empty."
     );
 
@@ -94,28 +121,40 @@ export async function refreshPlanningWorkspace() {
 
     renderRows(
       "planChecks",
-      checks.map(
-        (c) =>
-          `<div class="contact-row" data-check="${esc(c.id)}"><b>${esc(c.check_code)}</b><span>${esc(c.check_type)} · ${esc(c.status)} · Bay ${esc(c.bay || "—")}</span><em>${esc(c.next_due_at || "—")}</em></div>`
-      ),
+      checks.map((c) => {
+        const related = c.generated_work_package_id
+          ? orders.filter((row) => String(row.work_package_id) === String(c.generated_work_package_id))
+          : [];
+        const ac = c.aircraft_id
+          ? `<button type="button" class="ghost small" data-we-open="aircraft:${esc(c.aircraft_id)}" data-we-tab="workOrders">Aircraft</button>`
+          : "";
+        return `<div class="contact-row" data-check="${esc(c.id)}"><b>${esc(c.check_code)}</b><span>${esc(c.check_type)} · ${esc(c.status)} · Bay ${esc(c.bay || "—")}</span><em>${esc(c.next_due_at || "—")}</em>
+          <div>${ac} ${woButtons(related)} ${c.generated_work_package_id ? `<span class="mx-chip">WP ready</span>` : ""}</div></div>`;
+      }),
       "No checks."
     );
 
     renderRows(
       "planAds",
-      ads.map(
-        (a) =>
-          `<div class="contact-row"><b>${esc(a.ad_number)}</b><span>${esc(a.authority)} · ${esc(a.compliance_status)}</span><em>${esc(a.due_date || "—")}</em></div>`
-      ),
+      ads.map((a) => {
+        const linked = a.linked_work_order_id ? orders.filter((row) => String(row.id) === String(a.linked_work_order_id)) : [];
+        return `<div class="contact-row"><b>${esc(a.ad_number)}</b><span>${esc(a.authority)} · ${esc(a.compliance_status)}</span><em>${esc(a.due_date || "—")}</em>
+          <div>${woButtons(linked)}</div></div>`;
+      }),
       "No ADs."
     );
 
     renderRows(
       "planDefects",
-      defects.map(
-        (d) =>
-          `<div class="contact-row"><b>${esc(d.defect_number)}</b><span>${esc(d.title)} · ${esc(d.status)} · MEL ${esc(d.dispatch_category || "—")}</span><em>${esc(d.alert_level)}</em></div>`
-      ),
+      defects.map((d) => {
+        const linked = d.linked_work_order_id ? orders.filter((row) => String(row.id) === String(d.linked_work_order_id)) : [];
+        const finding = `<button type="button" class="ghost small" data-we-open="finding:${esc(d.id)}" data-we-label="${esc(d.defect_number || d.title || d.id)}">${esc(d.defect_number || "Finding")}</button>`;
+        const ac = d.aircraft_id
+          ? `<button type="button" class="ghost small" data-we-open="aircraft:${esc(d.aircraft_id)}" data-we-tab="maintenance">Aircraft</button>`
+          : "";
+        return `<div class="contact-row"><b>${esc(d.defect_number)}</b><span>${esc(d.title)} · ${esc(d.status)} · MEL ${esc(d.dispatch_category || "—")}</span><em>${esc(d.alert_level)}</em>
+          <div>${ac} ${finding} ${woButtons(linked)}</div></div>`;
+      }),
       "No deferred defects."
     );
 
@@ -128,14 +167,28 @@ export async function refreshPlanningWorkspace() {
       "No hangar plans."
     );
 
-    const fcRows = [...forecast.overdue, ...forecast.due_soon, ...forecast.future].slice(0, 50);
+    const fcRows = [...(forecast.overdue || []), ...(forecast.due_soon || []), ...(forecast.future || [])].slice(0, 50);
     renderRows(
       "planForecast",
-      fcRows.map(
-        (i) =>
-          `<div class="contact-row"><b>${esc(i.urgency)}</b><span>${esc(i.source_type)} · ${esc(i.title)} · ${esc(i.due_basis)}</span><em>${esc(i.days_remaining == null ? "—" : String(i.days_remaining) + "d")}</em></div>`
-      ),
+      fcRows.map((i) => {
+        const ac = i.aircraft_id
+          ? `<button type="button" class="ghost small" data-we-open="aircraft:${esc(i.aircraft_id)}" data-we-tab="maintenance">Aircraft</button>`
+          : "";
+        return `<div class="contact-row"><b>${esc(i.urgency)}</b><span>${esc(i.source_type)} · ${esc(i.title)} · ${esc(i.due_basis)}</span><em>${esc(i.days_remaining == null ? "—" : String(i.days_remaining) + "d")}</em>
+          <div>${ac} ${woButtons(byAircraft(i.aircraft_id))}</div></div>`;
+      }),
       "Forecast empty."
+    );
+
+    renderRows(
+      "planDelayedWo",
+      delayed.map(
+        (row) =>
+          `<div class="contact-row"><b>${esc(row.wo_number || row.id)}</b><span>${esc(row.title || "")} · ${esc(row.aircraft_id || "")}</span><em>${esc(row.status)}</em>
+            <div><button type="button" class="ghost small" data-we-open="workOrder:${esc(row.id)}" data-we-label="${esc(row.wo_number || row.id)}">Open WO</button>
+            ${row.aircraft_id ? `<button type="button" class="ghost small" data-we-open="aircraft:${esc(row.aircraft_id)}">Aircraft</button>` : ""}</div></div>`
+      ),
+      delayed.length ? "No delayed work orders." : "No delayed work orders (status delayed)."
     );
 
     window.__planDueChecks = checks.filter((c) => ["due", "overdue", "planned"].includes(c.status) && !c.generated_work_package_id);
@@ -145,10 +198,13 @@ export async function refreshPlanningWorkspace() {
 }
 
 export function initializePlanning() {
+  let generateBusy = false;
   el("planRefresh")?.addEventListener("click", () => refreshPlanningWorkspace());
   el("planGeneratePkg")?.addEventListener("click", async () => {
     const checks = window.__planDueChecks || [];
     if (!checks.length) return toast("No eligible check to generate");
+    if (generateBusy) return;
+    generateBusy = true;
     try {
       const res = await request("/planning/checks/generate-package", {
         method: "POST",
@@ -158,8 +214,19 @@ export function initializePlanning() {
       const body = await res.json();
       toast(`Generated package ${body.package_number}`);
       await refreshPlanningWorkspace();
+      const firstWo = (body.work_order_ids || [])[0];
+      if (firstWo) {
+        const open = document.createElement("button");
+        open.type = "button";
+        open.className = "ghost small";
+        open.setAttribute("data-we-open", `workOrder:${firstWo}`);
+        open.textContent = "Open generated work order";
+        el("planGeneratePkg")?.insertAdjacentElement("afterend", open);
+      }
     } catch (error) {
       toast(error.message || "Generate failed");
+    } finally {
+      generateBusy = false;
     }
   });
 }

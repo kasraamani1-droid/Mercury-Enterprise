@@ -6,7 +6,16 @@ async function softGet(path) {
     const response = await fetch(`${API_BASE}${path}`, { credentials: "include" });
     if (!response.ok) {
       if (response.status === 401) notifyAuthRequired();
-      return { ok: false, status: response.status, data: null, error: `HTTP ${response.status}` };
+      let error = `HTTP ${response.status}`;
+      try {
+        const payload = await response.json();
+        const detail = payload?.detail;
+        if (typeof detail === "string" && detail.trim()) error = detail;
+        else if (detail) error = JSON.stringify(detail);
+        return { ok: false, status: response.status, data: payload, error };
+      } catch {
+        return { ok: false, status: response.status, data: null, error };
+      }
     }
     return { ok: true, status: response.status, data: await response.json(), error: null };
   } catch (error) {
@@ -155,6 +164,31 @@ export async function uxFetchPlanningDue() {
   return softGet("/planning/due-list?limit=30");
 }
 
+export async function uxFetchPlanningDashboard() {
+  return softGet("/planning/dashboard");
+}
+
+export async function uxFetchPlanningForecast(horizonDays = 90) {
+  return softGet(`/planning/forecast?horizon_days=${encodeURIComponent(String(horizonDays))}`);
+}
+
+export async function uxFetchPlanningAircraftStatus() {
+  return softGet("/planning/aircraft-status");
+}
+
+export async function uxFetchWorkOrderDashboard(params = "") {
+  const q = params ? (params.startsWith("?") ? params : `?${params}`) : "";
+  return softGet(`/work-orders/dashboard${q}`);
+}
+
+export async function uxFetchWorkOrderReport(report) {
+  return softGet(`/work-orders/reports/${encodeURIComponent(report)}`);
+}
+
+export async function uxAmendLogbook(entryId, payload) {
+  return softMutate(`/maintenance/logbook/${encodeURIComponent(entryId)}/amend`, { body: payload });
+}
+
 export async function uxFetchAds() {
   return softGet("/planning/ads?limit=40");
 }
@@ -172,8 +206,14 @@ export async function uxFetchLogbook(params = "") {
   return softGet(`/maintenance/logbook${q}`);
 }
 
-export async function uxFetchWorkOrders() {
-  return softGet("/work-orders/orders?limit=40");
+export async function uxFetchWorkOrders(params = "") {
+  const q = params ? (params.startsWith("?") ? params : `?${params}`) : "?limit=40";
+  return softGet(`/work-orders/orders${q}`);
+}
+
+export async function uxFetchJobCards(params = "") {
+  const q = params ? (params.startsWith("?") ? params : `?${params}`) : "?limit=40";
+  return softGet(`/work-orders/job-cards${q}`);
 }
 
 export async function uxFetchApprovals(statusFilter) {
