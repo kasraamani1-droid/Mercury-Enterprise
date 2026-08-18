@@ -208,6 +208,11 @@ class TechnicalLogOut(BaseModel):
     details: str
 
 
+class LogbookAmendRequest(BaseModel):
+    reason: str = Field(min_length=3, max_length=2000)
+    summary: str = Field(default="", max_length=400)
+
+
 class AiIndexStubCreate(BaseModel):
     organization_id: str | None = None
     source_type: str = Field(min_length=1, max_length=80)

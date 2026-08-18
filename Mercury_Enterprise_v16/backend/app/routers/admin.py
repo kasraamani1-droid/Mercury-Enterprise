@@ -90,9 +90,9 @@ def _apply_runtime_config(key: str, value: str) -> None:
 
 @router.get("/admin/system")
 def admin_system(session: dict[str, datetime | str] = Depends(get_admin_session)) -> dict[str, Any]:
-    from ..main import _sessions
+    from ..security.sessions import session_store
 
-    metrics_mod.set_active_users(len(_sessions))
+    metrics_mod.set_active_users(session_store.count())
     return {
         "app_name": settings.app_name,
         "environment": settings.environment,
@@ -103,7 +103,8 @@ def admin_system(session: dict[str, datetime | str] = Depends(get_admin_session)
         "log_json": settings.log_json,
         "audit_retention_days": settings.audit_retention_days,
         "redis_configured": bool((settings.redis_url or "").strip()),
-        "active_users": len(_sessions),
+        "session_backend": session_store.backend_name,
+        "active_users": session_store.count(),
         "operators": operator_store.list_operators(),
         "requested_by": str(session["operator"]),
     }
@@ -119,9 +120,9 @@ def admin_health(
 
 @router.get("/admin/metrics")
 def admin_metrics(_: dict[str, datetime | str] = Depends(get_admin_session)) -> dict[str, Any]:
-    from ..main import _sessions
+    from ..security.sessions import session_store
 
-    metrics_mod.set_active_users(len(_sessions))
+    metrics_mod.set_active_users(session_store.count())
     return metrics_mod.metrics_snapshot()
 
 
@@ -162,7 +163,7 @@ def admin_create_user(
 ) -> dict[str, Any]:
     try:
         Role(payload.role)
-        created = operator_store.create(payload.operator, payload.password, payload.role)
+        created = operator_store.create(payload.operator, payload.password, payload.role, db=db)
     except ValueError as exc:
         code = str(exc)
         if code == "operator_exists":
@@ -194,7 +195,7 @@ def admin_change_password(
     session: dict[str, datetime | str] = Depends(get_admin_session),
 ) -> dict[str, Any]:
     try:
-        updated = operator_store.set_password(payload.operator, payload.password)
+        updated = operator_store.set_password(payload.operator, payload.password, db=db)
     except ValueError as exc:
         code = str(exc)
         if code == "operator_not_found":
@@ -225,7 +226,7 @@ def admin_change_role(
 ) -> dict[str, Any]:
     try:
         Role(payload.role)
-        updated = operator_store.set_role(payload.operator, payload.role)
+        updated = operator_store.set_role(payload.operator, payload.role, db=db)
     except ValueError as exc:
         code = str(exc)
         if code == "operator_not_found":

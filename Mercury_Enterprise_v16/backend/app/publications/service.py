@@ -679,6 +679,8 @@ class PublicationService:
         revision_date_to: datetime | None = None,
         effective_date_from: datetime | None = None,
         effective_date_to: datetime | None = None,
+        limit: int | None = None,
+        offset: int | None = None,
     ) -> list[PublicationOut]:
         org_id = self.resolve_org_id(
             username=username,
@@ -699,6 +701,8 @@ class PublicationService:
             revision_date_to=revision_date_to,
             effective_date_from=effective_date_from,
             effective_date_to=effective_date_to,
+            limit=limit,
+            offset=offset,
         )
         return [self.publication_out(r) for r in rows]
 

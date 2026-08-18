@@ -803,7 +803,11 @@ class MaintenanceService:
             stamps = [s for s in self.personnel.list_stamps(employee_id) if s.status == "active"]
             if not any(hmac.compare_digest(str(s.stamp_code), credential) for s in stamps):
                 raise HTTPException(status_code=401, detail="Invalid PIN credential")
-        # pki / smart_card / biometric_ready: provider stubs — no live verification yet
+        elif payload.method in {"pki", "smart_card", "biometric_ready"}:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Signature method '{payload.method}' is not production-enabled yet",
+            )
 
     def _assert_step_authority(
         self,
@@ -825,6 +829,12 @@ class MaintenanceService:
                 or self._auth_active(employee_id, "stamp", now=now)
             ):
                 raise HTTPException(status_code=403, detail="Inspector qualification or stamp required")
+            performed = by_step.get("performed")
+            if performed and performed.actor_employee_id == employee_id:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Inspector must differ from the performing technician",
+                )
         elif step == "independent_inspection":
             if not self._auth_active(employee_id, "independent_inspection", now=now):
                 raise HTTPException(status_code=403, detail="Independent inspection authorization required")
@@ -1030,13 +1040,7 @@ class MaintenanceService:
                 release_signature_id=signature.id,
                 summary=f"{task.task_number}: {task.title}",
                 occurred_at=now,
-                details=(
-                    f"aircraft_history=true;maintenance_log=true;"
-                    f"task_type={task.task_type};priority={task.priority};"
-                    f"publication={task.publication_id or ''};revision={task.publication_revision_id or ''};"
-                    f"signature_chain={','.join(e.signature_id or '' for e in events)};"
-                    f"{notes or task.description or ''}"
-                ),
+                details=self._logbook_release_details(task=task, events=events, notes=notes),
             )
             self.repo.add_log_entry(log_row)
             self.repo.flush()
@@ -1087,6 +1091,34 @@ class MaintenanceService:
         self.assert_org_access(username=username, session_role=session_role, organization_id=row.organization_id)
         return self.signature_out(row)
 
+    def _logbook_release_details(
+        self,
+        *,
+        task: MaintenanceTask,
+        events: list[CertificationEvent],
+        notes: str,
+    ) -> str:
+        rev_number = ""
+        rev_date = ""
+        effective = ""
+        if task.publication_revision_id:
+            rev = self.publications.get_revision(task.publication_revision_id)
+            if rev is not None:
+                rev_number = rev.revision_number or ""
+                rev_date = rev.revision_date.isoformat() if rev.revision_date else ""
+                effective = rev.effective_date.isoformat() if rev.effective_date else ""
+        return (
+            f"aircraft_history=true;maintenance_log=true;immutable=true;"
+            f"task_type={task.task_type};priority={task.priority};"
+            f"publication={task.publication_id or ''};revision={task.publication_revision_id or ''};"
+            f"revision_number={rev_number};revision_date={rev_date};effective_date={effective};"
+            f"ata={task.ata_chapter_id or ''};"
+            f"required_certification={task.required_certification or ''};"
+            f"required_skills={task.required_skills or ''};"
+            f"signature_chain={','.join(e.signature_id or '' for e in events)};"
+            f"{notes or task.description or ''}"
+        )
+
     def list_logbook(
         self,
         *,
@@ -1110,6 +1142,54 @@ class MaintenanceService:
                 organization_id=org_id, aircraft_id=aircraft_id, limit=limit, offset=offset
             )
         ]
+
+    def amend_logbook_entry(
+        self,
+        entry_id: str,
+        *,
+        reason: str,
+        summary: str = "",
+        username: str,
+        session_role: str,
+    ) -> TechnicalLogOut:
+        """Append-only amendment: original entry is never mutated."""
+        original = self.repo.get_log_entry(entry_id)
+        if original is None:
+            raise HTTPException(status_code=404, detail="Logbook entry not found")
+        self.assert_org_access(
+            username=username, session_role=session_role, organization_id=original.organization_id
+        )
+        reason_text = (reason or "").strip()
+        if len(reason_text) < 3:
+            raise HTTPException(status_code=400, detail="Amendment reason required")
+        now = _utcnow()
+        amendment = TechnicalLogEntry(
+            organization_id=original.organization_id,
+            aircraft_id=original.aircraft_id,
+            registration=original.registration or "",
+            ata_chapter_id=original.ata_chapter_id,
+            task_id=original.task_id,
+            publication_id=original.publication_id,
+            publication_revision_id=original.publication_revision_id,
+            component_id=original.component_id,
+            serial_number=original.serial_number or "",
+            mechanic_employee_id=original.mechanic_employee_id,
+            inspector_employee_id=original.inspector_employee_id,
+            independent_inspector_employee_id=original.independent_inspector_employee_id,
+            aca_employee_id=original.aca_employee_id,
+            release_signature_id=original.release_signature_id,
+            summary=(summary or f"Amendment of {original.id}").strip()[:400],
+            occurred_at=now,
+            details=(
+                f"amendment_of={original.id};immutable_original=true;"
+                f"amended_by={username};reason={reason_text};"
+                f"original_summary={original.summary or ''}"
+            ),
+        )
+        self.repo.add_log_entry(amendment)
+        self._commit_or_conflict(detail="Logbook amendment conflict")
+        self.repo.refresh(amendment)
+        return self.log_out(amendment)
 
     # --- AI stubs ---
     def list_index_stubs(

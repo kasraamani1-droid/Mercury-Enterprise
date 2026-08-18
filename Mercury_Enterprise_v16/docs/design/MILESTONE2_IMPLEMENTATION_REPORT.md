@@ -131,7 +131,7 @@
 
 1. Decision review durability across restarts (Option B table) — deferred unless required.
 2. `/metrics` endpoint — deferred (default off).
-3. Approvals remain in-memory (pre-existing Milestone 1 debt).
+3. Approvals are durable SQL (`approval_requests`; RC1 Blocker 03).
 4. Connector health history remains in-memory ring (pre-existing).
 5. `GET /incidents` still not globally site-filtered (pre-existing).
 6. Some dashboard/category connector mappings remain partially synthetic.

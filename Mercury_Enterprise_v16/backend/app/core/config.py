@@ -30,6 +30,7 @@ def _is_production(environment: str) -> bool:
 
 
 FORBIDDEN_PASSWORDS = frozenset({"mercury-demo", "password", "admin", "changeme"})
+DEV_PEPPER_FALLBACK = "mercury-dev-pepper"
 FORBIDDEN_SECRETS = frozenset(
     {
         "",
@@ -41,6 +42,7 @@ FORBIDDEN_SECRETS = frozenset(
         "mercury-demo",
         "insecure",
         "default",
+        DEV_PEPPER_FALLBACK,
     }
 )
 
@@ -51,8 +53,12 @@ class Settings:
     version: str = os.getenv("MERCURY_VERSION", "16.0.0")
     environment: str = os.getenv("MERCURY_ENV", "development")
     database_url: str = os.getenv("DATABASE_URL", "sqlite:///./mercury.db")
+    # QueuePool knobs apply to PostgreSQL only (SQLite ignores them in database.py).
+    db_pool_size: int = _int("MERCURY_DB_POOL_SIZE", 5)
+    db_max_overflow: int = _int("MERCURY_DB_MAX_OVERFLOW", 10)
+    db_pool_recycle: int = _int("MERCURY_DB_POOL_RECYCLE", 1800)
     cors_origins: list[str] = None  # type: ignore[assignment]
-    api_key: str = os.getenv("MERCURY_API_KEY", "")  # Reserved; not enforced by routes (session RBAC is primary).
+    api_key: str = os.getenv("MERCURY_API_KEY", "")  # Optional machine auth via X-API-Key when set.
     seed_demo_data: bool = os.getenv("MERCURY_SEED_DEMO", "true").lower() == "true"
     auth_operator: str = os.getenv("MERCURY_AUTH_OPERATOR", "operator")
     auth_password: str = ""
@@ -73,8 +79,13 @@ class Settings:
     build_version: str = os.getenv("MERCURY_BUILD_VERSION", os.getenv("MERCURY_VERSION", "16.0.0"))
     redis_url: str = os.getenv("REDIS_URL", "")
     redis_required: bool = _bool("REDIS_REQUIRED", False)
+    file_storage_root: str = os.getenv("MERCURY_FILE_STORAGE_ROOT", "")
+    publications_storage_root: str = os.getenv("MERCURY_PUBLICATIONS_STORAGE_ROOT", "")
     audit_api_access: bool = _bool("MERCURY_AUDIT_API_ACCESS", False)
     log_file: str = os.getenv("LOG_FILE", "")
+    argon2_time_cost: int = 2
+    argon2_memory_kib: int = 19456
+    argon2_parallelism: int = 1
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "cors_origins", _csv("MERCURY_CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"))
@@ -83,6 +94,9 @@ class Settings:
         object.__setattr__(self, "jwt_secret", os.getenv("JWT_SECRET") or "")
         object.__setattr__(self, "cookie_secret", os.getenv("COOKIE_SECRET") or "")
         object.__setattr__(self, "https_enabled", _bool("HTTPS_ENABLED", False))
+        object.__setattr__(self, "argon2_time_cost", _int("MERCURY_ARGON2_TIME_COST", 2))
+        object.__setattr__(self, "argon2_memory_kib", _int("MERCURY_ARGON2_MEMORY_KIB", 19456))
+        object.__setattr__(self, "argon2_parallelism", _int("MERCURY_ARGON2_PARALLELISM", 1))
         production = _is_production(self.environment)
         if self.https_enabled or production:
             # Production / HTTPS deployments never emit insecure session cookies.
@@ -128,7 +142,22 @@ class Settings:
             raise RuntimeError("DOMAIN must be set when HTTPS_ENABLED=true.")
         if self.https_enabled and not (self.letsencrypt_email or "").strip():
             raise RuntimeError("LETSENCRYPT_EMAIL must be set when HTTPS_ENABLED=true.")
+        if self.redis_required:
+            redis_url = (self.redis_url or "").strip()
+            if not redis_url:
+                raise RuntimeError("REDIS_URL must be set when REDIS_REQUIRED=true.")
+            try:
+                import redis  # type: ignore
 
+                client = redis.Redis.from_url(redis_url, socket_connect_timeout=2, socket_timeout=2)
+                try:
+                    client.ping()
+                finally:
+                    client.close()
+            except Exception as exc:
+                raise RuntimeError(
+                    f"Redis is required (REDIS_REQUIRED=true) but unreachable at {redis_url}: {exc}"
+                ) from exc
     @staticmethod
     def _validate_secret(name: str, value: str, *, minimum: int) -> None:
         secret = (value or "").strip()

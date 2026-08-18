@@ -57,7 +57,9 @@ def test_viewer_can_read_incidents():
 
 def test_incident_list_respects_limit_cap():
     _login("operator")
-    response = client.get("/api/v1/incidents", params={"limit": 9999})
+    rejected = client.get("/api/v1/incidents", params={"limit": 9999})
+    assert rejected.status_code == 422
+    response = client.get("/api/v1/incidents", params={"limit": 500})
     assert response.status_code == 200
     assert len(response.json()) <= 500
 

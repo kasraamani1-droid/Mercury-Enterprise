@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..org.service import OrganizationService
+from ..platform.event_framework import event_framework
 from .models import (
     Aircraft,
     AircraftFamily,
@@ -34,6 +35,7 @@ from .schemas import (
     ManufacturerOut,
     RegistrationCreate,
     RegistrationOut,
+    RegistrationUpdate,
 )
 
 logger = logging.getLogger("mercury.fleet")
@@ -345,8 +347,14 @@ class FleetService:
             aircraft_count=count,
         )
 
-    def list_fleets_for_org(self, organization_id: str) -> list[FleetOut]:
-        rows = self.repo.list_fleets(organization_id=organization_id)
+    def list_fleets_for_org(
+        self,
+        organization_id: str,
+        *,
+        limit: int | None = None,
+        offset: int | None = None,
+    ) -> list[FleetOut]:
+        rows = self.repo.list_fleets(organization_id=organization_id, limit=limit, offset=offset)
         counts = self.repo.count_aircraft_by_fleet(organization_id=organization_id)
         return [self.fleet_out(r, aircraft_count=counts.get(r.id, 0)) for r in rows]
 
@@ -555,6 +563,13 @@ class FleetService:
             )
         self._commit_or_conflict(detail="Aircraft or registration conflict")
         self.repo.refresh(row)
+        event_framework.publish_sync(
+            "fleet.aircraft.created",
+            {"id": row.id, "serial_number": row.serial_number, "registration_mark": mark or ""},
+            organization_id=org_id,
+            source="fleet",
+            actor=username,
+        )
         return self.aircraft_out(row, current_mark=mark)
 
     def update_aircraft_status(
@@ -624,18 +639,74 @@ class FleetService:
         self.repo.refresh(row)
         return self.registration_out(row)
 
+    def update_registration(
+        self,
+        registration_id: str,
+        payload: RegistrationUpdate,
+        *,
+        username: str,
+        session_role: str,
+    ) -> RegistrationOut:
+        row = self.repo.get_registration(registration_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="Registration not found")
+        self.assert_org_access(
+            username=username, session_role=session_role, organization_id=row.organization_id
+        )
+        if payload.country is not None:
+            row.country = payload.country.strip().upper()
+        if payload.notes is not None:
+            row.notes = payload.notes
+        if payload.status is not None:
+            row.status = payload.status
+            if payload.status == "archived" and _truthy(row.is_current):
+                row.is_current = "false"
+                row.effective_to = row.effective_to or _utcnow()
+        if payload.make_current is True:
+            current = self.repo.get_current_registration(row.aircraft_id)
+            if current is not None and current.id != row.id:
+                current.is_current = "false"
+                current.effective_to = _utcnow()
+                current.updated_at = _utcnow()
+            row.is_current = "true"
+            row.status = "active"
+            row.effective_from = row.effective_from or _utcnow()
+            row.effective_to = None
+        elif payload.make_current is False and _truthy(row.is_current):
+            row.is_current = "false"
+            row.effective_to = _utcnow()
+        row.updated_at = _utcnow()
+        self._commit_or_conflict(detail="Unable to update registration")
+        self.repo.refresh(row)
+        return self.registration_out(row)
+
+    def get_registration(
+        self, registration_id: str, *, username: str, session_role: str
+    ) -> RegistrationOut:
+        row = self.repo.get_registration(registration_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="Registration not found")
+        self.assert_org_access(
+            username=username, session_role=session_role, organization_id=row.organization_id
+        )
+        return self.registration_out(row)
+
     def list_aircraft_for_org(
         self,
         *,
         organization_id: str,
         fleet_id: str | None = None,
         status_code: str | None = None,
+        limit: int | None = None,
+        offset: int | None = None,
     ) -> list[AircraftOut]:
         rows = self.repo.list_aircraft(
             organization_id=organization_id,
             fleet_id=fleet_id,
             status_code=status_code,
             with_registrations=True,
+            limit=limit,
+            offset=offset,
         )
         out: list[AircraftOut] = []
         for row in rows:

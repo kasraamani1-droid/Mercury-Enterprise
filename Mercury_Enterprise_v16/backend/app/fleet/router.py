@@ -3,13 +3,14 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
 from ..audit import record_audit
 from ..database import get_db
 from ..security.authorization import has_permissions
 from ..security.operators import operator_store
+from ..security.runtime_authz import require_allowed
 from .schemas import (
     AircraftCreate,
     AircraftFamilyOut,
@@ -26,6 +27,7 @@ from .schemas import (
     ManufacturerOut,
     RegistrationCreate,
     RegistrationOut,
+    RegistrationUpdate,
 )
 from .service import FleetService
 
@@ -39,17 +41,15 @@ def _session(request: Request) -> dict[str, datetime | str]:
     return require_session(request)
 
 
-def require_fleet_read(request: Request) -> dict[str, datetime | str]:
+def require_fleet_read(request: Request, db: Session = Depends(get_db)) -> dict[str, datetime | str]:
     session = _session(request)
-    if not has_permissions(str(session.get("role")), ("fleet.read",)):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+    require_allowed(db, session, ("fleet.read",), detail="Insufficient permissions")
     return session
 
 
-def require_fleet_manage(request: Request) -> dict[str, datetime | str]:
+def require_fleet_manage(request: Request, db: Session = Depends(get_db)) -> dict[str, datetime | str]:
     session = _session(request)
-    if not has_permissions(str(session.get("role")), ("fleet.manage",)):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Fleet management required")
+    require_allowed(db, session, ("fleet.manage",), detail="Fleet management required")
     return session
 
 
@@ -109,11 +109,13 @@ def _audit(
 
 @router.get("/manufacturers", response_model=list[ManufacturerOut])
 def list_manufacturers(
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     _: dict[str, datetime | str] = Depends(require_fleet_read),
 ) -> list[ManufacturerOut]:
     svc = _svc(db)
-    return [svc.manufacturer_out(r) for r in svc.repo.list_manufacturers()]
+    return [svc.manufacturer_out(r) for r in svc.repo.list_manufacturers(limit=limit, offset=offset)]
 
 
 @router.post("/manufacturers", response_model=ManufacturerOut, status_code=201)
@@ -130,21 +132,30 @@ def create_manufacturer(
 @router.get("/families", response_model=list[AircraftFamilyOut])
 def list_families(
     manufacturer_id: str | None = None,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     _: dict[str, datetime | str] = Depends(require_fleet_read),
 ) -> list[AircraftFamilyOut]:
     svc = _svc(db)
-    return [svc.family_out(r) for r in svc.repo.list_families(manufacturer_id=manufacturer_id)]
+    return [
+        svc.family_out(r)
+        for r in svc.repo.list_families(manufacturer_id=manufacturer_id, limit=limit, offset=offset)
+    ]
 
 
 @router.get("/models", response_model=list[AircraftModelOut])
 def list_models(
     manufacturer_id: str | None = None,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     _: dict[str, datetime | str] = Depends(require_fleet_read),
 ) -> list[AircraftModelOut]:
     svc = _svc(db)
-    return [svc.model_out(r) for r in svc.repo.list_models(manufacturer_id=manufacturer_id)]
+    return [
+        svc.model_out(r) for r in svc.repo.list_models(manufacturer_id=manufacturer_id, limit=limit, offset=offset)
+    ]
 
 
 @router.post("/models", response_model=AircraftModelOut, status_code=201)
@@ -160,16 +171,20 @@ def create_model(
 
 @router.get("/statuses", response_model=list[AircraftStatusOut])
 def list_statuses(
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     _: dict[str, datetime | str] = Depends(require_fleet_read),
 ) -> list[AircraftStatusOut]:
     svc = _svc(db)
-    return [svc.status_out(r) for r in svc.repo.list_statuses()]
+    return [svc.status_out(r) for r in svc.repo.list_statuses(limit=limit, offset=offset)]
 
 
 @router.get("/operators", response_model=list[FleetOperatorOut])
 def list_operators(
     organization_id: str | None = None,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     session: dict[str, datetime | str] = Depends(require_fleet_read),
 ) -> list[FleetOperatorOut]:
@@ -180,7 +195,10 @@ def list_operators(
         session_org_id=str(session["organization_id"]),
         requested_org_id=organization_id,
     )
-    return [svc.operator_out(r) for r in svc.repo.list_operators(organization_id=org_id)]
+    return [
+        svc.operator_out(r)
+        for r in svc.repo.list_operators(organization_id=org_id, limit=limit, offset=offset)
+    ]
 
 
 @router.post("/operators", response_model=FleetOperatorOut, status_code=201)
@@ -210,6 +228,8 @@ def create_operator(
 @router.get("/fleets", response_model=list[FleetOut])
 def list_fleets(
     organization_id: str | None = None,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     session: dict[str, datetime | str] = Depends(require_fleet_read),
 ) -> list[FleetOut]:
@@ -220,7 +240,7 @@ def list_fleets(
         session_org_id=str(session["organization_id"]),
         requested_org_id=organization_id,
     )
-    return svc.list_fleets_for_org(org_id)
+    return svc.list_fleets_for_org(org_id, limit=limit, offset=offset)
 
 
 @router.post("/fleets", response_model=FleetOut, status_code=201)
@@ -252,6 +272,8 @@ def list_aircraft(
     organization_id: str | None = None,
     fleet_id: str | None = None,
     status_code: str | None = None,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     session: dict[str, datetime | str] = Depends(require_fleet_read),
 ) -> list[AircraftOut]:
@@ -262,7 +284,13 @@ def list_aircraft(
         session_org_id=str(session["organization_id"]),
         requested_org_id=organization_id,
     )
-    return svc.list_aircraft_for_org(organization_id=org_id, fleet_id=fleet_id, status_code=status_code)
+    return svc.list_aircraft_for_org(
+        organization_id=org_id,
+        fleet_id=fleet_id,
+        status_code=status_code,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get("/aircraft/{aircraft_id}", response_model=AircraftOut)
@@ -338,6 +366,8 @@ def list_registrations(
     organization_id: str | None = None,
     aircraft_id: str | None = None,
     current_only: bool = False,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     session: dict[str, datetime | str] = Depends(require_fleet_read),
 ) -> list[RegistrationOut]:
@@ -352,6 +382,8 @@ def list_registrations(
         organization_id=org_id,
         aircraft_id=aircraft_id,
         current_only=current_only,
+        limit=limit,
+        offset=offset,
     )
     return [svc.registration_out(r) for r in rows]
 
@@ -372,6 +404,44 @@ def create_registration(
         db,
         session,
         action="fleet.registration.create",
+        target_type="registration",
+        target_id=out.id,
+        details=out.registration_mark,
+        organization_id=out.organization_id,
+    )
+    return out
+
+
+@router.get("/registrations/{registration_id}", response_model=RegistrationOut)
+def get_registration(
+    registration_id: str,
+    db: Session = Depends(get_db),
+    session: dict[str, datetime | str] = Depends(require_fleet_read),
+) -> RegistrationOut:
+    return _svc(db).get_registration(
+        registration_id,
+        username=str(session["operator"]),
+        session_role=str(session["role"]),
+    )
+
+
+@router.patch("/registrations/{registration_id}", response_model=RegistrationOut)
+def update_registration(
+    registration_id: str,
+    payload: RegistrationUpdate,
+    db: Session = Depends(get_db),
+    session: dict[str, datetime | str] = Depends(require_fleet_manage),
+) -> RegistrationOut:
+    out = _svc(db).update_registration(
+        registration_id,
+        payload,
+        username=str(session["operator"]),
+        session_role=str(session["role"]),
+    )
+    _audit(
+        db,
+        session,
+        action="fleet.registration.update",
         target_type="registration",
         target_id=out.id,
         details=out.registration_mark,

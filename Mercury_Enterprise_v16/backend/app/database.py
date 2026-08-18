@@ -3,8 +3,34 @@ from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from .core.config import settings
 
-connect_args = {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
-engine = create_engine(settings.database_url, connect_args=connect_args, pool_pre_ping=True)
+
+def is_sqlite_url(url: str | None = None) -> bool:
+    candidate = (url or settings.database_url).strip().lower()
+    return candidate.startswith("sqlite")
+
+
+def engine_connect_args(url: str | None = None) -> dict:
+    if is_sqlite_url(url):
+        return {"check_same_thread": False}
+    return {}
+
+
+def engine_kwargs(url: str | None = None) -> dict:
+    """create_engine options. Postgres uses QueuePool with recycle; SQLite stays simple."""
+    kwargs: dict = {
+        "connect_args": engine_connect_args(url),
+        "pool_pre_ping": True,
+    }
+    if not is_sqlite_url(url):
+        kwargs.update(
+            pool_size=settings.db_pool_size,
+            max_overflow=settings.db_max_overflow,
+            pool_recycle=settings.db_pool_recycle,
+        )
+    return kwargs
+
+
+engine = create_engine(settings.database_url, **engine_kwargs(settings.database_url))
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
 
 
@@ -12,10 +38,38 @@ class Base(DeclarativeBase):
     pass
 
 
+def import_orm_models() -> None:
+    """Register every SQLAlchemy model on Base.metadata (startup + Alembic autogenerate)."""
+    from . import models  # noqa: F401
+    from .org import models as org_models  # noqa: F401
+    from .fleet import models as fleet_models  # noqa: F401
+    from .components import models as component_models  # noqa: F401
+    from .publications import models as publication_models  # noqa: F401
+    from .personnel import models as personnel_models  # noqa: F401
+    from .maintenance import models as maintenance_models  # noqa: F401
+    from .work_orders import models as work_order_models  # noqa: F401
+    from .planning import models as planning_models  # noqa: F401
+    from .logistics import models as logistics_models  # noqa: F401
+    from .platform import models as platform_models  # noqa: F401
+    from .marketplace import models as marketplace_models  # noqa: F401
+    from .oem import models as oem_models  # noqa: F401
+    from .authority import models as authority_models  # noqa: F401
+    from .fabric import models as fabric_models  # noqa: F401
+    from .ecosystem import models as ecosystem_models  # noqa: F401
+    from .connect import models as connect_models  # noqa: F401
+    from .network import models as network_models  # noqa: F401
+    from .twin import models as twin_models  # noqa: F401
+    from .plugins import models as plugin_models  # noqa: F401
+    from .event_fabric import models as event_fabric_models  # noqa: F401
+
+
 def get_db():
     db = SessionLocal()
     try:
         yield db
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
 
@@ -24,20 +78,14 @@ def ensure_schema() -> None:
     """Create missing tables and apply minimal SQLite ALTERs for Task 16/17 columns.
 
     Production Postgres upgrades should run Alembic (`alembic upgrade head`) before or
-    beside application start. `create_all` remains for empty SQLite/dev databases.
+    beside application start (Compose backend entrypoint does this automatically).
+    `create_all` remains for empty SQLite/dev databases.
     """
-    # Import models so metadata includes Incident/Evidence/AuditEvent + org + fleet tables.
-    from . import models  # noqa: F401
-    from .org import models as org_models  # noqa: F401
-    from .fleet import models as fleet_models  # noqa: F401
-    from .components import models as component_models  # noqa: F401
-    from .publications import models as publication_models  # noqa: F401
-    from .personnel import models as personnel_models  # noqa: F401
-    from .maintenance import models as maintenance_models  # noqa: F401
+    import_orm_models()
 
     Base.metadata.create_all(bind=engine)
 
-    if not settings.database_url.startswith("sqlite"):
+    if not is_sqlite_url():
         return
 
     with engine.begin() as connection:
@@ -183,4 +231,25 @@ def ensure_schema() -> None:
                     "ALTER TABLE technical_log_entries "
                     "ADD COLUMN independent_inspector_employee_id VARCHAR(80)"
                 )
+            )
+
+        # Program A AEOS: AI metadata on search documents for long-lived SQLite.
+        search_columns = {
+            row[1]
+            for row in connection.execute(text("PRAGMA table_info(platform_search_documents)")).fetchall()
+        }
+        if search_columns and "ai_metadata_json" not in search_columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE platform_search_documents "
+                    "ADD COLUMN ai_metadata_json TEXT NOT NULL DEFAULT '{}'"
+                )
+            )
+
+        org_user_columns = {
+            row[1] for row in connection.execute(text("PRAGMA table_info(org_users)")).fetchall()
+        }
+        if org_user_columns and "platform_role" not in org_user_columns:
+            connection.execute(
+                text("ALTER TABLE org_users ADD COLUMN platform_role VARCHAR(40) NOT NULL DEFAULT ''")
             )

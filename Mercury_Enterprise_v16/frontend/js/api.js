@@ -2,7 +2,14 @@ import { API_BASE } from "./config.js";
 
 const DEFAULT_TIMEOUT_MS = 8000;
 
-async function request(path, options = {}) {
+export function notifyAuthRequired() {
+  if (typeof window === "undefined") return;
+  const overlay = document.getElementById("loginOverlay");
+  if (overlay && !overlay.classList.contains("hidden")) return;
+  window.dispatchEvent(new CustomEvent("mercury:auth-required"));
+}
+
+export async function request(path, options = {}) {
   const controller = new AbortController();
   const timeoutId = setTimeout(
     () => controller.abort(),
@@ -24,6 +31,10 @@ async function request(path, options = {}) {
         detail = body.detail || detail;
       } catch {
         // Response did not contain JSON error details.
+      }
+
+      if (response.status === 401 && path !== "/auth/login") {
+        notifyAuthRequired();
       }
 
       throw new Error(detail);
@@ -247,4 +258,131 @@ export async function reviewDecision(decisionId, payload) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   })).json();
+}
+
+function qs(params = {}) {
+  const sp = new URLSearchParams();
+  Object.entries(params).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== "") sp.set(k, String(v));
+  });
+  const s = sp.toString();
+  return s ? `?${s}` : "";
+}
+
+export async function listWorkPackages(params = {}) {
+  return (await request(`/work-orders/packages${qs(params)}`)).json();
+}
+
+export async function createWorkPackage(payload) {
+  return (
+    await request(`/work-orders/packages`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+  ).json();
+}
+
+export async function listWorkOrders(params = {}) {
+  return (await request(`/work-orders/orders${qs(params)}`)).json();
+}
+
+export async function createWorkOrder(payload) {
+  return (
+    await request(`/work-orders/orders`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+  ).json();
+}
+
+export async function listJobCards(params = {}) {
+  return (await request(`/work-orders/job-cards${qs(params)}`)).json();
+}
+
+export async function createJobCard(payload) {
+  return (
+    await request(`/work-orders/job-cards`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+  ).json();
+}
+
+export async function assignJobCard(jobCardId, payload) {
+  return (
+    await request(`/work-orders/job-cards/${jobCardId}/assign`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+  ).json();
+}
+
+export async function transitionJobCard(jobCardId, payload) {
+  return (
+    await request(`/work-orders/job-cards/${jobCardId}/transition`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+  ).json();
+}
+
+export async function completeJobCardWork(jobCardId, payload) {
+  return (
+    await request(`/work-orders/job-cards/${jobCardId}/complete-work`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+  ).json();
+}
+
+export async function inspectJobCard(jobCardId, payload) {
+  return (
+    await request(`/work-orders/job-cards/${jobCardId}/inspect`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+  ).json();
+}
+
+export async function releaseJobCard(jobCardId, payload) {
+  return (
+    await request(`/work-orders/job-cards/${jobCardId}/release`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+  ).json();
+}
+
+export async function addJobCardAttachment(jobCardId, payload) {
+  return (
+    await request(`/work-orders/job-cards/${jobCardId}/attachments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+  ).json();
+}
+
+export async function getWorkOrderDashboard(params = {}) {
+  return (await request(`/work-orders/dashboard${qs(params)}`)).json();
+}
+
+export async function getWorkOrderReport(report, params = {}) {
+  return (await request(`/work-orders/reports/${encodeURIComponent(report)}${qs(params)}`)).json();
+}
+
+export async function listEmployees(params = {}) {
+  return (await request(`/personnel/employees${qs(params)}`)).json();
+}
+
+export async function listPublications(params = {}) {
+  return (await request(`/publications${qs(params)}`)).json();
 }

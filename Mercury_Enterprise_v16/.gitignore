@@ -38,6 +38,9 @@ mercury.db
 # Local dual-process API/WS overrides (created by START_FRONTEND.bat)
 frontend/js/config.local.js
 
+# Runtime platform object store (pytest / local uploads)
+backend/data/
+
 # Temp / scratch
 tmp_*.txt
 **/tmp_*.txt

@@ -1,0 +1,6 @@
+# Dual-process override must never enter the Compose image.
+# Fresh clones omit this file; dirty lab trees (START_FRONTEND.bat) have it
+# pointing at http://127.0.0.1:8000, which breaks same-origin /api via NGINX.
+js/config.local.js
+.git
+*.md

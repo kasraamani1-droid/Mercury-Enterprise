@@ -6,6 +6,7 @@ import {
   getSessionContext,
   updateSessionContext,
   login,
+  logout,
   listConnectors,
   evaluateDecision,
   getDecision,
@@ -19,13 +20,19 @@ import { onTrackingTick, updateFusion, updateThreatMatrix, acknowledgeThreat } f
 import { initializeMissionOps, updateWeather, updateProactiveBrief } from "./missionOps.js";
 import { initializeCommandCenter } from "./commandCenter.js";
 import { initializeRealtimeConsole } from "./realtimeConsole.js";
-import { initializeEnterprise, refreshEnterpriseAudit, refreshEnterpriseReports } from "./enterprise.js";
+import { initializeEnterprise, refreshEnterpriseAudit, refreshEnterpriseReports, showWorkspace } from "./enterprise.js";
 import { initializeEnterprise8, refreshIntegrations } from "./enterprise8.js";
+import { initializeMaintenance } from "./maintenance.js";
+import { initializePlanning } from "./planning.js";
+import { initializeLogistics } from "./logistics.js";
 import { initializeWebSocket } from "./websocket.js";
+import { initializeUx2 } from "./ux2/index.js";
 let currentSession = null;
 let currentContext = null;
 let latestConnectors = [];
 let selectedDecisionId = null;
+let reauthInProgress = false;
+let eventsBound = false;
 
 async function checkHealth(){
   try{
@@ -54,6 +61,8 @@ async function checkHealth(){
   }
 }
 function bindEvents(){
+  if (eventsBound) return;
+  eventsBound = true;
   el("incidentSearch").addEventListener("input",renderIncidentList);el("severityFilter").addEventListener("change",renderIncidentList);el("sortFilter").addEventListener("change",renderIncidentList);el("simulateButton").addEventListener("click",simulateIncident);
   el("incidentList").addEventListener("click",event=>{const card=event.target.closest("[data-incident-id]");if(card)loadIncident(card.dataset.incidentId).then(()=>{updateFusion();updateThreatMatrix()})});
   document.querySelectorAll(".tab").forEach(button=>button.addEventListener("click",()=>showTab(button.dataset.tab)));document.querySelectorAll("[data-action]").forEach(button=>button.addEventListener("click",()=>performOperatorAction(button.dataset.action,addLog)));
@@ -65,6 +74,13 @@ function bindEvents(){
   if (organizationSelect) {
     organizationSelect.addEventListener("change", onOrganizationChange);
   }
+  const signOutButton = el("ux2SignOut");
+  if (signOutButton) {
+    signOutButton.addEventListener("click", signOut);
+  }
+  window.addEventListener("mercury:auth-required", () => {
+    void recoverExpiredSession();
+  });
   const evaluateButton = el("decisionEvaluateButton");
   if (evaluateButton) evaluateButton.addEventListener("click", evaluateDecisionFromUi);
   const reviewSubmit = el("decisionReviewSubmit");
@@ -386,50 +402,133 @@ async function ensureSession(){
     session = await promptInteractiveLogin();
   }
   currentSession = session;
+  renderSessionIdentity(session);
   return session;
 }
 
+function renderSessionIdentity(session){
+  const root = el("ux2Session");
+  const nameNode = el("ux2SessionOperator");
+  const roleNode = el("ux2SessionRole");
+  if (!root || !nameNode || !roleNode) return;
+  if (session && session.authenticated) {
+    nameNode.textContent = String(session.operator || "");
+    roleNode.textContent = String(session.role || "");
+    root.hidden = false;
+  } else {
+    nameNode.textContent = "";
+    roleNode.textContent = "";
+    root.hidden = true;
+  }
+}
+
+async function signOut(){
+  try {
+    await logout();
+  } catch {
+    // Cookie/session may already be gone; still return to the login overlay.
+  }
+  currentSession = null;
+  currentContext = null;
+  renderSessionIdentity(null);
+  window.location.reload();
+}
+
+let loginPromptPromise = null;
+let loginSubmitInFlight = false;
+
+function readLoginCredentials(form, operatorInput, passwordInput) {
+  const data = form ? new FormData(form) : null;
+  const operator = String((data && data.get("operator")) ?? operatorInput?.value ?? "").trim();
+  const namedPassword = data ? data.get("password") : null;
+  const password = namedPassword != null ? String(namedPassword) : String(passwordInput?.value ?? "");
+  return { operator, password };
+}
+
+function clearLoginPromptLock() {
+  loginPromptPromise = null;
+  if (typeof window !== "undefined") window.__mercuryLoginPrompt = null;
+}
+
 function promptInteractiveLogin(){
-  return new Promise((resolve, reject) => {
+  // Boot and 401 recovery both call this. form.onsubmit cannot stack; window lock
+  // covers a second module graph; in-flight flag guarantees one POST per click.
+  if (loginPromptPromise) return loginPromptPromise;
+  if (typeof window !== "undefined" && window.__mercuryLoginPrompt) {
+    return window.__mercuryLoginPrompt;
+  }
+  loginPromptPromise = new Promise((resolve, reject) => {
     const overlay = el("loginOverlay");
     const form = el("loginForm");
     const errorNode = el("loginError");
     const operatorInput = el("loginOperator");
     const passwordInput = el("loginPassword");
+    const submitBtn = el("loginSubmit");
     if (!overlay || !form || !operatorInput || !passwordInput) {
+      clearLoginPromptLock();
       reject(new Error("Login UI unavailable"));
       return;
     }
+    const overlayWasHidden = overlay.classList.contains("hidden");
     overlay.classList.remove("hidden");
     if (errorNode) {
       errorNode.textContent = "";
       errorNode.classList.add("hidden");
     }
-    passwordInput.value = "";
+    if (overlayWasHidden) passwordInput.value = "";
     operatorInput.focus();
 
     const onSubmit = async event => {
       event.preventDefault();
+      event.stopImmediatePropagation();
+      if (loginSubmitInFlight) return;
+      loginSubmitInFlight = true;
+      if (submitBtn) submitBtn.disabled = true;
       try {
-        const session = await login({
-          operator: operatorInput.value.trim(),
-          password: passwordInput.value,
-        });
+        const { operator, password } = readLoginCredentials(form, operatorInput, passwordInput);
+        const session = await login({ operator, password });
         if (!session.authenticated) {
           throw new Error("Authentication failed");
         }
-        form.removeEventListener("submit", onSubmit);
+        form.onsubmit = null;
         overlay.classList.add("hidden");
+        clearLoginPromptLock();
         resolve(session);
       } catch (error) {
         if (errorNode) {
           errorNode.textContent = error.message || "Invalid credentials";
           errorNode.classList.remove("hidden");
         }
+      } finally {
+        loginSubmitInFlight = false;
+        if (submitBtn) submitBtn.disabled = false;
       }
     };
-    form.addEventListener("submit", onSubmit);
+    form.onsubmit = onSubmit;
   });
+  if (typeof window !== "undefined") window.__mercuryLoginPrompt = loginPromptPromise;
+  return loginPromptPromise;
+}
+
+async function recoverExpiredSession(){
+  if (reauthInProgress) return;
+  const overlay = el("loginOverlay");
+  if (overlay && !overlay.classList.contains("hidden")) return;
+  reauthInProgress = true;
+  currentSession = null;
+  currentContext = null;
+  renderSessionIdentity(null);
+  try {
+    const session = await promptInteractiveLogin();
+    currentSession = session;
+    renderSessionIdentity(session);
+    await loadSessionContext();
+    applyRoleAccess();
+  } catch {
+    // Overlay remains until the operator signs in.
+  } finally {
+    reauthInProgress = false;
+  }
 }
 
 function applyRoleAccess(){
@@ -455,5 +554,37 @@ function applyRoleAccess(){
   });
 }
 
-async function initialize(){initializeMap();bindEvents();initializeMissionOps();initializeCommandCenter();initializeRealtimeConsole();initializeEnterprise();initializeEnterprise8();await ensureSession();await loadSessionContext();applyRoleAccess();initializeWebSocket();updateFusion();updateThreatMatrix();await checkHealth();await loadDashboardSummary();await loadIncidents();setInterval(checkHealth,5000);setInterval(loadDashboardSummary,15000);setInterval(loadIncidents,10000)}
+async function initialize(){
+  try {
+    initializeMap();
+  } catch {
+    // Command map depends on Leaflet. A CSP/CDN miss must not skip UX2 navigate() binding.
+  }
+  bindEvents();
+  initializeMissionOps();
+  initializeCommandCenter();
+  initializeRealtimeConsole();
+  initializeEnterprise();
+  initializeEnterprise8();
+  initializeMaintenance();
+  initializePlanning();
+  initializeLogistics();
+  await ensureSession();
+  await loadSessionContext();
+  applyRoleAccess();
+  initializeUx2({
+    initial: "home",
+    onNavigate: (id) => showWorkspace(id),
+  });
+  initializeWebSocket();
+  updateFusion();
+  updateThreatMatrix();
+  await checkHealth();
+  await loadDashboardSummary();
+  await loadIncidents();
+  import("./ux2/workspaces.js").then((m) => m.refreshHomeWorkspace()).catch(() => {});
+  setInterval(checkHealth,5000);
+  setInterval(loadDashboardSummary,15000);
+  setInterval(loadIncidents,10000);
+}
 initialize();

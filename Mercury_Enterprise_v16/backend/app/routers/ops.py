@@ -10,7 +10,7 @@ from ..connectors.manager import connector_manager
 from ..core.health import build_ops_health
 from ..database import get_db
 from ..ops import ResponseOrchestrationEngine
-from ..security.authorization import has_permissions
+from ..security.runtime_authz import require_allowed
 
 router = APIRouter(prefix="/api/v1/ops", tags=["ops"])
 
@@ -31,17 +31,15 @@ def _current_session(request: Request) -> dict:
     return session
 
 
-def require_ops_read(request: Request) -> dict:
+def require_ops_read(request: Request, db: Session = Depends(get_db)) -> dict:
     session = _current_session(request)
-    if not has_permissions(str(session.get("role")), ("ops.read",)):
-        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    require_allowed(db, session, ("ops.read",), detail="Insufficient permissions")
     return session
 
 
-def require_ops_coordinate(request: Request) -> dict:
+def require_ops_coordinate(request: Request, db: Session = Depends(get_db)) -> dict:
     session = _current_session(request)
-    if not has_permissions(str(session.get("role")), ("ops.coordinate",)):
-        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    require_allowed(db, session, ("ops.coordinate",), detail="Insufficient permissions")
     return session
 
 

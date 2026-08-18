@@ -86,21 +86,10 @@ class PersonnelService:
             pending = True
 
         existing_auths = {a.id for a in self.repo.list_authorizations(employee.id)}
-        if "pers-auth-aca-001" not in existing_auths:
-            self.repo.add_authorization(
-                PersonnelAuthorization(
-                    id="pers-auth-aca-001",
-                    employee_id=employee.id,
-                    auth_type="aca",
-                    scope="line_maintenance",
-                    aircraft_model_id="model-a320",
-                    ata_chapter_id=None,
-                    issued_at=now,
-                    expires_at=None,
-                    status="active",
-                    created_at=now,
-                )
-            )
+        # Least privilege: technician E-1001 must NOT hold ACA (segregation of duties).
+        aca_tech = self.repo.get_authorization("pers-auth-aca-001")
+        if aca_tech is not None and aca_tech.status == "active":
+            aca_tech.status = "revoked"
             pending = True
         if "pers-auth-stamp-001" not in existing_auths:
             self.repo.add_authorization(
@@ -190,6 +179,65 @@ class PersonnelService:
                 PersonnelAuthorization(
                     id="pers-auth-ii-002",
                     employee_id=reviewer.id,
+                    auth_type="independent_inspection",
+                    scope="critical_tasks",
+                    aircraft_model_id=None,
+                    ata_chapter_id=None,
+                    issued_at=now,
+                    expires_at=None,
+                    status="active",
+                    created_at=now,
+                )
+            )
+            pending = True
+
+        # Third signer for segregation of duties (independent ≠ inspector ≠ performer).
+        inspector = self.repo.get_employee("pers-ii-east-001") or self.repo.get_by_org_number(org_id, "E-3001")
+        if inspector is None:
+            inspector = PersonnelEmployee(
+                id="pers-ii-east-001",
+                organization_id=org_id,
+                employee_number="E-3001",
+                full_name="Demo Independent Inspector",
+                department_id=None,
+                position_title="Independent Inspector",
+                email="inspector@aviation-east.example",
+                status="active",
+                user_username="admin",
+                created_at=now,
+                updated_at=now,
+            )
+            self.repo.add_employee(inspector)
+            self.repo.flush()
+            pending = True
+        elif inspector.user_username != "admin":
+            inspector.user_username = "admin"
+            inspector.updated_at = now
+            pending = True
+
+        if not any(q.id == "pers-qual-ame-003" for q in self.repo.list_qualifications(inspector.id)):
+            self.repo.add_qualification(
+                PersonnelQualification(
+                    id="pers-qual-ame-003",
+                    employee_id=inspector.id,
+                    qualification_type="ame_license",
+                    code="AME-II",
+                    description="Aircraft Maintenance Engineer — Independent Inspection",
+                    authority="Transport Canada",
+                    issued_at=now,
+                    expires_at=None,
+                    status="active",
+                    created_at=now,
+                )
+            )
+            pending = True
+
+        ii_auths = {a.id for a in self.repo.list_authorizations(inspector.id)}
+        if "pers-auth-ii-003" not in ii_auths:
+            self.repo.add_authorization(
+                PersonnelAuthorization(
+                    id="pers-auth-ii-003",
+                    employee_id=inspector.id,
                     auth_type="independent_inspection",
                     scope="critical_tasks",
                     aircraft_model_id=None,
@@ -299,6 +347,8 @@ class PersonnelService:
         session_org_id: str,
         organization_id: str | None = None,
         status: str | None = None,
+        limit: int | None = None,
+        offset: int | None = None,
     ) -> list[EmployeeOut]:
         org_id = self.resolve_org_id(
             username=username,
@@ -306,7 +356,13 @@ class PersonnelService:
             session_org_id=session_org_id,
             requested_org_id=organization_id,
         )
-        rows = self.repo.list_employees(organization_id=org_id, status=status, active_only=status is None)
+        rows = self.repo.list_employees(
+            organization_id=org_id,
+            status=status,
+            active_only=status is None,
+            limit=limit,
+            offset=offset,
+        )
         return [self.employee_out(r) for r in rows]
 
     def create_employee(

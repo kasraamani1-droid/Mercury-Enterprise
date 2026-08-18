@@ -10,6 +10,7 @@ from ..audit import record_audit
 from ..database import get_db
 from ..security.authorization import has_permissions
 from ..security.operators import operator_store
+from ..security.runtime_authz import require_allowed
 from .schemas import (
     AiCrossRefCreate,
     AiCrossRefOut,
@@ -26,6 +27,7 @@ from .schemas import (
     TaskCreate,
     TaskOut,
     TaskTransitionRequest,
+    LogbookAmendRequest,
     TechnicalLogOut,
 )
 from .service import MaintenanceService
@@ -40,36 +42,33 @@ def _session(request: Request) -> dict[str, datetime | str]:
     return require_session(request)
 
 
-def require_maintenance_read(request: Request) -> dict[str, datetime | str]:
+def require_maintenance_read(request: Request, db: Session = Depends(get_db)) -> dict[str, datetime | str]:
     session = _session(request)
-    if not has_permissions(str(session.get("role")), ("maintenance.read",)):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+    require_allowed(db, session, ("maintenance.read",), detail="Insufficient permissions")
     return session
 
 
-def require_maintenance_manage(request: Request) -> dict[str, datetime | str]:
+def require_maintenance_manage(request: Request, db: Session = Depends(get_db)) -> dict[str, datetime | str]:
     session = _session(request)
-    if not has_permissions(str(session.get("role")), ("maintenance.manage",)):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Maintenance management required")
+    require_allowed(db, session, ("maintenance.manage",), detail="Maintenance management required")
     return session
 
 
-def require_logbook_read(request: Request) -> dict[str, datetime | str]:
+def require_logbook_read(request: Request, db: Session = Depends(get_db)) -> dict[str, datetime | str]:
     session = _session(request)
-    if not has_permissions(str(session.get("role")), ("logbook.read",)):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Logbook read required")
+    require_allowed(db, session, ("logbook.read",), detail="Logbook read required")
     return session
 
 
-def require_certification_sign(request: Request) -> dict[str, datetime | str]:
+def require_certification_sign(request: Request, db: Session = Depends(get_db)) -> dict[str, datetime | str]:
     session = _session(request)
-    role = str(session.get("role"))
-    if not (
-        has_permissions(role, ("certification.sign",))
-        or has_permissions(role, ("signature.create",))
-        or has_permissions(role, ("maintenance.manage",))
-    ):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Certification sign required")
+    require_allowed(
+        db,
+        session,
+        ("certification.sign", "signature.create", "maintenance.manage"),
+        any_of=True,
+        detail="Certification sign required",
+    )
     return session
 
 
@@ -302,6 +301,33 @@ def list_logbook(
         limit=limit,
         offset=offset,
     )
+
+
+@router.post("/logbook/{entry_id}/amend", response_model=TechnicalLogOut, status_code=201)
+def amend_logbook(
+    entry_id: str,
+    payload: LogbookAmendRequest,
+    db: Session = Depends(get_db),
+    session: dict[str, datetime | str] = Depends(require_maintenance_manage),
+) -> TechnicalLogOut:
+    """Append-only amendment — original entry is never updated or deleted."""
+    out = _svc(db).amend_logbook_entry(
+        entry_id,
+        reason=payload.reason,
+        summary=payload.summary,
+        username=str(session["operator"]),
+        session_role=str(session["role"]),
+    )
+    _audit(
+        db,
+        session,
+        action="logbook.entry.amend",
+        target_type="technical_log_entry",
+        target_id=out.id,
+        details=f"amends={entry_id};reason={payload.reason[:200]}",
+        organization_id=out.organization_id,
+    )
+    return out
 
 
 @router.get("/critical-policies", response_model=list[CriticalPolicyOut])

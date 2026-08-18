@@ -31,7 +31,7 @@ Built-in operators (`admin`, `operator`, `reviewer`, `viewer`) receive `org_user
 3. Platform administrators are determined from the **login directory** (`operator_store`), never from membership elevation.
 4. Membership roles are limited to **Operator / Reviewer / Viewer** (Administrator assignment rejected).
 5. Users without an active membership cannot establish a session (403).
-6. Incident, evidence, audit, and decision APIs continue to filter by session `organization_id` + `site_id`.
+6. Incident, evidence, audit, and decision APIs continue to filter by session `organization_id` + `site_id`. Incident UUID writes (status/events/evidence) and WebSocket incident events are tenant-scoped — see [engineering/TENANT_ISOLATION.md](engineering/TENANT_ISOLATION.md).
 7. On login and org switch, session `role` is the highest allowed membership role for that organization (capped below platform admin).
 
 ## REST APIs

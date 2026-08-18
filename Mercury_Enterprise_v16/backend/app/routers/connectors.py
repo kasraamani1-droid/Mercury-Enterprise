@@ -9,9 +9,9 @@ from ..connectors.models import ConnectorHealth, ConnectorHealthEvent, Connector
 from ..database import get_db
 from ..events.bus import event_bus
 from ..events.models import PlatformEvent
-from ..security.authorization import has_permissions
+from ..security.runtime_authz import require_allowed
 
-router = APIRouter(prefix="/api/v1", tags=["Connectors"])
+router = APIRouter(prefix="/api/v1", tags=["connectors"])
 
 
 def _current_session(request: Request) -> dict:
@@ -23,17 +23,15 @@ def _current_session(request: Request) -> dict:
     return session
 
 
-def require_connectors_read(request: Request) -> dict:
+def require_connectors_read(request: Request, db: Session = Depends(get_db)) -> dict:
     session = _current_session(request)
-    if not has_permissions(str(session.get("role")), ("connectors.read",)):
-        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    require_allowed(db, session, ("connectors.read",), detail="Insufficient permissions")
     return session
 
 
-def require_connectors_manage(request: Request) -> dict:
+def require_connectors_manage(request: Request, db: Session = Depends(get_db)) -> dict:
     session = _current_session(request)
-    if not has_permissions(str(session.get("role")), ("connectors.manage",)):
-        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    require_allowed(db, session, ("connectors.manage",), detail="Insufficient permissions")
     return session
 
 

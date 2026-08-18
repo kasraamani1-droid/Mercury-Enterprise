@@ -10,6 +10,7 @@ from ..audit import record_audit
 from ..database import get_db
 from ..security.authorization import has_permissions
 from ..security.operators import operator_store
+from ..security.runtime_authz import permissions_allowed, require_allowed
 from .schemas import (
     AccessClassificationUpdate,
     ComponentPublicationOut,
@@ -34,28 +35,26 @@ def _session(request: Request) -> dict[str, datetime | str]:
     return require_session(request)
 
 
-def require_publication_read(request: Request) -> dict[str, datetime | str]:
+def require_publication_read(request: Request, db: Session = Depends(get_db)) -> dict[str, datetime | str]:
     session = _session(request)
-    if not has_permissions(str(session.get("role")), ("publication.read",)):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+    require_allowed(db, session, ("publication.read",), detail="Insufficient permissions")
     return session
 
 
-def require_publication_manage(request: Request) -> dict[str, datetime | str]:
+def require_publication_manage(request: Request, db: Session = Depends(get_db)) -> dict[str, datetime | str]:
     session = _session(request)
-    if not has_permissions(str(session.get("role")), ("publication.manage",)):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Publication management required")
+    require_allowed(db, session, ("publication.manage",), detail="Publication management required")
     return session
 
 
-def require_publication_admin(request: Request) -> dict[str, datetime | str]:
+def require_publication_admin(request: Request, db: Session = Depends(get_db)) -> dict[str, datetime | str]:
     session = _session(request)
+    if permissions_allowed(db, session, ("publication.admin",)):
+        return session
     username = str(session.get("operator", ""))
     record = operator_store.get(username)
     global_role = record["role"] if record else str(session.get("role", ""))
-    if not has_permissions(str(session.get("role")), ("publication.admin",)) and not has_permissions(
-        global_role, ("publication.admin",)
-    ):
+    if not has_permissions(global_role, ("publication.admin",)):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Publication admin required")
     return session
 
@@ -180,6 +179,8 @@ def list_or_search_publications(
     revision_date_to: datetime | None = None,
     effective_date_from: datetime | None = None,
     effective_date_to: datetime | None = None,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     session: dict[str, datetime | str] = Depends(require_publication_read),
 ) -> list[PublicationOut]:
@@ -199,6 +200,8 @@ def list_or_search_publications(
         revision_date_to=revision_date_to,
         effective_date_from=effective_date_from,
         effective_date_to=effective_date_to,
+        limit=limit,
+        offset=offset,
     )
 
 
@@ -351,16 +354,15 @@ def create_revision(
 ) -> RevisionOut:
     if payload.activate:
         # Activation is publication.admin only (same gate as dedicated activate endpoint).
-        username = str(session.get("operator", ""))
-        record = operator_store.get(username)
-        global_role = record["role"] if record else str(session.get("role", ""))
-        if not has_permissions(str(session.get("role")), ("publication.admin",)) and not has_permissions(
-            global_role, ("publication.admin",)
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Activating a revision requires publication.admin",
-            )
+        if not permissions_allowed(db, session, ("publication.admin",)):
+            username = str(session.get("operator", ""))
+            record = operator_store.get(username)
+            global_role = record["role"] if record else str(session.get("role", ""))
+            if not has_permissions(global_role, ("publication.admin",)):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Activating a revision requires publication.admin",
+                )
     out = _svc(db).create_revision(
         publication_id,
         payload,

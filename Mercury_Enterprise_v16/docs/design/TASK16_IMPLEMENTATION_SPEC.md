@@ -89,7 +89,7 @@ Do **not** implement any of the following without an explicit change request and
 | Async retention purge / deletion job | Deferred |
 | `organization_id` / `site_id` columns on `incidents` | Deferred (beyond minimum audit/provenance need) |
 | Alembic or full migration framework | Deferred |
-| Durable SQL approvals table | Deferred; keep Task 14 in-memory `_approvals` |
+| Durable SQL approvals table | **Delivered** (RC1 Blocker 03) — `approval_requests` + Alembic `20260814_0022` |
 | New product tabs / second audit dashboard | Forbidden by task |
 | New AuditManager class / audit microservice | Forbidden parallel subsystem |
 | Overloading `GET /api/v1/events` as human audit API | Wrong bus; duplicate history semantics |

@@ -8,7 +8,15 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..security.authorization import Role, has_permissions, parse_role
-from ..security.operators import hash_password, operator_store, validate_operator_name, validate_password
+from ..security.api_key import MACHINE_OPERATOR, configured_machine_org_id
+from ..security.operators import (
+    hash_password,
+    operator_store,
+    password_needs_rehash,
+    validate_operator_name,
+    validate_password,
+    verify_password,
+)
 from .models import Company, Department, Membership, OrgSite, OrgUser, Organization, Team
 from .repository import OrgRepository
 from .schemas import (
@@ -53,10 +61,16 @@ class OrganizationService:
     def __init__(self, db: Session) -> None:
         self.repo = OrgRepository(db)
 
-    def ensure_seed_data(self, *, default_password_hash: str, operator_roles: dict[str, str]) -> None:
+    def ensure_seed_data(
+        self,
+        *,
+        default_password_hash: str,
+        operator_roles: dict[str, str],
+        auth_password: str = "",
+    ) -> None:
         """Idempotent seed matching legacy aviation orgs/sites."""
         if self.repo.list_companies():
-            self._ensure_users_and_memberships(default_password_hash, operator_roles)
+            self._ensure_users_and_memberships(default_password_hash, operator_roles, auth_password=auth_password)
             return
 
         company = Company(
@@ -143,9 +157,15 @@ class OrganizationService:
             )
         )
         self.repo.commit()
-        self._ensure_users_and_memberships(default_password_hash, operator_roles)
+        self._ensure_users_and_memberships(default_password_hash, operator_roles, auth_password=auth_password)
 
-    def _ensure_users_and_memberships(self, default_password_hash: str, operator_roles: dict[str, str]) -> None:
+    def _ensure_users_and_memberships(
+        self,
+        default_password_hash: str,
+        operator_roles: dict[str, str],
+        *,
+        auth_password: str = "",
+    ) -> None:
         orgs = self.repo.list_organizations(active_only=True)
         if not orgs:
             return
@@ -162,12 +182,26 @@ class OrganizationService:
                     username=username,
                     display_name=username.title(),
                     password_hash=default_password_hash,
+                    platform_role=role,
                     status="active",
                     created_at=_utcnow(),
                     updated_at=_utcnow(),
                 )
                 self.repo.add_user(user)
                 self.repo.flush()
+                pending = True
+            elif not (user.platform_role or "").strip():
+                user.platform_role = role
+                user.updated_at = _utcnow()
+                pending = True
+            if (
+                user is not None
+                and auth_password
+                and password_needs_rehash(user.password_hash)
+                and verify_password(auth_password, user.password_hash)
+            ):
+                user.password_hash = default_password_hash
+                user.updated_at = _utcnow()
                 pending = True
 
             # Platform administrators are not modeled via membership elevation; seed
@@ -292,6 +326,10 @@ class OrganizationService:
         """None means all organizations (platform admin)."""
         if self.is_platform_admin(username, session_role):
             return None
+        # Machine API-key principal: synthetic single-org membership (no DB row).
+        if username == MACHINE_OPERATOR:
+            org_id = configured_machine_org_id()
+            return {org_id} if org_id else set()
         return {m.organization_id for m in self.user_memberships(username)}
 
     def assert_org_access(self, *, username: str, session_role: str, organization_id: str) -> None:
@@ -347,9 +385,22 @@ class OrganizationService:
             rows = [r for r in rows if r.id in allowed]
         return [self.organization_out(r) for r in rows]
 
-    def sites_for_session(self, username: str, session_role: str, organization_id: str) -> list[SiteOut]:
+    def sites_for_session(
+        self,
+        username: str,
+        session_role: str,
+        organization_id: str,
+        *,
+        limit: int | None = None,
+        offset: int | None = None,
+    ) -> list[SiteOut]:
         self.assert_org_access(username=username, session_role=session_role, organization_id=organization_id)
-        return [self.site_out(s) for s in self.repo.list_sites(organization_id=organization_id, active_only=True)]
+        return [
+            self.site_out(s)
+            for s in self.repo.list_sites(
+                organization_id=organization_id, active_only=True, limit=limit, offset=offset
+            )
+        ]
 
     def get_organization_out(self, organization_id: str) -> OrganizationOut:
         row = self.repo.get_organization(organization_id)
@@ -471,6 +522,7 @@ class OrganizationService:
             display_name=(payload.display_name or username).strip(),
             email=(payload.email or "").strip(),
             password_hash=hash_password(password),
+            platform_role=Role.VIEWER.value,
             created_at=_utcnow(),
             updated_at=_utcnow(),
         )

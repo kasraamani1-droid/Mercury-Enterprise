@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from pathlib import Path
 
 from conftest import TEST_AUTH_PASSWORD
@@ -88,19 +89,20 @@ def test_admin_dashboard_and_user_lifecycle_audits():
     assert client.get("/admin/health").status_code == 200
     assert client.get("/admin/metrics").status_code == 200
 
+    username = f"observer1{uuid.uuid4().hex[:8]}"
     created = client.post(
         "/admin/users",
-        json={"operator": "observer1", "password": "Observer-Pass-12345", "role": "Viewer"},
+        json={"operator": username, "password": "Observer-Pass-12345", "role": "Viewer"},
     )
     assert created.status_code == 200, created.text
     password = client.post(
         "/admin/users/password",
-        json={"operator": "observer1", "password": "Observer-Pass-67890"},
+        json={"operator": username, "password": "Observer-Pass-67890"},
     )
     assert password.status_code == 200
     role = client.post(
         "/admin/users/role",
-        json={"operator": "observer1", "role": "Reviewer"},
+        json={"operator": username, "role": "Reviewer"},
     )
     assert role.status_code == 200
     config = client.post(

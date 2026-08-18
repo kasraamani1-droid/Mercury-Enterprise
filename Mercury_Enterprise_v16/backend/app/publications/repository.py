@@ -5,6 +5,7 @@ from datetime import datetime
 from sqlalchemy import Select, func, or_, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
+from ..shared import clamp_page
 from .models import (
     Publication,
     PublicationAtaLink,
@@ -61,7 +62,10 @@ class PublicationRepository:
         effective_date_from: datetime | None = None,
         effective_date_to: datetime | None = None,
         active_only: bool = True,
+        limit: int | None = None,
+        offset: int | None = None,
     ) -> list[Publication]:
+        lim, off = clamp_page(limit, offset)
         stmt = self._pub_stmt().order_by(Publication.title)
         if organization_id:
             stmt = stmt.where(Publication.organization_id == organization_id)
@@ -109,7 +113,7 @@ class PublicationRepository:
             if effective_date_to:
                 rev = rev.where(PublicationRevision.effective_date <= effective_date_to)
             stmt = stmt.where(Publication.id.in_(rev))
-        return list(self.db.scalars(stmt).unique().all())
+        return list(self.db.scalars(stmt.limit(lim).offset(off)).unique().all())
 
     def get_publication(
         self,

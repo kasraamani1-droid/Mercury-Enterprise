@@ -16,13 +16,11 @@ jobs:
         with:
           python-version: '3.13'
       - run: pip install -r backend/requirements.txt
-      - run: pytest -q backend/tests
+      - run: python -m pytest -q backend/tests
       - run: python -m compileall backend/app
       - name: Frontend JavaScript syntax
         run: |
-          for f in frontend/js/*.js; do
-            node --check "$f"
-          done
+          find frontend/js -name '*.js' ! -name 'config.local.js' -print0 | xargs -0 -n1 node --check
       - name: Validate compose config
         working-directory: Mercury_Enterprise_v16
         run: docker compose config

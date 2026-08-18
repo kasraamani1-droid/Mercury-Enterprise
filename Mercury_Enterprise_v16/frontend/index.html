@@ -5,40 +5,129 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <!-- Optional: <meta name="mercury-api-base" content="http://127.0.0.1:8000/api/v1"> for dual-process local demos -->
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛰️</text></svg>">
-  <title>Mercury Enterprise V2.0 (16.0.0)</title>
+  <title>Mercury Enterprise — UX 2.0</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="css/design-system.css">
   <link rel="stylesheet" href="css/base.css">
   <link rel="stylesheet" href="css/layout.css">
   <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/ux2-shell.css">
+  <link rel="stylesheet" href="css/workspace-engine.css">
   <link rel="stylesheet" href="css/responsive.css">
 </head>
-<body>
+<body class="ux2">
+<div id="loginOverlay" class="login-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
+  <form id="loginForm" class="login-card" method="post" action="/" autocomplete="on">
+    <h2 id="loginTitle">Operator sign-in</h2>
+    <p class="muted">Session required. Demo auto-login is disabled.</p>
+    <label>Operator <input id="loginOperator" name="operator" autocomplete="username" required></label>
+    <label>Password <input id="loginPassword" name="password" type="password" autocomplete="current-password" required></label>
+    <p id="loginError" class="login-error hidden" role="alert"></p>
+    <button type="submit" id="loginSubmit">Sign in</button>
+  </form>
+</div>
 <div id="criticalAlert" class="critical-alert hidden"><strong>CRITICAL AIRSPACE ALERT</strong><span id="criticalAlertText">UAV approaching protected runway zone.</span><button id="dismissAlert">Dismiss</button></div>
-<header class="topbar">
-  <div class="brand">Mercury <span>Enterprise V2.0 — 16.0.0</span>
-  <nav class="product-nav" aria-label="Mercury workspaces">
-    <button class="product-tab active" data-workspace="command">Command</button>
-    <button class="product-tab" data-workspace="digitalTwin">Digital Twin</button>
-    <button class="product-tab" data-workspace="radar">Radar</button>
-    <button class="product-tab" data-workspace="executive">Executive</button>
-    <button class="product-tab" data-workspace="history">History</button>
-    <button class="product-tab" data-workspace="admin">Admin</button>
-    <button class="product-tab" data-workspace="cloud">Cloud</button>
-    <button class="product-tab" data-workspace="integrations">Integrations</button>
-    <button class="product-tab" data-workspace="compliance">Compliance</button>
-  </nav></div>
-  <div class="system-strip"><button id="notificationButton" class="notification-button" aria-label="Notifications">🔔<span id="notificationCount">0</span></button>
-    <span><i id="backendDot" class="health-dot"></i>Backend</span>
-    <span><i class="health-dot online"></i>AI Engine</span>
-    <span><i class="health-dot online"></i>RF Sensors</span>
-    <span><i class="health-dot online"></i>Cameras</span>
-    <span id="statusText" class="muted">Checking…</span>
-    <label>Org <select id="organizationSelect" aria-label="Organization selector"></select></label>
-    <label>Site <select id="siteSelect" aria-label="Site selector"></select></label>
-  </div>
-</header><aside id="notificationCenter" class="notification-center hidden"><div class="panel-title"><h3>Notification center</h3><button id="clearNotifications" class="ghost small">Clear</button></div><div id="notificationList"><div class="empty">No notifications.</div></div></aside>
 
-<div id="commandWorkspace" class="workspace-page active"><section class="stats mission-overview" aria-label="Operational statistics">
+<div id="ux2App" class="ux2-app">
+  <aside class="ux2-sidebar" id="ux2Sidebar" aria-label="Primary navigation">
+    <div class="ux2-brand">
+      <div class="ux2-brand-mark" aria-hidden="true">M</div>
+      <div class="ux2-brand-text">Mercury<span><small>Enterprise UX 2.0</small></span></div>
+    </div>
+    <nav id="ux2SidebarNav" class="ux2-sidebar-nav" aria-label="Workspaces"></nav>
+    <div class="ux2-sidebar-footer">
+      <button type="button" class="mx-btn mx-btn-ghost" id="ux2FavToggle"><span>Favorite current</span></button>
+      <button type="button" class="mx-btn mx-btn-ghost" id="ux2SidebarToggle"><span>Collapse nav</span></button>
+    </div>
+  </aside>
+
+  <div class="ux2-main">
+    <div class="ux2-chrome">
+      <button type="button" class="ux2-icon-btn" id="ux2MobileNav" aria-label="Open navigation" onclick="document.body.classList.toggle('ux2-nav-open')">☰</button>
+      <button type="button" class="ux2-search-trigger" id="ux2SearchTrigger">
+        <span>Search or jump to…</span>
+        <kbd>Ctrl K</kbd>
+      </button>
+      <header class="topbar">
+        <div class="brand legacy-brand">Mercury <span>Enterprise V2.0 — 16.0.0</span>
+        <nav class="product-nav" aria-label="Legacy workspace tabs">
+          <button class="product-tab" data-workspace="command">Command</button>
+          <button class="product-tab" data-workspace="digitalTwin">Digital Twin</button>
+          <button class="product-tab" data-workspace="radar">Radar</button>
+          <button class="product-tab" data-workspace="executive">Executive</button>
+          <button class="product-tab" data-workspace="history">History</button>
+          <button class="product-tab" data-workspace="admin">Admin</button>
+          <button class="product-tab" data-workspace="cloud">Cloud</button>
+          <button class="product-tab" data-workspace="integrations">Integrations</button>
+          <button class="product-tab" data-workspace="compliance">Compliance</button>
+          <button class="product-tab" data-workspace="maintenance">Maintenance</button>
+          <button class="product-tab" data-workspace="planning">Planning</button>
+          <button class="product-tab" data-workspace="logistics">Logistics</button>
+        </nav></div>
+        <div class="system-strip"><button id="notificationButton" class="notification-button" aria-label="Notifications">N<span id="notificationCount">0</span></button>
+          <span><i id="backendDot" class="health-dot"></i>Backend</span>
+          <span><i class="health-dot online"></i>AI Engine</span>
+          <span><i class="health-dot online"></i>RF Sensors</span>
+          <span><i class="health-dot online"></i>Cameras</span>
+          <span id="statusText" class="muted">Checking…</span>
+          <label>Org <select id="organizationSelect" aria-label="Organization selector"></select></label>
+          <label>Site <select id="siteSelect" aria-label="Site selector"></select></label>
+        </div>
+      </header>
+      <div class="ux2-chrome-actions">
+        <div class="ux2-session" id="ux2Session" hidden>
+          <span class="ux2-session-identity">
+            <strong id="ux2SessionOperator"></strong>
+            <small id="ux2SessionRole"></small>
+          </span>
+          <button type="button" class="mx-btn mx-btn-ghost mx-btn-sm" id="ux2SignOut">Sign out</button>
+        </div>
+        <button type="button" class="ux2-icon-btn" id="ux2ThemeToggle" title="Toggle theme" aria-label="Toggle theme">◐</button>
+      </div>
+    </div>
+    <div id="ux2TabBar" class="ux2-tabbar" aria-label="Open workspace tabs"></div>
+    <div class="ux2-content" id="ux2Content">
+
+<aside id="notificationCenter" class="notification-center hidden"><div class="panel-title"><h3>Notification center</h3><button id="clearNotifications" class="ghost small">Clear</button></div><div id="notificationList"><div class="empty">No notifications.</div></div></aside>
+
+<div id="homeWorkspace" class="workspace-page ux2-page active">
+  <div class="ux2-page-header">
+    <div>
+      <div class="mx-label">Landing Dashboard</div>
+      <h1>Mercury Operations Home</h1>
+      <p>One place for readiness, due maintenance, notifications, and jump-ins to every workspace.</p>
+    </div>
+    <div class="mx-row">
+      <button type="button" class="mx-btn" data-ux2-goto="command">Command Ops</button>
+      <button type="button" class="mx-btn mx-btn-ghost" data-ux2-goto="planning">Planning</button>
+    </div>
+  </div>
+  <div class="mx-grid mx-grid-4" style="margin-bottom:16px">
+    <article class="mx-kpi"><div class="mx-label">Platform</div><div class="mx-kpi-value" id="homeKpiHealth">—</div><div class="mx-kpi-hint">Health status</div></article>
+    <article class="mx-kpi"><div class="mx-label">Alerts</div><div class="mx-kpi-value" id="homeKpiAlerts">—</div><div class="mx-kpi-hint">Active alerts</div></article>
+    <article class="mx-kpi"><div class="mx-label">Missions</div><div class="mx-kpi-value" id="homeKpiMissions">—</div><div class="mx-kpi-hint">Active missions</div></article>
+    <article class="mx-kpi"><div class="mx-label">Decisions</div><div class="mx-kpi-value" id="homeKpiDecisions">—</div><div class="mx-kpi-hint">Pending review</div></article>
+  </div>
+  <div class="mx-grid mx-grid-2">
+    <article class="mx-card"><div class="mx-card-header"><h3>Due / forecast focus</h3><button type="button" class="mx-btn mx-btn-ghost mx-btn-sm" data-ux2-goto="planning">Open</button></div><div id="homeDueList" class="mx-stack"></div></article>
+    <article class="mx-card"><div class="mx-card-header"><h3>Recent activity</h3></div><div id="homeActivity" class="mx-timeline"></div></article>
+  </div>
+  <div class="ux2-context-bar" style="margin-top:16px">
+    <button type="button" class="mx-chip" data-ux2-goto="aircraft">Aircraft</button>
+    <button type="button" class="mx-chip" data-ux2-goto="fleet">Fleet</button>
+    <button type="button" class="mx-chip" data-ux2-goto="workOrders">Work Orders</button>
+    <button type="button" class="mx-chip" data-ux2-goto="marketplace">Marketplace</button>
+    <button type="button" class="mx-chip" data-ux2-goto="assetTwin">Digital Twin</button>
+    <button type="button" class="mx-chip" data-ux2-goto="developer">Developer</button>
+    <button type="button" class="mx-btn mx-btn-sm" data-we-open="aircraft:ac-c-gmea" data-we-label="C-GMEA">Open Aircraft C-GMEA</button>
+  </div>
+</div>
+
+<div id="commandWorkspace" class="workspace-page hidden">
+<div class="mx-banner mx-chip-warn" style="margin:8px 12px;padding:8px 12px;border:1px solid var(--mx-border);border-radius:8px;background:var(--mx-surface-2, transparent)">
+  <strong>Simulated operational picture</strong> — Command tracks, weather, and map overlays are demo feeds for RC pilot UX. Live MRO/fleet data remains on Maintenance / Aircraft workspaces.
+</div>
+<section class="stats mission-overview" aria-label="Operational statistics">
   <div class="stat"><div class="label">Mission phase</div><div id="missionPhase" class="value compact-value">DETECTION</div></div>
   <div class="stat"><div class="label">Active targets</div><div id="activeTargets" class="value">2</div></div>
   <div class="stat"><div class="label">Current risk</div><div id="currentRisk" class="risk-value high">HIGH</div></div>
@@ -207,7 +296,10 @@
 
 
 <section id="digitalTwinWorkspace" class="workspace-page enterprise-page hidden">
-  <div class="page-heading"><div><span class="eyebrow">AIRPORT DIGITAL TWIN</span><h1>CYUL Integrated Operational Picture</h1><p>Simulated 3D-style airport asset, target and response visualization.</p></div><div class="page-actions"><button id="twinViewToggle">Switch to 3D Perspective</button><button class="ghost" id="centerTwin">Center Airport</button></div></div>
+  <div class="mx-banner mx-chip-warn" style="margin:8px 12px;padding:8px 12px;border:1px solid var(--mx-border);border-radius:8px">
+    <strong>Simulated Ops Airport Twin</strong> — Visualization demo only. Production asset twins live under <em>Digital Twin</em> (Asset Lifecycle) / Workspace Engine.
+  </div>
+  <div class="page-heading"><div><span class="eyebrow">SIM · AIRPORT DIGITAL TWIN</span><h1>CYUL Integrated Operational Picture</h1><p>Simulated 3D-style airport asset, target and response visualization.</p></div><div class="page-actions"><button id="twinViewToggle">Switch to 3D Perspective</button><button class="ghost" id="centerTwin">Center Airport</button></div></div>
   <div class="twin-layout">
     <article class="card twin-stage">
       <div id="twinMap"></div>
@@ -223,7 +315,10 @@
 </section>
 
 <section id="radarWorkspace" class="workspace-page enterprise-page hidden">
-  <div class="page-heading"><div><span class="eyebrow">SENSOR OPERATIONS</span><h1>Multi-Sensor Radar Console</h1><p>Correlated simulated radar, RF, EO and ADS-B contacts.</p></div><div class="status-pills"><span class="online-pill">RADAR-01 ONLINE</span><span class="online-pill">RADAR-02 ONLINE</span></div></div>
+  <div class="mx-banner mx-chip-warn" style="margin:8px 12px;padding:8px 12px;border:1px solid var(--mx-border);border-radius:8px">
+    <strong>Simulated radar console</strong> — Contacts and sweep animation are demo chrome for RC. Not a live sensor feed.
+  </div>
+  <div class="page-heading"><div><span class="eyebrow">SIM · SENSOR OPERATIONS</span><h1>Multi-Sensor Radar Console</h1><p>Correlated simulated radar, RF, EO and ADS-B contacts.</p></div><div class="status-pills"><span class="online-pill">RADAR-01 ONLINE</span><span class="online-pill">RADAR-02 ONLINE</span></div></div>
   <div class="radar-layout">
     <article class="card radar-scope-card"><div class="radar-scope"><div class="radar-grid"></div><div class="radar-beam"></div><i class="contact c1"></i><i class="contact c2 friendly"></i><i class="contact c3"></i><i class="contact c4 friendly"></i><div class="scope-center"></div></div><div class="scope-footer"><span>RANGE 10 NM</span><span>SWEEP 12 RPM</span><span>MODE: TRACK-WHILE-SCAN</span></div></article>
     <aside class="card contact-panel"><h3>Correlated contacts</h3><div id="radarContacts"></div></aside>
@@ -258,6 +353,9 @@
 
 
 <section id="cloudWorkspace" class="workspace-page enterprise-page hidden">
+  <div class="mx-banner mx-chip-warn" style="margin:8px 12px;padding:8px 12px;border:1px solid var(--mx-border);border-radius:8px">
+    <strong>Simulated Cloud &amp; HA board</strong> — Topology and failover tiles are readiness illustrations, not live cloud control.
+  </div>
   <div class="enterprise-header"><div><span class="eyebrow">Enterprise infrastructure</span><h1>Cloud & High Availability</h1><p>Simulated deployment topology, workload health, capacity, and recovery readiness.</p></div><button id="exportCloud" class="ghost">Export topology JSON</button></div>
   <section class="enterprise-kpis"><article><span>Regions</span><strong>3</strong><small>Montréal · Toronto · Vancouver</small></article><article><span>Service availability</span><strong>99.97%</strong><small>Simulated 30-day SLO</small></article><article><span>API latency</span><strong id="cloudLatency">42 ms</strong><small>p95 simulated</small></article><article><span>Recovery target</span><strong>&lt; 5 min</strong><small>Warm standby</small></article></section>
   <div class="enterprise-grid"><article class="card admin-wide"><h3>Service topology</h3><div id="cloudTopology" class="integration-list"></div></article><article class="card"><h3>Capacity</h3><div class="health-list"><div><span>API nodes</span><b>6 / 8</b></div><div><span>Workers</span><b>12 / 16</b></div><div><span>Database replicas</span><b>3 healthy</b></div><div><span>Object storage</span><b>38%</b></div></div></article><article class="card"><h3>Recovery readiness</h3><div class="health-list"><div><span>Backups</span><b>Current</b></div><div><span>Failover drill</span><b>Passed</b></div><div><span>Encryption</span><b>AES-256</b></div><div><span>Secrets rotation</span><b>14 days</b></div></div></article></div>
@@ -273,18 +371,232 @@
   <div class="enterprise-grid"><article class="card admin-wide"><h3>Control families</h3><div id="complianceControls" class="integration-list"></div></article><article class="card"><h3>Identity & access</h3><div class="health-list"><div><span>Role-based access</span><b>Enabled</b></div><div><span>MFA policy</span><b>Required</b></div><div><span>Session timeout</span><b>15 min</b></div><div><span>Privileged review</span><b>Monthly</b></div></div></article><article class="card"><h3>Data protection</h3><div class="health-list"><div><span>Encryption in transit</span><b>TLS</b></div><div><span>Encryption at rest</span><b>Enabled</b></div><div><span>Evidence integrity</span><b>Hashed</b></div><div><span>Export watermark</span><b>Enabled</b></div></div></article></div>
 </section>
 
-<div id="toast" class="toast" role="status"></div>
+<section id="planningWorkspace" class="workspace-page enterprise-page hidden">
+  <div class="enterprise-header">
+    <div>
+      <span class="eyebrow">Sprint 9 · Maintenance planning</span>
+      <h1>Aircraft Maintenance Program &amp; Forecast</h1>
+      <p>Programs → MPD → Checks → Forecast → Work Packages → Sprint 8 execution.</p>
+    </div>
+    <button id="planRefresh" class="ghost">Refresh planning</button>
+  </div>
+  <section class="enterprise-kpis" id="planDashKpis"></section>
+  <div class="enterprise-grid">
+    <article class="card"><h3>Aircraft status</h3><div id="planAircraftStatus" class="integration-list"></div></article>
+    <article class="card"><h3>Due list</h3><div id="planDueList" class="integration-list"></div></article>
+    <article class="card"><h3>Maintenance programs &amp; MPD</h3><div id="planPrograms" class="integration-list"></div><div id="planMpd" class="integration-list"></div></article>
+    <article class="card"><h3>Checks · AD · SB · EO</h3>
+      <div id="planChecks" class="integration-list"></div>
+      <div id="planAds" class="integration-list"></div>
+      <button id="planGeneratePkg" class="ghost small">Generate WP from first due check</button>
+    </article>
+    <article class="card"><h3>Deferred defects / MEL</h3><div id="planDefects" class="integration-list"></div></article>
+    <article class="card"><h3>Hangar plans</h3><div id="planHangar" class="integration-list"></div></article>
+    <article class="card admin-wide"><h3>Forecast (90 days)</h3>
+      <div id="planForecast" class="integration-list"></div>
+    </article>
+  </div>
+</section>
 
-<div id="loginOverlay" class="login-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
-  <form id="loginForm" class="login-card">
-    <h2 id="loginTitle">Operator sign-in</h2>
-    <p class="muted">Session required. Demo auto-login is disabled.</p>
-    <label>Operator <input id="loginOperator" name="operator" autocomplete="username" required value="operator"></label>
-    <label>Password <input id="loginPassword" name="password" type="password" autocomplete="current-password" required></label>
-    <p id="loginError" class="login-error hidden" role="alert"></p>
-    <button type="submit" id="loginSubmit">Sign in</button>
-  </form>
-</div>
+<section id="logisticsWorkspace" class="workspace-page enterprise-page hidden">
+  <div class="enterprise-header">
+    <div>
+      <span class="eyebrow">Program B · Enterprise logistics</span>
+      <h1>Stores, Stock, Tools &amp; Purchasing</h1>
+      <p>Warehouse → Part master → Stock ledger → Material requests → PO → Receiving. Tool crib and planning shortages.</p>
+    </div>
+    <button id="logRefresh" class="ghost">Refresh logistics</button>
+  </div>
+  <section class="enterprise-kpis" id="logDashKpis"></section>
+  <div class="enterprise-grid">
+    <article class="card"><h3>Warehouses &amp; locations</h3><div id="logWarehouses" class="integration-list"></div><div id="logLocations" class="integration-list"></div></article>
+    <article class="card"><h3>Part master</h3><div id="logParts" class="integration-list"></div></article>
+    <article class="card"><h3>Stock balances</h3><div id="logBalances" class="integration-list"></div></article>
+    <article class="card"><h3>Tools &amp; calibration</h3><div id="logTools" class="integration-list"></div></article>
+    <article class="card"><h3>Material requests</h3><div id="logMaterialRequests" class="integration-list"></div></article>
+    <article class="card"><h3>Purchasing</h3><div id="logPurchaseOrders" class="integration-list"></div><div id="logVendors" class="integration-list"></div></article>
+    <article class="card"><h3>Shortages</h3><div id="logShortages" class="integration-list"></div></article>
+    <article class="card"><h3>Scan</h3>
+      <div class="form-row">
+        <input id="logScanValue" placeholder="Barcode / QR / RFID" />
+        <button id="logScanBtn" class="ghost small">Scan</button>
+      </div>
+      <div id="logScanResult" class="integration-list"></div>
+    </article>
+  </div>
+</section>
+
+<section id="maintenanceWorkspace" class="workspace-page enterprise-page hidden">
+  <div class="enterprise-header">
+    <div>
+      <span class="eyebrow">Sprint 8 · MRO execution</span>
+      <h1>Work Packages, Work Orders &amp; Job Cards</h1>
+      <p>Planner → Work Package → Work Order → Job Card → Technician → Inspection → ACA → Technical Logbook. Offline-ready queue for hangar use.</p>
+    </div>
+    <button id="mroRefresh" class="ghost">Refresh boards</button>
+  </div>
+  <section class="enterprise-kpis">
+    <article><span>Manager</span><div id="mroDash_manager" class="health-list"></div></article>
+    <article><span>Planner</span><div id="mroDash_planner" class="health-list"></div></article>
+    <article><span>Supervisor</span><div id="mroDash_supervisor" class="health-list"></div></article>
+    <article><span>Technician</span><div id="mroDash_technician" class="health-list"></div></article>
+    <article><span>QA</span><div id="mroDash_qa" class="health-list"></div></article>
+    <article><span>ACA</span><div id="mroDash_aca" class="health-list"></div></article>
+  </section>
+  <div class="enterprise-grid">
+    <article class="card"><h3>Planning board</h3>
+      <form id="mroCreatePackageForm" class="stack-form">
+        <label>Aircraft id <input id="mroPkgAircraft" value="ac-c-gmea" required></label>
+        <label>Description <input id="mroPkgDesc" placeholder="A-check visit" required></label>
+        <label>Hangar bay <input id="mroPkgBay" placeholder="Bay-1"></label>
+        <label>Shift <input id="mroPkgShift" placeholder="DAY"></label>
+        <button type="submit">Create work package</button>
+      </form>
+      <div id="mroBayBoard" class="integration-list bay-board" aria-label="Hangar bay planning"></div>
+      <div id="mroPackageList" class="integration-list"></div>
+      <h3>Work orders</h3><div id="mroOrderList" class="integration-list"></div>
+    </article>
+    <article class="card"><h3>Technician — my work</h3>
+      <label class="muted">Employee id <input id="mroTechEmployeeId"></label>
+      <label class="muted">Credential <input id="mroCredential" type="password" name="mro-credential" autocomplete="off"></label>
+      <div id="mroTechCards" class="integration-list"></div>
+      <h3>Notes / photos</h3>
+      <label>Job card id <input id="mroNoteCardId"></label>
+      <label>Note <input id="mroNoteText"></label>
+      <button id="mroAddNote" class="ghost small">Add note</button>
+      <button id="mroAddPhoto" class="ghost small">Upload photo URI</button>
+    </article>
+    <article class="card"><h3>Supervisor</h3>
+      <form id="mroAssignForm">
+        <label>Job card id <input id="mroAssignCardId" required></label>
+        <label>Technician id <input id="mroAssignTechId" required></label>
+        <label>Hangar bay <input id="mroAssignBay" placeholder="Bay-1"></label>
+        <button type="submit">Assign / reassign</button>
+      </form>
+      <div id="mroSupervisorBoard" class="integration-list"></div>
+    </article>
+    <article class="card"><h3>Quality inspection</h3><div id="mroQaQueue" class="integration-list"></div>
+      <h3>ACA release</h3><div id="mroAcaQueue" class="integration-list"></div>
+    </article>
+    <article class="card"><h3>Technical library shortcuts</h3><div id="mroLibraryShortcuts" class="integration-list"></div>
+      <p class="muted">AMM · IPC · AIPC · WDM · FIM · Drawings — license-safe locators from org library.</p>
+    </article>
+    <article class="card admin-wide"><h3>Reports</h3>
+      <label>Report
+        <select id="mroReportSelect">
+          <option value="open_work_orders">Open work orders</option>
+          <option value="delayed_work_orders">Delayed work orders</option>
+          <option value="labor_hours">Labor hours</option>
+          <option value="aircraft_status">Aircraft status</option>
+          <option value="technician_productivity">Technician productivity</option>
+          <option value="inspection_status">Inspection status</option>
+          <option value="release_status">Release status</option>
+        </select>
+      </label>
+      <table class="data-table"><thead><tr><th>Key</th><th>Detail</th><th>Status</th><th>Meta</th></tr></thead><tbody id="mroReportBody"></tbody></table>
+      <h3>Offline sync queue</h3><div id="mroOfflineQueue" class="integration-list"></div>
+    </article>
+  </div>
+</section>
+
+<section id="contextWorkspace" class="workspace-page ux2-page hidden" aria-label="Object workspace engine"></section>
+
+<section id="aircraftWorkspace" class="workspace-page ux2-page hidden">
+  <div class="ux2-page-header"><div><div class="mx-label">Aircraft Workspace</div><h1>Aircraft Registry</h1><p>Search, register, and open serialized aircraft records. Click a row to open the object workspace.</p></div>
+    <button type="button" class="mx-btn mx-btn-ghost" data-ux2-goto="fleet">Fleet view</button></div>
+  <div id="aircraftControls"></div>
+  <div id="aircraftTable" class="hidden" aria-hidden="true"></div>
+</section>
+
+<section id="fleetWorkspace" class="workspace-page ux2-page hidden">
+  <div class="ux2-page-header"><div><div class="mx-label">Fleet Workspace</div><h1>Fleet Portfolio</h1><p>Group aircraft into operational fleets with status and ownership context.</p></div></div>
+  <div id="fleetCards" class="mx-grid mx-grid-3"></div>
+</section>
+
+<section id="workOrdersWorkspace" class="workspace-page ux2-page hidden">
+  <div class="ux2-page-header"><div><div class="mx-label">Work Orders</div><h1>Execution Board</h1><p>Create packages/orders here or deep-execute in MRO. Click a row to open Workspace Engine.</p></div>
+    <button type="button" class="mx-btn" data-ux2-goto="maintenance">Open MRO Execution</button></div>
+  <div class="ux2-context-bar" id="workPackageStrip"></div>
+  <div id="workOrdersControls"></div>
+  <div id="workOrdersTable" class="hidden" aria-hidden="true"></div>
+</section>
+
+<section id="logbookWorkspace" class="workspace-page ux2-page hidden">
+  <div class="ux2-page-header"><div><div class="mx-label">Digital Logbook</div><h1>Technical Log &amp; Release</h1><p>Live tech-log entries from maintenance APIs. ACA actions remain in MRO Execution.</p></div>
+    <button type="button" class="mx-btn mx-btn-ghost" data-ux2-goto="maintenance">ACA / QA boards</button></div>
+  <div id="logbookTimeline" class="mx-card"></div>
+</section>
+
+<section id="engineeringWorkspace" class="workspace-page ux2-page hidden">
+  <div class="ux2-page-header"><div><div class="mx-label">Engineering</div><h1>AD · SB · EO Workspace</h1><p>Live directives from planning APIs, bridged to publications.</p></div></div>
+  <div id="engineeringBoard"></div>
+</section>
+
+<section id="inventoryWorkspace" class="workspace-page ux2-page hidden">
+  <div class="ux2-page-header"><div><div class="mx-label">Inventory</div><h1>Parts, Tools &amp; Stock</h1><p>Stock balances from Logistics; deep scan/PO flows remain in Logistics Ops.</p></div></div>
+  <div id="inventoryHero"></div>
+</section>
+
+<section id="marketplaceWorkspace" class="workspace-page ux2-page hidden">
+  <div class="ux2-page-header"><div><div class="mx-label">Marketplace</div><h1>Aviation Parts Marketplace</h1><p>Catalog, cart, and quotes. Payments are not configured for RC.</p></div></div>
+  <div id="marketplaceControls"></div>
+  <div id="marketplaceGrid" class="mx-grid mx-grid-3"></div>
+</section>
+
+<section id="assetTwinWorkspace" class="workspace-page ux2-page hidden">
+  <div class="ux2-page-header"><div><div class="mx-label">Digital Twin</div><h1>Asset Lifecycle Twin</h1><p>Permanent UUID twins bound to Digital Passports — architecture visualization, not a 3D modeler.</p></div>
+    <button type="button" class="mx-btn mx-btn-ghost" data-ux2-goto="digitalTwin">Ops Airport Twin (SIM)</button></div>
+  <div id="assetTwinStage" style="margin-bottom:16px"></div>
+  <div id="assetTwinList"></div>
+</section>
+
+<section id="authorityWorkspace" class="workspace-page ux2-page hidden">
+  <div class="ux2-page-header"><div><div class="mx-label">Authority Portal</div><h1>Regulatory Bodies</h1><p>Authority catalog for readiness mapping. Not a certification or approval system.</p></div></div>
+  <div id="authorityList" class="mx-grid mx-grid-3"></div>
+</section>
+
+<section id="organizationWorkspace" class="workspace-page ux2-page hidden">
+  <div class="ux2-page-header"><div><div class="mx-label">Organization Portal</div><h1>Companies &amp; Tenants</h1><p>Organization registry with site context controlled from the top bar selectors.</p></div></div>
+  <div id="organizationList"></div>
+</section>
+
+<section id="approvalsWorkspace" class="workspace-page ux2-page hidden">
+  <div class="ux2-page-header"><div><div class="mx-label">Approvals</div><h1>Inbox</h1><p>Pending approval requests from `/approvals`. Tenant-scoped via session.</p></div></div>
+  <div id="approvalsBoard"></div>
+</section>
+
+<section id="techLibraryWorkspace" class="workspace-page ux2-page hidden">
+  <div class="ux2-page-header"><div><div class="mx-label">Technical Library</div><h1>Publications</h1><p>Metadata catalog from publications APIs. License-safe storage remains server-side.</p></div>
+    <button type="button" class="mx-btn mx-btn-ghost" data-ux2-goto="engineering">Engineering AD/SB/EO</button></div>
+  <div id="techLibraryBoard"></div>
+</section>
+
+<section id="oemWorkspace" class="workspace-page ux2-page hidden">
+  <div class="ux2-page-header"><div><div class="mx-label">OEM Portal</div><h1>Manufacturer Catalog</h1><p>Readiness manufacturer list. Full OEM collaboration UI is deferred post-RC.</p></div></div>
+  <div id="oemBoard" class="mx-grid mx-grid-3"></div>
+</section>
+
+<section id="aiWorkspace" class="workspace-page ux2-page hidden">
+  <div class="ux2-page-header"><div><div class="mx-label">AI Workspace</div><h1>Advisory Intelligence</h1><p>Human-in-the-loop AI surfaces. No autonomous execution.</p></div></div>
+  <div id="aiWorkspaceBody"></div>
+</section>
+
+<section id="developerWorkspace" class="workspace-page ux2-page hidden">
+  <div class="ux2-page-header"><div><div class="mx-label">Developer Portal</div><h1>Plugins · Events · Ops</h1><p>Catalogs plus read-only installations, Event Fabric subscriptions, and DLQ.</p></div></div>
+  <div class="mx-grid mx-grid-2">
+    <article class="mx-card"><div class="mx-card-header"><h3>Plugin catalog</h3></div><div id="developerPlugins"></div></article>
+    <article class="mx-card"><div class="mx-card-header"><h3>Event Fabric catalog</h3></div><div id="developerEvents"></div></article>
+    <article class="mx-card"><div class="mx-card-header"><h3>Plugin installations</h3></div><div id="developerInstalls"></div></article>
+    <article class="mx-card"><div class="mx-card-header"><h3>Subscriptions</h3></div><div id="developerSubs"></div></article>
+    <article class="mx-card"><div class="mx-card-header"><h3>Dead letter queue</h3><span class="mx-chip">Read-only</span></div><div id="developerDlq"></div></article>
+  </div>
+</section>
+
+</div><!-- /.ux2-content -->
+</div><!-- /.ux2-main -->
+</div><!-- /#ux2App -->
+
+<div id="toast" class="toast" role="status"></div>
 
 <script src="js/config.local.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>

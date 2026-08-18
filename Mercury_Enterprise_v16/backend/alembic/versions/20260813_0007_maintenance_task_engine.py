@@ -80,9 +80,29 @@ def upgrade() -> None:
         )
     )
 
-    op.create_unique_constraint(
-        "uq_maintenance_task_org_number", "maintenance_tasks", ["organization_id", "task_number"]
-    )
+    # Unique constraint + server_default clears need batch mode on SQLite; no-op wrapper on Postgres.
+    with op.batch_alter_table("maintenance_tasks") as batch_op:
+        batch_op.create_unique_constraint(
+            "uq_maintenance_task_org_number",
+            ["organization_id", "task_number"],
+        )
+        for col in (
+            "task_number",
+            "task_type",
+            "priority",
+            "estimated_hours",
+            "actual_hours",
+            "required_parts",
+            "required_tools",
+            "required_skills",
+            "required_certification",
+            "requires_inspector",
+            "independent_inspection_required",
+            "aca_required",
+            "release_status",
+        ):
+            batch_op.alter_column(col, server_default=None)
+
     op.create_index("ix_maintenance_tasks_task_number", "maintenance_tasks", ["task_number"])
     op.create_index("ix_maintenance_tasks_task_type", "maintenance_tasks", ["task_type"])
     op.create_index("ix_maintenance_tasks_fleet_id", "maintenance_tasks", ["fleet_id"])
@@ -103,20 +123,6 @@ def upgrade() -> None:
     op.create_index("ix_maintenance_tasks_org_fleet", "maintenance_tasks", ["organization_id", "fleet_id"])
     op.create_index("ix_maintenance_tasks_org_pub", "maintenance_tasks", ["organization_id", "publication_id"])
 
-    op.alter_column("maintenance_tasks", "task_number", server_default=None)
-    op.alter_column("maintenance_tasks", "task_type", server_default=None)
-    op.alter_column("maintenance_tasks", "priority", server_default=None)
-    op.alter_column("maintenance_tasks", "estimated_hours", server_default=None)
-    op.alter_column("maintenance_tasks", "actual_hours", server_default=None)
-    op.alter_column("maintenance_tasks", "required_parts", server_default=None)
-    op.alter_column("maintenance_tasks", "required_tools", server_default=None)
-    op.alter_column("maintenance_tasks", "required_skills", server_default=None)
-    op.alter_column("maintenance_tasks", "required_certification", server_default=None)
-    op.alter_column("maintenance_tasks", "requires_inspector", server_default=None)
-    op.alter_column("maintenance_tasks", "independent_inspection_required", server_default=None)
-    op.alter_column("maintenance_tasks", "aca_required", server_default=None)
-    op.alter_column("maintenance_tasks", "release_status", server_default=None)
-
 
 def downgrade() -> None:
     op.drop_index("ix_maintenance_tasks_org_pub", table_name="maintenance_tasks")
@@ -132,22 +138,23 @@ def downgrade() -> None:
     op.drop_index("ix_maintenance_tasks_fleet_id", table_name="maintenance_tasks")
     op.drop_index("ix_maintenance_tasks_task_type", table_name="maintenance_tasks")
     op.drop_index("ix_maintenance_tasks_task_number", table_name="maintenance_tasks")
-    op.drop_constraint("uq_maintenance_task_org_number", "maintenance_tasks", type_="unique")
-    for col in (
-        "release_status",
-        "aca_required",
-        "independent_inspection_required",
-        "requires_inspector",
-        "required_certification",
-        "required_skills",
-        "required_tools",
-        "required_parts",
-        "actual_hours",
-        "estimated_hours",
-        "due_date",
-        "priority",
-        "fleet_id",
-        "task_type",
-        "task_number",
-    ):
-        op.drop_column("maintenance_tasks", col)
+    with op.batch_alter_table("maintenance_tasks") as batch_op:
+        batch_op.drop_constraint("uq_maintenance_task_org_number", type_="unique")
+        for col in (
+            "release_status",
+            "aca_required",
+            "independent_inspection_required",
+            "requires_inspector",
+            "required_certification",
+            "required_skills",
+            "required_tools",
+            "required_parts",
+            "actual_hours",
+            "estimated_hours",
+            "due_date",
+            "priority",
+            "fleet_id",
+            "task_type",
+            "task_number",
+        ):
+            batch_op.drop_column(col)

@@ -34,9 +34,12 @@ def test_seeded_catalog_and_east_fleet():
     assert fleets.status_code == 200
     assert any(item["code"] == "EAST-NB" for item in fleets.json())
 
-    aircraft = client.get("/api/v1/fleet/aircraft")
+    aircraft = client.get("/api/v1/fleet/aircraft", params={"limit": 500})
     assert aircraft.status_code == 200
-    marks = {item.get("current_registration") for item in aircraft.json()}
+    assert len(aircraft.json()) >= 1
+    regs = client.get("/api/v1/fleet/registrations", params={"limit": 500})
+    assert regs.status_code == 200
+    marks = {item.get("registration_mark") for item in regs.json()}
     assert "C-GMEA" in marks
 
 
