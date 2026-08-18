@@ -181,6 +181,10 @@ export async function uxFetchWorkOrderDashboard(params = "") {
   return softGet(`/work-orders/dashboard${q}`);
 }
 
+export async function uxFetchLogisticsDashboard() {
+  return softGet("/logistics/dashboard");
+}
+
 export async function uxFetchWorkOrderReport(report) {
   return softGet(`/work-orders/reports/${encodeURIComponent(report)}`);
 }

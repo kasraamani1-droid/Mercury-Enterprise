@@ -9,7 +9,7 @@
 5. **Deep link** — `#/object/aircraft/ac-c-gmea`  
 6. **Related chips** inside an open workspace (e.g. related work orders, job cards, logbook)
 
-Job cards open as `jobCard:{id}` object sessions (not a separate area page). `data-we-tab` on `data-we-open` jumps to a specific object tab (for example aircraft logbook) while keeping other object sessions.
+Job cards open as `jobCard:{id}` object sessions (not a separate area page). Parts, material requests, purchase orders, and tools open as `part:` / `materialRequest:` / `purchaseOrder:` / `tool:` sessions from Logistics Ops and Inventory. `data-we-tab` on `data-we-open` jumps to a specific object tab (for example job-card materials) while keeping other object sessions.
 
 ## Tab bar model
 

@@ -151,9 +151,6 @@ export function showWorkspace(name){
   if(name==="planning"||name==="engineering"){
     import("./planning.js").then((m)=>m.refreshPlanningWorkspace()).catch(()=>{});
   }
-  if(name==="logistics"||name==="inventory"){
-    import("./logistics.js").then((m)=>m.refreshLogisticsWorkspace()).catch(()=>{});
-  }
 }
 function renderContacts(){el("radarContacts").innerHTML=contacts.map(r=>`<div class="contact-row"><b>${r[0]}</b><span>${r[1]}<small>${r[2]} · ${r[3]}</small></span><em>${r[5]}</em></div>`).join("")}
 function renderPresence(){const html=people.map(p=>`<div><span>●</span><b>${p[0]}<small>${p[1]}</small></b><em>${p[2]}</em></div>`).join("");el("operatorPresence").innerHTML=html;el("responseUnits").innerHTML=people.slice(2).map(p=>`<div><span>●</span><b>${p[0]}<small>${p[1]}</small></b><em>${p[2]}</em></div>`).join("")}

@@ -34,6 +34,8 @@ Validated transitions are enforced in `WorkOrderService.JC_TRANSITIONS`. Invalid
 | `released` | ACA release complete (logbook written) |
 | `closed` | Terminal administrative close |
 
+Stores demand is a **material request** (`job_card_id` / `work_order_id`). Job-card Materials tab: create MR → approve → reserve → issue. Logistics Ops lists `waiting_parts` cards. Returning the card to `in_progress` is a job-card transition after material is available.
+
 ## APIs
 
 | Method | Path | Permission |

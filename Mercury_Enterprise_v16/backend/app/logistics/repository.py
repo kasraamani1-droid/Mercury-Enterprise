@@ -1049,6 +1049,8 @@ class LogisticsRepository:
         organization_id: str,
         status: str | None = None,
         work_package_id: str | None = None,
+        work_order_id: str | None = None,
+        job_card_id: str | None = None,
         limit: int = 100,
         offset: int = 0,
     ) -> list[MaterialRequest]:
@@ -1058,6 +1060,10 @@ class LogisticsRepository:
             stmt = stmt.where(MaterialRequest.status == status)
         if work_package_id:
             stmt = stmt.where(MaterialRequest.work_package_id == work_package_id)
+        if work_order_id:
+            stmt = stmt.where(MaterialRequest.work_order_id == work_order_id)
+        if job_card_id:
+            stmt = stmt.where(MaterialRequest.job_card_id == job_card_id)
         return list(self.db.scalars(stmt.order_by(MaterialRequest.created_at.desc()).limit(lim).offset(off)).all())
 
     def count_material_requests(self, organization_id: str, *, statuses: tuple[str, ...]) -> int:

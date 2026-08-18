@@ -27,7 +27,9 @@ Personas guide documentation and future override engines:
 
 ## Domains covered
 
-Org · Fleet · Components/Configuration · Publications · Personnel · Maintenance · Work Orders / Job Cards · Certification · Logbook · Signatures · Store/Planner/Inspector/Engineering/QA permissions
+Org · Fleet · Components/Configuration · Publications · Personnel · Maintenance · Work Orders / Job Cards · Certification · Logbook · Signatures · Store/Planner/Inspector/Engineering/QA permissions · Logistics (session: Viewer/Reviewer read; Operator/Administrator stores & purchase; Reviewer tools)
+
+Aviation persona names (Technician, Store, Planner, …) are **not** session principals. The Logistics operator UI hides stores mutations unless the session role is Operator or Administrator.
 
 ## Isolation
 

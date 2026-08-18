@@ -18,6 +18,8 @@ Technicians **cannot**:
 - Mutate attachments/notes on `released` / `closed` cards
 - Sign inspection for work they performed (segregation of duties)
 
+Runtime sessions do not include a Technician persona. Operator may create material requests (`logistics.stores`). Viewer cannot. Requesting parts is the Materials tab / Logistics Ops MR flow — not a separate “Request Parts” API.
+
 ## Complete work
 
 `POST /api/v1/work-orders/job-cards/{id}/complete-work` requires live credential, linked employee binding, and writes the `performed` certification event on the linked MaintenanceTask.
@@ -28,4 +30,4 @@ Transitions and complete-work payloads may queue in `localStorage` and flush whe
 
 ## Related
 
-[JOB_CARDS.md](JOB_CARDS.md) · [ACA_RELEASE.md](ACA_RELEASE.md) · [TECHNICAL_LIBRARY.md](TECHNICAL_LIBRARY.md)
+[JOB_CARDS.md](JOB_CARDS.md) · [ACA_RELEASE.md](ACA_RELEASE.md) · [TECHNICAL_LIBRARY.md](TECHNICAL_LIBRARY.md) · [MATERIAL_PLANNING.md](MATERIAL_PLANNING.md) · [INVENTORY.md](INVENTORY.md)

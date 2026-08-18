@@ -33,6 +33,10 @@ export async function loadObjectRecord(type, id) {
     organization: `/organizations/${encodeURIComponent(id)}`,
     digitalTwin: `/twin/twins/${encodeURIComponent(id)}`,
     supplier: `/logistics/vendors/${encodeURIComponent(id)}`,
+    part: `/logistics/parts/${encodeURIComponent(id)}`,
+    materialRequest: `/logistics/material-requests/${encodeURIComponent(id)}`,
+    purchaseOrder: `/logistics/purchase-orders/${encodeURIComponent(id)}`,
+    tool: `/logistics/tools/${encodeURIComponent(id)}`,
   };
 
   if (routes[type]) {
@@ -139,7 +143,7 @@ export async function loadRelatedBundle(type, id, record) {
 
   if (type === "workOrder") {
     const aircraftId = record?.aircraft_id;
-    const [cards, session, employees, aircraft, logbook] = await Promise.all([
+    const [cards, session, employees, aircraft, logbook, mrs, parts, locations, warehouses] = await Promise.all([
       softGet(`/work-orders/job-cards?work_order_id=${encodeURIComponent(id)}&limit=50`),
       softGet(`/auth/session`),
       softGet(`/personnel/employees?limit=80`),
@@ -147,6 +151,10 @@ export async function loadRelatedBundle(type, id, record) {
       aircraftId
         ? softGet(`/maintenance/logbook?aircraft_id=${encodeURIComponent(aircraftId)}&limit=40`)
         : Promise.resolve({ ok: true, status: 200, data: [], error: null }),
+      softGet(`/logistics/material-requests?work_order_id=${encodeURIComponent(id)}&limit=50`),
+      softGet(`/logistics/parts?limit=80`),
+      softGet(`/logistics/locations?limit=80`),
+      softGet(`/logistics/warehouses`),
     ]);
     bundle.jobCardsLoad = { ok: cards.ok, status: cards.status, error: cards.error || "" };
     bundle.jobCards = listify(cards.data);
@@ -155,6 +163,11 @@ export async function loadRelatedBundle(type, id, record) {
     bundle.aircraft = aircraft.ok ? aircraft.data : null;
     bundle.logbookLoad = { ok: logbook.ok, status: logbook.status, error: logbook.error || "" };
     bundle.logbook = listify(logbook.data);
+    bundle.materialRequestsLoad = { ok: mrs.ok, status: mrs.status, error: mrs.error || "" };
+    bundle.materialRequests = listify(mrs.data);
+    bundle.parts = listify(parts.data);
+    bundle.locations = listify(locations.data);
+    bundle.warehouses = listify(warehouses.data);
     bundle.timeline = bundle.jobCards.slice(0, 12).map((card) => ({
       title: `${card.job_card_number || card.id} · ${card.status || ""}`,
       at: card.updated_at || card.created_at || "",
@@ -166,7 +179,7 @@ export async function loadRelatedBundle(type, id, record) {
     const orderId = record?.work_order_id;
     const aircraftId = record?.aircraft_id;
     const taskId = record?.maintenance_task_id;
-    const [session, employees, attachments, order, aircraft, logbook, audit] = await Promise.all([
+    const [session, employees, attachments, order, aircraft, logbook, audit, mrs, parts, locations, warehouses] = await Promise.all([
       softGet(`/auth/session`),
       softGet(`/personnel/employees?limit=80`),
       softGet(`/work-orders/job-cards/${encodeURIComponent(id)}/attachments`),
@@ -176,6 +189,10 @@ export async function loadRelatedBundle(type, id, record) {
         ? softGet(`/maintenance/logbook?aircraft_id=${encodeURIComponent(aircraftId)}&limit=40`)
         : Promise.resolve({ ok: true, status: 200, data: [], error: null }),
       taskId ? softGet(`/maintenance/tasks/${encodeURIComponent(taskId)}/audit-trail`) : Promise.resolve({ ok: false, data: null }),
+      softGet(`/logistics/material-requests?job_card_id=${encodeURIComponent(id)}&limit=50`),
+      softGet(`/logistics/parts?limit=80`),
+      softGet(`/logistics/locations?limit=80`),
+      softGet(`/logistics/warehouses`),
     ]);
     bundle.sessionRole = session.ok ? session.data?.role || "" : "";
     bundle.employees = listify(employees.data);
@@ -186,6 +203,11 @@ export async function loadRelatedBundle(type, id, record) {
     bundle.logbookLoad = { ok: logbook.ok, status: logbook.status, error: logbook.error || "" };
     bundle.logbook = listify(logbook.data);
     bundle.auditTrail = audit.ok ? audit.data : null;
+    bundle.materialRequestsLoad = { ok: mrs.ok, status: mrs.status, error: mrs.error || "" };
+    bundle.materialRequests = listify(mrs.data);
+    bundle.parts = listify(parts.data);
+    bundle.locations = listify(locations.data);
+    bundle.warehouses = listify(warehouses.data);
     const events = listify(audit.data?.certification_events);
     bundle.timeline = events.slice(0, 12).map((event) => ({
       title: event.step || event.event_type || "Certification event",
@@ -237,6 +259,89 @@ export async function loadRelatedBundle(type, id, record) {
   if (type === "organization") {
     const sites = await softGet(`/organizations/${encodeURIComponent(id)}/sites`);
     bundle.sites = listify(sites.data);
+  }
+
+  if (type === "part") {
+    const [session, balances, units, movements, reservations, locations, warehouses, parts, transfers] = await Promise.all([
+      softGet(`/auth/session`),
+      softGet(`/logistics/stock/balances?part_master_id=${encodeURIComponent(id)}&limit=200`),
+      softGet(`/logistics/stock/units?part_master_id=${encodeURIComponent(id)}&limit=200`),
+      softGet(`/logistics/stock/movements?part_master_id=${encodeURIComponent(id)}&limit=50`),
+      softGet(`/logistics/reservations?part_master_id=${encodeURIComponent(id)}&limit=50`),
+      softGet(`/logistics/locations?limit=80`),
+      softGet(`/logistics/warehouses`),
+      softGet(`/logistics/parts?limit=80`),
+      softGet(`/logistics/transfers?limit=30`),
+    ]);
+    bundle.sessionRole = session.ok ? session.data?.role || "" : "";
+    bundle.balancesLoad = { ok: balances.ok, status: balances.status, error: balances.error || "" };
+    bundle.balances = listify(balances.data);
+    bundle.units = listify(units.data);
+    bundle.movements = listify(movements.data);
+    bundle.reservations = listify(reservations.data);
+    bundle.locations = listify(locations.data);
+    bundle.warehouses = listify(warehouses.data);
+    bundle.parts = listify(parts.data);
+    bundle.transfers = listify(transfers.data);
+    bundle.timeline = bundle.movements.slice(0, 12).map((row) => ({
+      title: row.movement_type || "Movement",
+      at: row.created_at || "",
+      detail: [row.qty, row.condition, row.reference_type].filter(Boolean).join(" · "),
+    }));
+  }
+
+  if (type === "materialRequest") {
+    const [session, locations, order, card] = await Promise.all([
+      softGet(`/auth/session`),
+      softGet(`/logistics/locations?limit=80`),
+      record?.work_order_id
+        ? softGet(`/work-orders/orders/${encodeURIComponent(record.work_order_id)}`)
+        : Promise.resolve({ ok: false, data: null }),
+      record?.job_card_id
+        ? softGet(`/work-orders/job-cards/${encodeURIComponent(record.job_card_id)}`)
+        : Promise.resolve({ ok: false, data: null }),
+    ]);
+    bundle.sessionRole = session.ok ? session.data?.role || "" : "";
+    bundle.locations = listify(locations.data);
+    bundle.workOrder = order.ok ? order.data : null;
+    bundle.jobCard = card.ok ? card.data : null;
+    bundle.lines = record?.lines || [];
+  }
+
+  if (type === "purchaseOrder") {
+    const [session, locations, receipts] = await Promise.all([
+      softGet(`/auth/session`),
+      softGet(`/logistics/locations?limit=80`),
+      softGet(`/logistics/receipts?purchase_order_id=${encodeURIComponent(id)}&limit=50`),
+    ]);
+    bundle.sessionRole = session.ok ? session.data?.role || "" : "";
+    bundle.locations = listify(locations.data);
+    bundle.receipts = listify(receipts.data);
+    const details = await Promise.all(
+      bundle.receipts.slice(0, 8).map((row) => softGet(`/logistics/receipts/${encodeURIComponent(row.id)}`))
+    );
+    bundle.receiptDetails = {};
+    details.forEach((res, index) => {
+      const rid = bundle.receipts[index]?.id;
+      if (rid && res.ok && res.data) {
+        bundle.receiptDetails[rid] = res.data;
+        bundle.receipts[index] = { ...bundle.receipts[index], ...res.data };
+      }
+    });
+  }
+
+  if (type === "tool") {
+    const [session, history] = await Promise.all([
+      softGet(`/auth/session`),
+      softGet(`/logistics/tools/${encodeURIComponent(id)}/history`),
+    ]);
+    bundle.sessionRole = session.ok ? session.data?.role || "" : "";
+    bundle.history = listify(history.data);
+    bundle.timeline = bundle.history.slice(0, 12).map((row) => ({
+      title: row.event_type || "Tool event",
+      at: row.created_at || "",
+      detail: row.details || row.performed_by || "",
+    }));
   }
 
   // Synthetic timeline seed from record
@@ -298,6 +403,19 @@ export async function searchObjects(query) {
         });
       });
   }
+  const parts = await softGet(`/logistics/parts?q=${encodeURIComponent(q)}&limit=20`);
+  if (parts.ok) {
+    listify(parts.data)
+      .slice(0, 8)
+      .forEach((row) => {
+        results.push({
+          type: "part",
+          id: String(row.id),
+          label: row.oem_part_number || row.description || row.id,
+          meta: row.part_class || "part",
+        });
+      });
+  }
   return results;
 }
 
@@ -310,5 +428,9 @@ function mapSearchType(kind) {
   if (k.includes("product") || k.includes("listing")) return "marketplaceListing";
   if (k.includes("org")) return "organization";
   if (k.includes("component")) return "component";
+  if (k.includes("part")) return "part";
+  if (k.includes("material")) return "materialRequest";
+  if (k.includes("purchase") || k.includes("po")) return "purchaseOrder";
+  if (k.includes("tool")) return "tool";
   return "project";
 }

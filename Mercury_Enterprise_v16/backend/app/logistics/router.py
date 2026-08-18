@@ -962,6 +962,8 @@ def list_material_requests(
     organization_id: str | None = None,
     status_filter: str | None = None,
     work_package_id: str | None = None,
+    work_order_id: str | None = None,
+    job_card_id: str | None = None,
     limit: int = 100,
     offset: int = 0,
     db: Session = Depends(get_db),
@@ -972,6 +974,8 @@ def list_material_requests(
         organization_id=organization_id,
         status=status_filter,
         work_package_id=work_package_id,
+        work_order_id=work_order_id,
+        job_card_id=job_card_id,
         limit=limit,
         offset=offset,
     )
@@ -1367,6 +1371,15 @@ def list_receipts(
         limit=limit,
         offset=offset,
     )
+
+
+@router.get("/receipts/{receipt_id}", response_model=ReceiptDetailOut)
+def get_receipt(
+    receipt_id: str,
+    db: Session = Depends(get_db),
+    session: Session_ = Depends(require_logistics_read),
+) -> ReceiptDetailOut:
+    return _svc(db).get_receipt(receipt_id, _actor(session))
 
 
 @router.post("/receipts/{receipt_id}/inspect", response_model=ReceiptDetailOut)

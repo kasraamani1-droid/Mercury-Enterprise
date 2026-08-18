@@ -8,17 +8,17 @@
 - Aircraft, Fleet, Work Orders, Logbook, Engineering, Inventory shells
 - Marketplace, Asset Twin, Authority, Organization, AI, Developer portals
 - Workspace Engine — object-centric sessions (tabs, rail, AI, deep links)
-- Docs: review, navigation, wireframes, inventory, readiness, workspace engine
+- Aircraft Workspace Engine Configuration/Components (PR #9)
+- Maintenance operations integration — WO / job card / logbook (PR #10)
+- Enterprise logistics operator integration — stores desk, materials bridge, part/MR/PO/tool objects
 
 ## Near term (UX 2.1)
 
-1. Aircraft detail drawer (configuration, components, due items)
-2. Marketplace quote/cart flows in UI (API already exists)
-3. Twin detail: history + configuration panels
-4. Digital Logbook CRUD against tech-log endpoints
-5. SVG icon set; remove remaining emoji chrome in legacy topbar
-6. Focus-visible audit + skip links
-7. Network collaboration workspace (API Program 14)
+1. Marketplace quote/cart already in UI; orders/payments remain deferred
+2. Twin detail: history + configuration panels
+3. SVG icon set; remove remaining emoji chrome in legacy topbar
+4. Focus-visible audit + skip links
+5. Network collaboration workspace (API Program 14)
 
 ## Mid term (UX 2.2)
 
