@@ -11,6 +11,7 @@
 - Aircraft Workspace Engine Configuration/Components (PR #9)
 - Maintenance operations integration — WO / job card / logbook (PR #10)
 - Enterprise logistics operator integration — stores desk, materials bridge, part/MR/PO/tool objects
+- Maintenance planning operator integration — due/forecast desk, AD/SB/EO, MEL/defects, selected-check WP generation
 
 ## Near term (UX 2.1)
 

@@ -417,6 +417,12 @@ class PlanningService:
     def assert_org_access(self, *, username: str, session_role: str, organization_id: str) -> None:
         self.org.assert_org_access(username=username, session_role=session_role, organization_id=organization_id)
 
+    def _require_live(self, row, *, username: str, session_role: str, not_found: str):
+        if row is None or getattr(row, "deleted_at", None) is not None:
+            raise HTTPException(status_code=404, detail=not_found)
+        self.assert_org_access(username=username, session_role=session_role, organization_id=row.organization_id)
+        return row
+
     # --- serializers ---
     @staticmethod
     def program_out(row: MaintenanceProgram) -> ProgramOut:
@@ -727,6 +733,12 @@ class PlanningService:
             )
         ]
 
+    def get_check(self, check_id: str, *, username: str, session_role: str) -> CheckOut:
+        row = self._require_live(
+            self.repo.get_check(check_id), username=username, session_role=session_role, not_found="Maintenance check not found"
+        )
+        return self.check_out(row)
+
     def create_check(
         self, payload: CheckCreate, *, username: str, session_role: str, session_org_id: str
     ) -> CheckOut:
@@ -810,6 +822,12 @@ class PlanningService:
             )
         ]
 
+    def get_ad(self, ad_id: str, *, username: str, session_role: str) -> AdOut:
+        row = self._require_live(
+            self.repo.get_ad(ad_id), username=username, session_role=session_role, not_found="Airworthiness directive not found"
+        )
+        return self.ad_out(row)
+
     def create_ad(self, payload: AdCreate, *, username: str, session_role: str, session_org_id: str) -> AdOut:
         org_id = self.resolve_org_id(
             username=username,
@@ -875,6 +893,12 @@ class PlanningService:
             )
         ]
 
+    def get_sb(self, sb_id: str, *, username: str, session_role: str) -> SbOut:
+        row = self._require_live(
+            self.repo.get_sb(sb_id), username=username, session_role=session_role, not_found="Service bulletin not found"
+        )
+        return self.sb_out(row)
+
     def create_sb(self, payload: SbCreate, *, username: str, session_role: str, session_org_id: str) -> SbOut:
         org_id = self.resolve_org_id(
             username=username,
@@ -938,6 +962,12 @@ class PlanningService:
                 organization_id=org_id, limit=int(filters.get("limit") or 100), offset=int(filters.get("offset") or 0)
             )
         ]
+
+    def get_eo(self, eo_id: str, *, username: str, session_role: str) -> EoOut:
+        row = self._require_live(
+            self.repo.get_eo(eo_id), username=username, session_role=session_role, not_found="Engineering order not found"
+        )
+        return self.eo_out(row)
 
     def create_eo(self, payload: EoCreate, *, username: str, session_role: str, session_org_id: str) -> EoOut:
         org_id = self.resolve_org_id(
@@ -1023,6 +1053,12 @@ class PlanningService:
             )
         ]
 
+    def get_defect(self, defect_id: str, *, username: str, session_role: str) -> DefectOut:
+        row = self._require_live(
+            self.repo.get_defect(defect_id), username=username, session_role=session_role, not_found="Deferred defect not found"
+        )
+        return self.defect_out(row)
+
     def create_defect(
         self, payload: DefectCreate, *, username: str, session_role: str, session_org_id: str
     ) -> DefectOut:
@@ -1102,6 +1138,12 @@ class PlanningService:
             )
         ]
 
+    def get_mel(self, mel_id: str, *, username: str, session_role: str) -> MelItemOut:
+        row = self._require_live(
+            self.repo.get_mel(mel_id), username=username, session_role=session_role, not_found="MEL/CDL item not found"
+        )
+        return self.mel_out(row)
+
     def create_mel(self, payload: MelItemCreate, *, username: str, session_role: str, session_org_id: str) -> MelItemOut:
         org_id = self.resolve_org_id(
             username=username,
@@ -1171,11 +1213,16 @@ class PlanningService:
             self.repo.add_utilization(row)
         row.location = (payload.location or "").strip()
         row.ops_status = payload.ops_status
-        row.flight_hours = payload.flight_hours
-        row.flight_cycles = payload.flight_cycles
-        row.landings = payload.landings
-        row.engine_hours = payload.engine_hours
-        row.apu_hours = payload.apu_hours
+        if payload.flight_hours is not None:
+            row.flight_hours = payload.flight_hours
+        if payload.flight_cycles is not None:
+            row.flight_cycles = payload.flight_cycles
+        if payload.landings is not None:
+            row.landings = payload.landings
+        if payload.engine_hours is not None:
+            row.engine_hours = payload.engine_hours
+        if payload.apu_hours is not None:
+            row.apu_hours = payload.apu_hours
         row.traffic_light = "red" if payload.ops_status == "grounded" else row.traffic_light or "green"
         row.updated_at = now
         self._commit_or_conflict(detail="Utilization conflict")

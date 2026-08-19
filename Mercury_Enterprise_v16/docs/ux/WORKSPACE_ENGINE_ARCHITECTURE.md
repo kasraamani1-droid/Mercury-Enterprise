@@ -22,6 +22,7 @@ frontend/js/workspace-engine/
   configuration.js  Aircraft configuration / components operator UI
   maintenance-ops.js  Work order, job card, logbook, planning-context operator UI
   logistics-ops.js  Part, material request, PO receiving, tool crib, WO/JC materials
+  planning-ops.js  Check, AD/SB/EO, finding, MEL, aircraft planning bridge
   engine.js     openObject / close / tab / mount
   index.js      Public exports
 frontend/css/workspace-engine.css

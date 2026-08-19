@@ -45,6 +45,7 @@ import {
 import { sessionCanManageWorkOrders } from "../workspace-engine/maintenance-ops.js";
 import { qtyAvailable } from "../workspace-engine/logistics-ops.js";
 import { refreshLogisticsWorkspace } from "../logistics.js";
+import { refreshPlanningWorkspace } from "../planning.js";
 
 function setHtml(id, html) {
   const node = document.getElementById(id);
@@ -534,9 +535,9 @@ export async function refreshEngineeringWorkspace() {
   setHtml(
     "engineeringBoard",
     `<div class="mx-grid mx-grid-3">
-      ${panel("Airworthiness Directives", ads, (i) => `<div style="padding:8px 0;border-bottom:1px solid var(--mx-border)"><strong>${esc(i.ad_number || i.code || i.id)}</strong><div class="mx-subtitle">${esc(i.title || "")} · ${esc(i.compliance_status || i.status || "")}</div></div>`)}
-      ${panel("Service Bulletins", sbs, (i) => `<div style="padding:8px 0;border-bottom:1px solid var(--mx-border)"><strong>${esc(i.sb_number || i.code || i.id)}</strong><div class="mx-subtitle">${esc(i.title || "")} · ${esc(i.compliance_status || i.status || "")}</div></div>`)}
-      ${panel("Engineering Orders", eos, (i) => `<div style="padding:8px 0;border-bottom:1px solid var(--mx-border)"><strong>${esc(i.eo_number || i.code || i.id)}</strong><div class="mx-subtitle">${esc(i.title || "")} · ${esc(i.status || "")}</div></div>`)}
+      ${panel("Airworthiness Directives", ads, (i) => `<div style="padding:8px 0;border-bottom:1px solid var(--mx-border)" class="we-row-open" data-we-open="airworthinessDirective:${esc(String(i.id || ""))}" data-we-label="${esc(i.ad_number || i.id)}"><strong>${esc(i.ad_number || i.code || i.id)}</strong><div class="mx-subtitle">${esc(i.title || "")} · ${esc(i.compliance_status || i.status || "")}</div></div>`)}
+      ${panel("Service Bulletins", sbs, (i) => `<div style="padding:8px 0;border-bottom:1px solid var(--mx-border)" class="we-row-open" data-we-open="serviceBulletin:${esc(String(i.id || ""))}" data-we-label="${esc(i.sb_number || i.id)}"><strong>${esc(i.sb_number || i.code || i.id)}</strong><div class="mx-subtitle">${esc(i.title || "")} · ${esc(i.compliance_status || i.status || "")}</div></div>`)}
+      ${panel("Engineering Orders", eos, (i) => `<div style="padding:8px 0;border-bottom:1px solid var(--mx-border)" class="we-row-open" data-we-open="engineeringOrder:${esc(String(i.id || ""))}" data-we-label="${esc(i.eo_number || i.id)}"><strong>${esc(i.eo_number || i.code || i.id)}</strong><div class="mx-subtitle">${esc(i.title || "")} · ${esc(i.status || "")}</div></div>`)}
     </div>
     <div class="mx-row" style="margin-top:12px;gap:8px">
       <button type="button" class="mx-btn mx-btn-ghost" data-ux2-goto="planning">Open Maintenance Planning</button>
@@ -896,6 +897,7 @@ const LOADERS = {
   engineering: refreshEngineeringWorkspace,
   inventory: refreshInventoryWorkspace,
   logistics: refreshLogisticsWorkspace,
+  planning: refreshPlanningWorkspace,
   marketplace: refreshMarketplaceWorkspace,
   assetTwin: refreshAssetTwinWorkspace,
   authority: refreshAuthorityWorkspace,

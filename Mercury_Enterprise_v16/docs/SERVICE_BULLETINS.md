@@ -4,4 +4,5 @@ Types: `sb` · `asb` · `csb` · `rsb`
 
 Priority: `recommended` | `mandatory` · compliance + due date + history.
 
-`GET/POST /api/v1/planning/service-bulletins`
+`GET/POST /api/v1/planning/service-bulletins`  
+`GET /api/v1/planning/service-bulletins/{id}`

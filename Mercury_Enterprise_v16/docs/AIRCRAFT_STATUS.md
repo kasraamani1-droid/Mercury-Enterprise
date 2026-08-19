@@ -7,3 +7,5 @@ Ops status: available · grounded · maintenance · ferry
 
 `PUT /api/v1/planning/utilization`  
 `GET /api/v1/planning/aircraft-status`
+
+Omitted utilization counters (`flight_hours`, `flight_cycles`, landings, engine/APU hours) keep the stored values. Ops status and location are still replaced on each PUT.

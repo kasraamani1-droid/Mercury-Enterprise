@@ -169,6 +169,73 @@ export const OBJECT_TYPES = {
     ],
     resolveLabel: (o) => o.defect_number || o.code || o.title || o.id,
   },
+  check: {
+    type: "check",
+    label: "Maintenance Check",
+    icon: "◷",
+    tabs: [
+      { id: "overview", label: "Check" },
+      { id: "history", label: "History" },
+      { id: "aiAssistant", label: "AI Assistant" },
+    ],
+    quickActions: [
+      { id: "generateWp", label: "Generate work package" },
+      { id: "openAircraft", label: "Open aircraft" },
+      { id: "pin", label: "Pin object" },
+    ],
+    resolveLabel: (o) => o.check_code || o.title || o.id,
+  },
+  airworthinessDirective: {
+    type: "airworthinessDirective",
+    label: "Airworthiness Directive",
+    icon: "!",
+    tabs: [
+      { id: "overview", label: "AD" },
+      { id: "history", label: "History" },
+      { id: "aiAssistant", label: "AI Assistant" },
+    ],
+    quickActions: [{ id: "pin", label: "Pin object" }],
+    resolveLabel: (o) => o.ad_number || o.title || o.id,
+  },
+  serviceBulletin: {
+    type: "serviceBulletin",
+    label: "Service Bulletin",
+    icon: "▤",
+    tabs: [
+      { id: "overview", label: "SB" },
+      { id: "history", label: "History" },
+      { id: "aiAssistant", label: "AI Assistant" },
+    ],
+    quickActions: [{ id: "pin", label: "Pin object" }],
+    resolveLabel: (o) => o.sb_number || o.title || o.id,
+  },
+  engineeringOrder: {
+    type: "engineeringOrder",
+    label: "Engineering Order",
+    icon: "⌬",
+    tabs: [
+      { id: "overview", label: "EO" },
+      { id: "history", label: "History" },
+      { id: "aiAssistant", label: "AI Assistant" },
+    ],
+    quickActions: [
+      { id: "approveEo", label: "Approve EO" },
+      { id: "pin", label: "Pin object" },
+    ],
+    resolveLabel: (o) => o.eo_number || o.title || o.id,
+  },
+  melItem: {
+    type: "melItem",
+    label: "MEL / CDL Item",
+    icon: "✓",
+    tabs: [
+      { id: "overview", label: "Item" },
+      { id: "history", label: "History" },
+      { id: "aiAssistant", label: "AI Assistant" },
+    ],
+    quickActions: [{ id: "pin", label: "Pin object" }],
+    resolveLabel: (o) => o.item_number || o.title || o.id,
+  },
   component: {
     type: "component",
     label: "Component",

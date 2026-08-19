@@ -241,6 +241,15 @@ def create_check(
     return out
 
 
+@router.get("/checks/{check_id}", response_model=CheckOut)
+def get_check(
+    check_id: str,
+    db: Session = Depends(get_db),
+    session: dict[str, datetime | str] = Depends(require_planning_read),
+) -> CheckOut:
+    return _svc(db).get_check(check_id, username=str(session["operator"]), session_role=str(session["role"]))
+
+
 @router.post("/checks/generate-package", response_model=GeneratePackageOut, status_code=201)
 def generate_package(
     payload: GeneratePackageRequest,
@@ -298,6 +307,15 @@ def create_ad(
     return out
 
 
+@router.get("/ads/{ad_id}", response_model=AdOut)
+def get_ad(
+    ad_id: str,
+    db: Session = Depends(get_db),
+    session: dict[str, datetime | str] = Depends(require_planning_read),
+) -> AdOut:
+    return _svc(db).get_ad(ad_id, username=str(session["operator"]), session_role=str(session["role"]))
+
+
 @router.get("/service-bulletins", response_model=list[SbOut])
 def list_sbs(
     organization_id: str | None = None,
@@ -332,6 +350,15 @@ def create_sb(
     return out
 
 
+@router.get("/service-bulletins/{sb_id}", response_model=SbOut)
+def get_sb(
+    sb_id: str,
+    db: Session = Depends(get_db),
+    session: dict[str, datetime | str] = Depends(require_planning_read),
+) -> SbOut:
+    return _svc(db).get_sb(sb_id, username=str(session["operator"]), session_role=str(session["role"]))
+
+
 @router.get("/engineering-orders", response_model=list[EoOut])
 def list_eos(
     organization_id: str | None = None,
@@ -364,6 +391,15 @@ def create_eo(
     )
     _audit(db, session, action="planning.eo.create", target_type="engineering_order", target_id=out.id, organization_id=out.organization_id)
     return out
+
+
+@router.get("/engineering-orders/{eo_id}", response_model=EoOut)
+def get_eo(
+    eo_id: str,
+    db: Session = Depends(get_db),
+    session: dict[str, datetime | str] = Depends(require_planning_read),
+) -> EoOut:
+    return _svc(db).get_eo(eo_id, username=str(session["operator"]), session_role=str(session["role"]))
 
 
 @router.post("/engineering-orders/{eo_id}/approve", response_model=EoOut)
@@ -413,6 +449,15 @@ def create_defect(
     return out
 
 
+@router.get("/deferred-defects/{defect_id}", response_model=DefectOut)
+def get_defect(
+    defect_id: str,
+    db: Session = Depends(get_db),
+    session: dict[str, datetime | str] = Depends(require_planning_read),
+) -> DefectOut:
+    return _svc(db).get_defect(defect_id, username=str(session["operator"]), session_role=str(session["role"]))
+
+
 @router.get("/mel-items", response_model=list[MelItemOut])
 def list_mel(
     organization_id: str | None = None,
@@ -445,6 +490,15 @@ def create_mel(
     )
     _audit(db, session, action="planning.mel.create", target_type="mel_item", target_id=out.id, organization_id=out.organization_id)
     return out
+
+
+@router.get("/mel-items/{mel_id}", response_model=MelItemOut)
+def get_mel(
+    mel_id: str,
+    db: Session = Depends(get_db),
+    session: dict[str, datetime | str] = Depends(require_planning_read),
+) -> MelItemOut:
+    return _svc(db).get_mel(mel_id, username=str(session["operator"]), session_role=str(session["role"]))
 
 
 @router.put("/utilization", response_model=UtilizationOut)

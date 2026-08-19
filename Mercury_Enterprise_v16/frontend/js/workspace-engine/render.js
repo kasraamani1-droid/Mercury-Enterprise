@@ -25,6 +25,16 @@ import {
   renderToolWorkspace,
   renderWorkOrderMaterials,
 } from "./logistics-ops.js";
+import {
+  renderAdWorkspace,
+  renderAircraftDirectives,
+  renderAircraftPlanningBridge,
+  renderCheckWorkspace,
+  renderEoWorkspace,
+  renderFindingWorkspace,
+  renderMelWorkspace,
+  renderSbWorkspace,
+} from "./planning-ops.js";
 
 export function renderShellSkeleton() {
   return `
@@ -95,7 +105,10 @@ export function renderMainTab(session, typeDef, record, bundle, tabId) {
     return renderAircraftLogbook(session, bundle);
   }
   if (session.type === "aircraft" && tabId === "maintenance") {
-    return renderAircraftMaintenance(session, bundle);
+    return `${renderAircraftMaintenance(session, bundle)}${renderAircraftPlanningBridge(session, record, bundle)}`;
+  }
+  if (session.type === "aircraft" && (tabId === "ad" || tabId === "sb")) {
+    return renderAircraftDirectives(session, bundle, tabId);
   }
   if (session.type === "workOrder" && tabId === "overview") {
     return renderWorkOrderOverview(session, record, bundle);
@@ -130,6 +143,24 @@ export function renderMainTab(session, typeDef, record, bundle, tabId) {
   }
   if (session.type === "tool" && tabId === "overview") {
     return renderToolWorkspace(session, record, bundle);
+  }
+  if (session.type === "finding" && (tabId === "overview" || tabId === "disposition" || tabId === "related")) {
+    return renderFindingWorkspace(session, record, bundle);
+  }
+  if (session.type === "check" && tabId === "overview") {
+    return renderCheckWorkspace(session, record, bundle);
+  }
+  if (session.type === "airworthinessDirective" && tabId === "overview") {
+    return renderAdWorkspace(session, record, bundle);
+  }
+  if (session.type === "serviceBulletin" && tabId === "overview") {
+    return renderSbWorkspace(session, record, bundle);
+  }
+  if (session.type === "engineeringOrder" && tabId === "overview") {
+    return renderEoWorkspace(session, record, bundle);
+  }
+  if (session.type === "melItem" && tabId === "overview") {
+    return renderMelWorkspace(session, record, bundle);
   }
   if (tabId === "overview") {
     return `
@@ -417,11 +448,20 @@ function dueOpenTarget(item) {
   const source = String(item?.source_type || "").toLowerCase();
   const id = item?.source_id || item?.id;
   if (!id) return null;
-  // Due-list mixes checks / AD / SB / EO / deferred defects. Only types that
-  // already exist in the Workspace Engine catalog get data-we-open (same
-  // contract as related work-order chips). Others stay informational.
   if (source === "deferred_defect") {
     return { key: `finding:${id}`, label: item.title || item.defect_number || String(id) };
+  }
+  if (source === "check") {
+    return { key: `check:${id}`, label: item.title || item.check_code || String(id) };
+  }
+  if (source === "ad") {
+    return { key: `airworthinessDirective:${id}`, label: item.title || item.ad_number || String(id) };
+  }
+  if (source === "sb" || source === "service_bulletin") {
+    return { key: `serviceBulletin:${id}`, label: item.title || item.sb_number || String(id) };
+  }
+  if (source === "eo" || source === "engineering_order") {
+    return { key: `engineeringOrder:${id}`, label: item.title || item.eo_number || String(id) };
   }
   return null;
 }

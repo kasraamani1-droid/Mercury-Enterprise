@@ -345,11 +345,11 @@ class UtilizationUpsert(BaseModel):
     aircraft_id: str
     location: str = ""
     ops_status: str = Field(default="available", pattern="^(available|grounded|maintenance|ferry)$")
-    flight_hours: Decimal = Field(default=Decimal("0.00"), ge=0)
-    flight_cycles: int = Field(default=0, ge=0)
-    landings: int = Field(default=0, ge=0)
-    engine_hours: Decimal = Field(default=Decimal("0.00"), ge=0)
-    apu_hours: Decimal = Field(default=Decimal("0.00"), ge=0)
+    flight_hours: Decimal | None = Field(default=None, ge=0)
+    flight_cycles: int | None = Field(default=None, ge=0)
+    landings: int | None = Field(default=None, ge=0)
+    engine_hours: Decimal | None = Field(default=None, ge=0)
+    apu_hours: Decimal | None = Field(default=None, ge=0)
 
 
 class UtilizationOut(BaseModel):

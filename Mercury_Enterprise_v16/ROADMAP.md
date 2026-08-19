@@ -16,6 +16,7 @@ Mercury ships as an incremental FastAPI + vanilla JS foundation. Items below are
 | **Sprint 8** | Work packages, work orders, job cards, technician/supervisor/QA/ACA execution, dashboards, reports, offline queue |
 | **Sprint 8b** | Maintenance operations integration — operator Workspace Engine flow across WO / job cards / logbook / planning / Home |
 | **Sprint 8c** | Enterprise logistics operator integration — stores desk, WO/JC material requests, part/PO/tool objects on existing Program B APIs |
+| **Sprint 8d** | Maintenance planning operator integration — due/forecast desk, AD/SB/EO, MEL/defects, hangar, selected-check WP generation |
 | **Sprint 9** | Maintenance programs, MPD, checks, AD/SB/EO, MEL/CDL, deferred defects, forecast/due list, hangar planning, auto WP generation |
 | **Program B** | Enterprise logistics — warehouses, part master, stock ledger, rotables, tools, MR/PR/PO, vendors, shipping, material/tool planning bridge |
 | **Program A** | Enterprise Platform Foundation — identity, org extensions, RBAC extensions, generic workflow, notifications, files, search, configuration (`/api/v1/platform`) |
