@@ -303,7 +303,7 @@ def get_aircraft(
     row = svc.repo.get_aircraft(aircraft_id, with_registrations=True)
     if row is None or row.status != "active":
         raise HTTPException(status_code=404, detail="Aircraft not found")
-    svc.assert_org_access(
+    svc.assert_resource_visible(
         username=str(session["operator"]),
         session_role=str(session["role"]),
         organization_id=row.organization_id,

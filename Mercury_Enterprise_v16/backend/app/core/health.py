@@ -168,7 +168,7 @@ def build_health_payload(db: Session, connector_manager: Any) -> dict[str, Any]:
         "memory": memory_checks.get("memory", "unknown"),
         "disk_free_percent": disk_checks.get("disk_free_percent"),
         "memory_used_percent": memory_checks.get("memory_used_percent"),
-        "simulated": True,
+        "simulated": settings.sim_workspaces_visible,
         "connectors": connectors,
         "decision_support": {"advisory_only": True},
         "checks": checks,
@@ -228,7 +228,7 @@ def build_platform_status(db: Session, connector_manager: Any) -> dict[str, Any]
         },
         "connectors": connector_summary(connector_manager),
         "decision_support": {"advisory_only": True},
-        "simulated": True,
+        "simulated": settings.sim_workspaces_visible,
     }
 
 

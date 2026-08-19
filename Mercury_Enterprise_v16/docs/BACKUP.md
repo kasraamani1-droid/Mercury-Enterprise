@@ -29,10 +29,33 @@ Checks size, checksum, and (when tools exist) `pg_restore --list` or SQLite `int
 ```bash
 export DATABASE_URL=postgresql+psycopg://mercury:mercury@localhost:5432/mercury
 export BACKUP_FILE=./backups/mercury-postgres-YYYYMMDDThhmmssZ.dump
+export MERCURY_RESTORE_CONFIRM=YES
 sh scripts/restore_database.sh
 ```
 
 PostgreSQL restore uses `pg_restore --clean --if-exists`. SQLite restore replaces the target DB file.
+
+Destructive restore is refused unless:
+
+```bash
+export MERCURY_RESTORE_CONFIRM=YES
+```
+
+## Encryption at rest
+
+Optional archive encryption (openssl AES-256-CBC, PBKDF2). Create a key file that is **never** committed:
+
+```bash
+python -c "import secrets; open('backup.key','w').write(secrets.token_urlsafe(48))"
+export MERCURY_BACKUP_KEY_FILE=./backup.key
+sh scripts/backup_database.sh
+```
+
+Produces `*.dump.enc` or `*.db.enc` plus checksum. Restore uses the same `MERCURY_BACKUP_KEY_FILE`.
+
+Retention (optional): `MERCURY_BACKUP_RETAIN_DAYS=14`.
+
+**Off-box / provider boundary:** copy encrypted archives to object storage, offline media, or the cloud provider’s backup product. Compose volume `mercury_postgres` is not encrypted by Mercury itself — use host BitLocker/LUKS or encrypted cloud disks.
 
 ## Compose (pilot)
 
@@ -51,6 +74,7 @@ The scripts call `docker compose exec` `pg_dump` / `docker compose cp` + `pg_res
 export MERCURY_BACKUP_VIA_COMPOSE=1
 export DATABASE_URL=postgresql+psycopg://mercury:mercury@postgres:5432/mercury
 export BACKUP_FILE=./backups/mercury-postgres-YYYYMMDDThhmmssZ.dump
+export MERCURY_RESTORE_CONFIRM=YES
 sh scripts/restore_database.sh
 ```
 

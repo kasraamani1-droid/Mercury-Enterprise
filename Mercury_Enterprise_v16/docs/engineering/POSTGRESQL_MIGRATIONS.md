@@ -24,8 +24,8 @@
 
 ## Current head
 
-- **Head revision:** `20260814_0022` (approval persistence)
-- **Chain:** linear, single head, baseline `20260810_0001` → … → `20260814_0022` (22 revisions)
+- **Head revision:** `20260819_0023` (OIDC issuer/subject on `org_users`)
+- **Chain:** linear, single head, baseline `20260810_0001` → … → `20260819_0023` (23 revisions)
 - **History:** `cd backend && python -m alembic history`
 
 ## Clean install (PostgreSQL)
@@ -60,7 +60,7 @@ Compose waits for `postgres:17-alpine` `pg_isready` before starting the backend.
 1. Backup the database volume (see [BACKUP.md](../BACKUP.md) and [DISASTER_RECOVERY](../runbooks/DISASTER_RECOVERY.md)).
 2. Deploy the new backend image / tree.
 3. Ensure `alembic upgrade head` runs (Compose entrypoint, or explicit CI/CD step).
-4. Confirm `alembic current` reports `20260814_0022` (or newer head after this doc’s date).
+4. Confirm `alembic current` reports `20260819_0023` (or newer head after this doc’s date).
 5. Smoke `/ready` and operator login.
 
 Second `upgrade head` on an already-migrated database is a no-op.

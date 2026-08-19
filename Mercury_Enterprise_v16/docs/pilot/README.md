@@ -6,7 +6,8 @@ These notes describe a **LAN or localhost** demonstration for an MRO/AMO/aircraf
 | --- | --- |
 | [DEPLOY.md](DEPLOY.md) | Start, stop, backup, restore, health |
 | [DEMO.md](DEMO.md) | Closed-loop C-GMEA walk (SIM / demo) |
-| [SECURITY.md](SECURITY.md) | Attack surface, demo accounts, OIDC blocker |
+| [SECURITY.md](SECURITY.md) | Attack surface, demo accounts, OIDC activation |
+| [PRODUCTION.md](PRODUCTION.md) | Internet TLS, OIDC, backup encryption, remaining external steps |
 
 Default Compose publishes **only** the UI on host port `3000`. PostgreSQL and Redis stay on the Compose network.
 

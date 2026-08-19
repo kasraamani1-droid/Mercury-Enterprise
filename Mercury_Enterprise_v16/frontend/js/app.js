@@ -4,6 +4,7 @@ import {
   getDashboardSummary,
   getSessionStatus,
   getSessionContext,
+  getPublicAuthConfig,
   updateSessionContext,
   login,
   logout,
@@ -29,7 +30,7 @@ import { initializeLibrary } from "./library.js";
 import { initializePersonnel } from "./personnel.js";
 import { initializeTwin } from "./twin.js";
 import { initializeWebSocket } from "./websocket.js";
-import { initializeUx2 } from "./ux2/index.js";
+import { initializeUx2, setSimWorkspacesVisible } from "./ux2/index.js";
 let currentSession = null;
 let currentContext = null;
 let latestConnectors = [];
@@ -399,6 +400,33 @@ async function loadDashboardSummary(){
   }
 }
 
+async function applyPublicAuthConfig() {
+  try {
+    const config = await getPublicAuthConfig();
+    setSimWorkspacesVisible(Boolean(config.sim_workspaces_visible));
+    const ssoWrap = el("loginSsoWrap");
+    const oidcLink = el("oidcLoginLink");
+    const passwordFields = el("loginPasswordFields");
+    const submitBtn = el("loginSubmit");
+    const operatorInput = el("loginOperator");
+    const passwordInput = el("loginPassword");
+    if (config.oidc_enabled && oidcLink) {
+      oidcLink.href = config.oidc_login_path || "/api/v1/auth/oidc/login";
+      if (ssoWrap) ssoWrap.classList.remove("hidden");
+    }
+    if (!config.password_login_enabled) {
+      if (passwordFields) passwordFields.classList.add("hidden");
+      if (submitBtn) submitBtn.classList.add("hidden");
+      if (operatorInput) operatorInput.required = false;
+      if (passwordInput) passwordInput.required = false;
+    }
+    return config;
+  } catch {
+    setSimWorkspacesVisible(false);
+    return null;
+  }
+}
+
 async function ensureSession(){
   let session = await getSessionStatus();
   if (!session.authenticated) {
@@ -575,6 +603,7 @@ async function initialize(){
   initializeLibrary();
   initializePersonnel();
   initializeTwin();
+  await applyPublicAuthConfig();
   await ensureSession();
   await loadSessionContext();
   applyRoleAccess();

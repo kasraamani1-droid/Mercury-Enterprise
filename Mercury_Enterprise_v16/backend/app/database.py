@@ -253,3 +253,14 @@ def ensure_schema() -> None:
             connection.execute(
                 text("ALTER TABLE org_users ADD COLUMN platform_role VARCHAR(40) NOT NULL DEFAULT ''")
             )
+        if org_user_columns and "oidc_issuer" not in org_user_columns:
+            connection.execute(text("ALTER TABLE org_users ADD COLUMN oidc_issuer VARCHAR(400)"))
+        if org_user_columns and "oidc_subject" not in org_user_columns:
+            connection.execute(text("ALTER TABLE org_users ADD COLUMN oidc_subject VARCHAR(255)"))
+        if org_user_columns:
+            connection.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_org_users_oidc_issuer_subject "
+                    "ON org_users (oidc_issuer, oidc_subject)"
+                )
+            )

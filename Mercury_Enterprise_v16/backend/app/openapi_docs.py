@@ -15,7 +15,7 @@ from .core.config import settings
 
 OPENAPI_TAGS: list[dict[str, str]] = [
     {"name": "probes", "description": "Liveness, readiness, health, and Prometheus metrics. Public except where metrics are disabled."},
-    {"name": "auth", "description": "Operator login, logout, session probe, and tenant context. Cookie sessions; JWT is not a session mechanism."},
+    {"name": "auth", "description": "Operator login (password and OIDC/SSO), logout, session probe, public auth config, and tenant context. Cookie sessions; JWT is not a session mechanism."},
     {"name": "approvals", "description": "Durable tenant-scoped approval requests (request, list, approve, consume on incident resolve)."},
     {"name": "incidents", "description": "Command incidents, timeline events, evidence, assessment, and reports. Org/site scoped."},
     {"name": "audit", "description": "Operator audit trail (site-scoped). Administrators use /admin/audit for cross-site listing."},
@@ -82,6 +82,9 @@ PUBLIC_OPS = {
     ("/api/v1/auth/login", "post"),
     ("/api/v1/auth/logout", "post"),
     ("/api/v1/auth/session", "get"),
+    ("/api/v1/auth/public-config", "get"),
+    ("/api/v1/auth/oidc/login", "get"),
+    ("/api/v1/auth/oidc/callback", "get"),
 }
 
 JSON_OBJECT = {
@@ -205,6 +208,18 @@ def _build_description(
             parts.append("Public and idempotent. Deletes the server-side session and cookie when present.")
         elif path.endswith("/auth/session"):
             parts.append("Public. Always HTTP 200; `authenticated` is true or false.")
+        elif path.endswith("/auth/public-config"):
+            parts.append("Public. Auth mode, SSO availability, and SIM workspace visibility. No secrets.")
+        elif path.endswith("/auth/oidc/login"):
+            parts.append(
+                "Public (rate-limited). Redirects to the identity provider (authorization-code + PKCE). "
+                "Fails closed with HTTP 503 if OIDC is not configured."
+            )
+        elif path.endswith("/auth/oidc/callback"):
+            parts.append(
+                "Public (rate-limited). Completes authorization-code + PKCE, maps the IdP subject onto a "
+                "provisioned directory user, and sets the HttpOnly session cookie."
+            )
         else:
             parts.append("Public probe. No session cookie required.")
     else:
@@ -314,6 +329,8 @@ def enrich_openapi(schema: dict[str, Any], app: Any) -> dict[str, Any]:
 
             if _is_public(path, method):
                 op.pop("security", None)
+                if path.endswith("/auth/login") or "/auth/oidc/" in path:
+                    responses["429"] = ERROR_429
                 if path.endswith("/auth/login"):
                     responses["401"] = {"description": "Invalid credentials."}
                     responses["429"] = ERROR_429
@@ -321,6 +338,12 @@ def enrich_openapi(schema: dict[str, Any], app: Any) -> dict[str, Any]:
                     app_json = body.get("application/json")
                     if isinstance(app_json, dict):
                         app_json.setdefault("example", login_example)
+                if path.endswith("/auth/oidc/login"):
+                    responses["503"] = {"description": "OIDC is not configured or the provider is unreachable."}
+                if path.endswith("/auth/oidc/callback"):
+                    responses["401"] = {"description": "Invalid or expired OIDC state, or the identity provider denied authentication."}
+                    responses["403"] = {"description": "Identity is not provisioned or the account is disabled."}
+                    responses["503"] = {"description": "OIDC is not configured or the provider is unreachable."}
             else:
                 op["security"] = [{"SessionCookie": []}, {"ApiKeyAuth": []}]
                 responses.setdefault("401", ERROR_401)

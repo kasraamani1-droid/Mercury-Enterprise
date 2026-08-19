@@ -11,13 +11,16 @@ correlation_id_var: ContextVar[str] = ContextVar("correlation_id", default="")
 user_id_var: ContextVar[str] = ContextVar("user_id", default="")
 
 
+from ..security.redact import redact_text
+
+
 class _JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         payload = {
             "time": self.formatTime(record, self.datefmt),
             "level": record.levelname,
             "logger": record.name,
-            "message": record.getMessage(),
+            "message": redact_text(record.getMessage()),
         }
         request_id = getattr(record, "request_id", None) or request_id_var.get()
         correlation_id = getattr(record, "correlation_id", None) or correlation_id_var.get()
@@ -31,6 +34,11 @@ class _JsonFormatter(logging.Formatter):
         if record.exc_info:
             payload["exc_info"] = self.formatException(record.exc_info)
         return json.dumps(payload, ensure_ascii=True)
+
+
+class _RedactingFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        return redact_text(super().format(record))
 
 
 class _ContextFilter(logging.Filter):
@@ -60,7 +68,7 @@ def configure_logging() -> None:
         stream.setFormatter(_JsonFormatter())
     else:
         stream.setFormatter(
-            logging.Formatter(
+            _RedactingFormatter(
                 "%(asctime)s %(levelname)s %(name)s "
                 "[request_id=%(request_id)s correlation_id=%(correlation_id)s user_id=%(user_id)s] %(message)s"
             )
@@ -78,9 +86,7 @@ def configure_logging() -> None:
         if log_json:
             rotating.setFormatter(_JsonFormatter())
         else:
-            rotating.setFormatter(
-                logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
-            )
+            rotating.setFormatter(_RedactingFormatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
         rotating.addFilter(context_filter)
         root.addHandler(rotating)
 

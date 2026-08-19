@@ -26,7 +26,7 @@ Set at minimum:
 MERCURY_AUTH_PASSWORD=<unique-secret-12+-chars-in-production>
 ```
 
-For production / HTTPS also set `JWT_SECRET`, `COOKIE_SECRET`, `DOMAIN`, `HTTPS_ENABLED`, `LETSENCRYPT_EMAIL`. Generate secrets:
+For production / HTTPS also set `JWT_SECRET`, `COOKIE_SECRET`, `DOMAIN`, `HTTPS_ENABLED`, `LETSENCRYPT_EMAIL`, and a real OIDC client (`MERCURY_OIDC_*`). Generate secrets:
 
 ```powershell
 python -c "import secrets; print(secrets.token_urlsafe(48))"
@@ -65,7 +65,7 @@ python -m pytest tests/ -q
 
 ## Default operators
 
-Operators are bootstrapped in-process from configuration (shared password unless changed via admin APIs):
+LAN / demo seed (`MERCURY_SEED_DEMO=true`, typical local development) bootstraps a shared-password directory:
 
 | Operator | Role |
 |----------|------|
@@ -74,10 +74,11 @@ Operators are bootstrapped in-process from configuration (shared password unless
 | `reviewer` | Reviewer |
 | `viewer` | Viewer |
 
-Sign in with the configured `MERCURY_AUTH_PASSWORD`.
+Sign in with the configured `MERCURY_AUTH_PASSWORD`. These shared accounts are **not** production identities. Production startup refuses `MERCURY_SEED_DEMO=true` and, without that seed, only `admin` plus `MERCURY_AUTH_OPERATOR` are bootstrapped. Internet TLS requires OIDC — see [docs/pilot/PRODUCTION.md](docs/pilot/PRODUCTION.md).
 
 ## Next steps
 
+- Commercial production (OIDC, TLS overlay, backups) → [docs/pilot/PRODUCTION.md](docs/pilot/PRODUCTION.md)
 - Production deploy → [DEPLOYMENT.md](DEPLOYMENT.md)
 - Security baseline → [SECURITY.md](SECURITY.md)
 - Observability → [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md)

@@ -38,6 +38,9 @@ else
 fi
 
 case "$BACKUP_FILE" in
+  *.enc)
+    echo "WARNING: encrypted backup — checksum only (decrypt before pg_restore/sqlite checks)"
+    ;;
   *.dump)
     if command -v pg_restore >/dev/null 2>&1; then
       pg_restore --list "$BACKUP_FILE" >/dev/null

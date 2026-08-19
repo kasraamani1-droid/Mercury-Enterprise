@@ -425,7 +425,7 @@ class PlanningService:
     def _require_live(self, row, *, username: str, session_role: str, not_found: str):
         if row is None or getattr(row, "deleted_at", None) is not None:
             raise HTTPException(status_code=404, detail=not_found)
-        self.assert_org_access(username=username, session_role=session_role, organization_id=row.organization_id)
+        self.org.assert_resource_visible(username=username, session_role=session_role, organization_id=row.organization_id)
         return row
 
     # --- serializers ---

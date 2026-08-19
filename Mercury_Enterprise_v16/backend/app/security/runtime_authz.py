@@ -51,4 +51,29 @@ def require_allowed(
         else permissions_allowed(db, session, required)
     )
     if not ok:
+        try:
+            from ..audit import ACTION_AUTHZ_DENIED, record_audit
+            from ..database import SessionLocal
+
+            audit_db = SessionLocal()
+            try:
+                record_audit(
+                    audit_db,
+                    action=ACTION_AUTHZ_DENIED,
+                    actor=str(session.get("operator") or ""),
+                    actor_role=str(session.get("role") or ""),
+                    organization_id=str(session.get("organization_id") or ""),
+                    site_id=str(session.get("site_id") or ""),
+                    target_type="permission",
+                    target_id=",".join(required)[:120],
+                    source="api",
+                    outcome="failure",
+                    origin="system",
+                    details=detail,
+                )
+                audit_db.commit()
+            finally:
+                audit_db.close()
+        except Exception:
+            pass
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=detail)

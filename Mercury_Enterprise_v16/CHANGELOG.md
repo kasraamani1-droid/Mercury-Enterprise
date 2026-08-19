@@ -2,6 +2,30 @@
 
 All notable changes to Mercury Enterprise are summarized here. Package/API version remains `16.0.0` unless noted; sprint tags mark security/ops increments.
 
+## Commercial production readiness (Cycle 6)
+
+### Added
+- OIDC authorization-code + PKCE login (`/api/v1/auth/oidc/login`, `/callback`) with fail-closed production/HTTPS configuration
+- Unauthenticated `/api/v1/auth/public-config` for SSO vs password UI and SIM workspace visibility
+- Production overlay `docker-compose.production.yml` unpublishes `:3000` so the public endpoint is nginx `:443`
+- Backup archive encryption (`MERCURY_BACKUP_KEY_FILE`), retention, and `MERCURY_RESTORE_CONFIRM=YES` destructive-restore guard
+- Authz-denial audit (`security.authz_denied`), log redaction, CSRF Origin check when Origin is present
+- Get-by-id IDOR tests and 404 (not 403) for cross-tenant resource reads
+- Commercial runbook `docs/pilot/PRODUCTION.md`
+
+### Changed
+- Production startup refuses `MERCURY_SEED_DEMO=true`, wildcard CORS, and insecure cookies (existing)
+- HTTPS deployments require OIDC (no silent password demo IAM)
+- Command/Radar/Ops Twin/Cloud SIM workspaces hide when `MERCURY_ENV=production`
+- Login/logout audit no longer stores session cookie values
+
+### Notes
+- OIDC **activation** still needs a real IdP client (issuer, client id/secret, redirect URI). No fake production credentials are shipped.
+- ID-token JWT/JWKS verification is not included; identity is taken from TLS userinfo to the configured issuer.
+- PKCE pending state is in-process; Compose backend stays at one uvicorn worker.
+- Production overlay uses Compose `ports: !reset []` because `ports` lists are concatenated across files.
+- Not a TC/FAA/EASA certification. Workforce flags remain planner-entered.
+
 ## Pilot readiness (workforce API, demo loop, backup)
 
 ### Added

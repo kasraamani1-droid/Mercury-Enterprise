@@ -17,9 +17,9 @@ This is a **trusted LAN or localhost** topology. Binding `:3000` accepts connect
 
 - Session cookie (`mercury_session`). HTTP pilot requires `MERCURY_ENV=development` and `MERCURY_SESSION_COOKIE_SECURE=false`.
 - Roles: Viewer read, Operator manage (and execute), Reviewer inspect/release, Administrator manage/admin.
-- Organization isolation: requesting `org-aviation-west` as an East operator returns 403.
+- Organization isolation: requesting `org-aviation-west` as an East operator returns 403. Get-by-id cross-tenant reads return **404** (no existence oracle).
 - Workforce mutations require `planning.manage`. GET-by-id is org-scoped.
-- Demo users `operator` / `viewer` / `reviewer` share the password from local `.env`. They are **not** production identities.
+- Demo users `operator` / `viewer` / `reviewer` share the password from local `.env`. They are **not** production identities. Production startup refuses `MERCURY_SEED_DEMO=true`.
 
 ## Secrets
 
@@ -31,13 +31,13 @@ Never commit `.env`, `config.local.js`, `*.db`, dumps, JWT, or cookie secrets. `
 - FastAPI CORS from `MERCURY_CORS_ORIGINS` (default `http://localhost:3000`). Same-origin UI does not need extra CORS for LAN IP access to `:3000`
 - Operator UI uses `esc()` for DOM interpolation on workforce/planning desks
 
-## Internet-facing production blockers (not in this cycle)
+## Internet-facing production blockers (external steps remain)
 
 | Item | Class |
 | --- | --- |
-| OIDC/SSO (or equivalent enterprise IdP) for paid internet use | **P0 production blocker** — do not treat password demo accounts as production IAM |
-| Public TLS edge + Secure cookies + hardened secrets rotation | P0 if exposed beyond LAN |
-| Postgres/Redis must remain unpublished; backups encrypted at rest | P0 |
-| Marketplace, payments, 3D twin, Radar/Command, mobile, OEM integrations | Out of scope; labeled SIM or unimplemented |
+| Real IdP client credentials (issuer, client id/secret, redirect URI) | **P0** — architecture is implemented; activation needs the customer IdP |
+| Public DNS + Let's Encrypt issued certs for `$DOMAIN` | **P0** — nginx/TLS path exists; certs are not in git |
+| Encrypted off-box backup copies + unique `POSTGRES_PASSWORD` | **P1** |
+| Named (non-shared) operator identities for paid accountability | **P1** until OIDC directory is populated |
 
-OIDC was **not** implemented. If a customer needs internet-facing paid production, classify OIDC/SSO as a required production control rather than shipping demo passwords.
+OIDC authorization-code + PKCE is implemented (`GET /api/v1/auth/oidc/login` and `/callback`). Password demo auth is disabled when HTTPS/OIDC is required. Do not treat `:3000` as the production public endpoint — use `docker-compose.production.yml` so only `:443` is published. See [PRODUCTION.md](PRODUCTION.md).

@@ -77,11 +77,33 @@ export function allWorkspaces() {
   return items;
 }
 
+export function visibleNavSections(simVisible = true) {
+  if (simVisible) return NAV_SECTIONS;
+  return NAV_SECTIONS.map((section) => ({
+    ...section,
+    items: section.items.filter((item) => !item.simulated),
+  })).filter((section) => section.items.length);
+}
+
+export function isSimulatedWorkspace(id) {
+  return Boolean(allWorkspaces().find((w) => w.id === id)?.simulated);
+}
+
 export function workspaceById(id) {
   return allWorkspaces().find((w) => w.id === id) || null;
 }
 
 export const WORKSPACE_IDS = allWorkspaces().map((w) => w.id);
+
+let simWorkspacesVisible = true;
+
+export function setSimWorkspacesVisible(visible) {
+  simWorkspacesVisible = visible !== false;
+}
+
+export function getSimWorkspacesVisible() {
+  return simWorkspacesVisible;
+}
 
 export const SHORTCUT_ACTIONS = [
   { id: "palette", label: "Open command palette", keys: "Ctrl/Cmd+K" },

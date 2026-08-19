@@ -59,9 +59,24 @@ class Settings:
     db_pool_recycle: int = _int("MERCURY_DB_POOL_RECYCLE", 1800)
     cors_origins: list[str] = None  # type: ignore[assignment]
     api_key: str = os.getenv("MERCURY_API_KEY", "")  # Optional machine auth via X-API-Key when set.
-    seed_demo_data: bool = os.getenv("MERCURY_SEED_DEMO", "true").lower() == "true"
+    seed_demo_data: bool = False
     auth_operator: str = os.getenv("MERCURY_AUTH_OPERATOR", "operator")
     auth_password: str = ""
+    auth_mode: str = "password"
+    require_oidc: bool = False
+    allow_password_auth: bool = True
+    password_login_enabled: bool = True
+    oidc_issuer: str = ""
+    oidc_client_id: str = ""
+    oidc_client_secret: str = ""
+    oidc_redirect_uri: str = ""
+    oidc_scopes: str = "openid profile email"
+    oidc_username_claim: str = "preferred_username"
+    oidc_discovery_url: str = ""
+    oidc_auto_provision: bool = False
+    oidc_is_configured: bool = False
+    sim_workspaces_visible: bool = True
+    trusted_hosts: list[str] = None  # type: ignore[assignment]
     session_cookie_name: str = os.getenv("MERCURY_SESSION_COOKIE", "mercury_session")
     session_cookie_samesite: str = os.getenv("MERCURY_SESSION_SAMESITE", "lax")
     session_ttl_seconds: int = _int("MERCURY_SESSION_TTL_SECONDS", 3600)
@@ -98,6 +113,53 @@ class Settings:
         object.__setattr__(self, "argon2_memory_kib", _int("MERCURY_ARGON2_MEMORY_KIB", 19456))
         object.__setattr__(self, "argon2_parallelism", _int("MERCURY_ARGON2_PARALLELISM", 1))
         production = _is_production(self.environment)
+        if os.getenv("MERCURY_SEED_DEMO") is None:
+            object.__setattr__(self, "seed_demo_data", not production)
+        else:
+            object.__setattr__(self, "seed_demo_data", _bool("MERCURY_SEED_DEMO", not production))
+        if os.getenv("MERCURY_REQUIRE_OIDC") is None:
+            object.__setattr__(self, "require_oidc", bool(self.https_enabled))
+        else:
+            object.__setattr__(self, "require_oidc", _bool("MERCURY_REQUIRE_OIDC", False))
+        mode = (os.getenv("MERCURY_AUTH_MODE") or ("oidc" if self.require_oidc else "password")).strip().lower()
+        if mode not in {"password", "oidc"}:
+            mode = "password"
+        object.__setattr__(self, "auth_mode", mode)
+        if os.getenv("MERCURY_ALLOW_PASSWORD_AUTH") is None:
+            object.__setattr__(self, "allow_password_auth", not self.require_oidc)
+        else:
+            object.__setattr__(self, "allow_password_auth", _bool("MERCURY_ALLOW_PASSWORD_AUTH", False))
+        object.__setattr__(
+            self,
+            "password_login_enabled",
+            self.auth_mode == "password" or self.allow_password_auth,
+        )
+        object.__setattr__(self, "oidc_issuer", (os.getenv("MERCURY_OIDC_ISSUER") or "").strip())
+        object.__setattr__(self, "oidc_client_id", (os.getenv("MERCURY_OIDC_CLIENT_ID") or "").strip())
+        object.__setattr__(self, "oidc_client_secret", (os.getenv("MERCURY_OIDC_CLIENT_SECRET") or "").strip())
+        object.__setattr__(self, "oidc_redirect_uri", (os.getenv("MERCURY_OIDC_REDIRECT_URI") or "").strip())
+        object.__setattr__(self, "oidc_scopes", (os.getenv("MERCURY_OIDC_SCOPES") or "openid profile email").strip())
+        object.__setattr__(
+            self,
+            "oidc_username_claim",
+            (os.getenv("MERCURY_OIDC_USERNAME_CLAIM") or "preferred_username").strip() or "preferred_username",
+        )
+        object.__setattr__(self, "oidc_discovery_url", (os.getenv("MERCURY_OIDC_DISCOVERY_URL") or "").strip())
+        object.__setattr__(self, "oidc_auto_provision", _bool("MERCURY_OIDC_AUTO_PROVISION", False))
+        object.__setattr__(
+            self,
+            "oidc_is_configured",
+            bool(self.oidc_issuer and self.oidc_client_id and self.oidc_client_secret and self.oidc_redirect_uri),
+        )
+        if os.getenv("MERCURY_SIM_WORKSPACES") is None:
+            object.__setattr__(self, "sim_workspaces_visible", not production)
+        else:
+            object.__setattr__(self, "sim_workspaces_visible", _bool("MERCURY_SIM_WORKSPACES", not production))
+        hosts = _csv("MERCURY_TRUSTED_HOSTS", "")
+        domain = (self.domain or "").strip()
+        if domain and domain not in hosts:
+            hosts.append(domain)
+        object.__setattr__(self, "trusted_hosts", hosts)
         if self.https_enabled or production:
             # Production / HTTPS deployments never emit insecure session cookies.
             if os.getenv("MERCURY_SESSION_COOKIE_SECURE") is None:
@@ -118,32 +180,74 @@ class Settings:
 
     def validate_for_startup(self) -> None:
         """Require an explicit operator password; forbid known demo/default secrets."""
-        password = self.auth_password or ""
+        password = getattr(self, "auth_password", "") or ""
+        https_enabled = bool(getattr(self, "https_enabled", False))
+        production = _is_production(str(getattr(self, "environment", "development") or "development"))
+        require_oidc = bool(getattr(self, "require_oidc", False))
+        auth_mode = str(getattr(self, "auth_mode", "password") or "password").strip().lower()
+        oidc_configured = bool(getattr(self, "oidc_is_configured", False))
+        seed_demo = bool(getattr(self, "seed_demo_data", False))
+        cors_origins = list(getattr(self, "cors_origins", []) or [])
         if not password:
             raise RuntimeError(
                 "MERCURY_AUTH_PASSWORD must be set in the environment (no embedded demo default)."
             )
         if password.lower() in FORBIDDEN_PASSWORDS:
             raise RuntimeError("MERCURY_AUTH_PASSWORD uses a forbidden demo/default value; choose a unique secret.")
-        production = _is_production(self.environment)
         if production and len(password) < 12:
             raise RuntimeError(
                 "MERCURY_AUTH_PASSWORD must be at least 12 characters when MERCURY_ENV is production."
             )
-        if production or self.https_enabled:
-            if not self.session_cookie_secure:
+        if production and seed_demo:
+            raise RuntimeError(
+                "MERCURY_SEED_DEMO must be false when MERCURY_ENV=production (refusing shared demo identities)."
+            )
+        if production or https_enabled:
+            if not getattr(self, "session_cookie_secure", False):
                 raise RuntimeError(
                     "Session cookies must be Secure when MERCURY_ENV=production or HTTPS_ENABLED=true "
                     "(refusing insecure cookies)."
                 )
-            self._validate_secret("JWT_SECRET", self.jwt_secret, minimum=32)
-            self._validate_secret("COOKIE_SECRET", self.cookie_secret, minimum=32)
-        if self.https_enabled and not (self.domain or "").strip():
+            self._validate_secret("JWT_SECRET", getattr(self, "jwt_secret", ""), minimum=32)
+            self._validate_secret("COOKIE_SECRET", getattr(self, "cookie_secret", ""), minimum=32)
+        if "*" in cors_origins:
+            raise RuntimeError("MERCURY_CORS_ORIGINS must not include a wildcard when credentials are used.")
+        if (production or https_enabled) and any(item.strip() == "*" for item in cors_origins):
+            raise RuntimeError("Production CORS must not use a wildcard origin.")
+        if https_enabled:
+            for origin in cors_origins:
+                if origin.startswith("http://") and "localhost" not in origin and "127.0.0.1" not in origin:
+                    raise RuntimeError(
+                        "HTTPS deployments must not allow non-local http:// CORS origins "
+                        "(do not treat :3000 as the production public endpoint)."
+                    )
+                if ":3000" in origin:
+                    raise RuntimeError(
+                        "HTTPS deployments must not list :3000 in MERCURY_CORS_ORIGINS; "
+                        "the production public endpoint is the TLS edge on :443."
+                    )
+        if https_enabled and not (getattr(self, "domain", "") or "").strip():
             raise RuntimeError("DOMAIN must be set when HTTPS_ENABLED=true.")
-        if self.https_enabled and not (self.letsencrypt_email or "").strip():
+        if https_enabled and not (getattr(self, "letsencrypt_email", "") or "").strip():
             raise RuntimeError("LETSENCRYPT_EMAIL must be set when HTTPS_ENABLED=true.")
-        if self.redis_required:
-            redis_url = (self.redis_url or "").strip()
+        if require_oidc and auth_mode != "oidc":
+            raise RuntimeError(
+                "MERCURY_AUTH_MODE must be oidc when MERCURY_REQUIRE_OIDC=true or HTTPS_ENABLED=true "
+                "(password demo auth is not internet production IAM)."
+            )
+        if require_oidc and not oidc_configured:
+            raise RuntimeError(
+                "OIDC is required for this deployment but is not fully configured. Set "
+                "MERCURY_OIDC_ISSUER, MERCURY_OIDC_CLIENT_ID, MERCURY_OIDC_CLIENT_SECRET, and "
+                "MERCURY_OIDC_REDIRECT_URI. Do not insert placeholder production credentials."
+            )
+        if auth_mode == "oidc" and not oidc_configured:
+            raise RuntimeError(
+                "MERCURY_AUTH_MODE=oidc requires MERCURY_OIDC_ISSUER, MERCURY_OIDC_CLIENT_ID, "
+                "MERCURY_OIDC_CLIENT_SECRET, and MERCURY_OIDC_REDIRECT_URI."
+            )
+        if getattr(self, "redis_required", False):
+            redis_url = (getattr(self, "redis_url", "") or "").strip()
             if not redis_url:
                 raise RuntimeError("REDIS_URL must be set when REDIS_REQUIRED=true.")
             try:
@@ -158,6 +262,7 @@ class Settings:
                 raise RuntimeError(
                     f"Redis is required (REDIS_REQUIRED=true) but unreachable at {redis_url}: {exc}"
                 ) from exc
+
     @staticmethod
     def _validate_secret(name: str, value: str, *, minimum: int) -> None:
         secret = (value or "").strip()

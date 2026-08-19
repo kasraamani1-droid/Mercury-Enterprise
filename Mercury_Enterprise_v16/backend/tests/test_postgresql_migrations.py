@@ -19,7 +19,7 @@ from alembic.script import ScriptDirectory
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 VERSIONS_DIR = BACKEND_ROOT / "alembic" / "versions"
-EXPECTED_HEAD = "20260814_0022"
+EXPECTED_HEAD = "20260819_0023"
 REVISION_FILE_RE = re.compile(r"^202\d{5}_\d{4}_.+\.py$")
 
 
@@ -53,7 +53,7 @@ def test_alembic_single_linear_head() -> None:
     heads = script.get_heads()
     assert heads == [EXPECTED_HEAD], f"expected single head {EXPECTED_HEAD}, got {heads}"
     revisions = list(script.walk_revisions())
-    assert len(revisions) >= 22
+    assert len(revisions) >= 23
     # Linear: each revision (except base) has exactly one parent; no branches.
     for rev in revisions:
         if rev.revision == "20260810_0001":
@@ -125,7 +125,7 @@ def test_rollback_one_revision_then_reupgrade(tmp_path: Path) -> None:
     assert downgraded.returncode == 0, downgraded.stdout + "\n" + downgraded.stderr
     after_down = _run_alembic("current", database_url=url)
     assert after_down.returncode == 0, after_down.stderr
-    assert "20260814_0021" in after_down.stdout
+    assert "20260814_0022" in after_down.stdout
     assert EXPECTED_HEAD not in after_down.stdout
 
     reupgraded = _run_alembic("upgrade", "head", database_url=url)

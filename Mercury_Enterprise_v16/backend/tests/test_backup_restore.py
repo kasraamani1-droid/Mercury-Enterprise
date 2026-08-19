@@ -34,9 +34,14 @@ def test_backup_scripts_and_gitignore_present() -> None:
     assert (SCRIPTS / "restore_database.sh").is_file()
     backup_md = (PACKAGE_ROOT / "docs" / "BACKUP.md").read_text(encoding="utf-8")
     assert "MERCURY_BACKUP_VIA_COMPOSE" in backup_md
+    assert "MERCURY_RESTORE_CONFIRM" in backup_md
     gitignore = (PACKAGE_ROOT / ".gitignore").read_text(encoding="utf-8")
     assert "backups/" in gitignore
     assert "*.dump" in gitignore
+    restore_sh = (SCRIPTS / "restore_database.sh").read_text(encoding="utf-8")
+    assert "MERCURY_RESTORE_CONFIRM" in restore_sh
+    backup_sh = (SCRIPTS / "backup_database.sh").read_text(encoding="utf-8")
+    assert "MERCURY_BACKUP_KEY_FILE" in backup_sh
     deploy = (PACKAGE_ROOT / "docs" / "pilot" / "DEPLOY.md").read_text(encoding="utf-8")
     assert "/live" in deploy
     assert "/api/v1/ready" in deploy
@@ -85,7 +90,7 @@ def test_sqlite_backup_restore_roundtrip(tmp_path: Path) -> None:
             capture_output=True,
             text=True,
             check=False,
-            env={**env, "BACKUP_FILE": str(backup), "DATABASE_URL": f"sqlite:///{restored.as_posix()}"},
+            env={**env, "BACKUP_FILE": str(backup), "DATABASE_URL": f"sqlite:///{restored.as_posix()}", "MERCURY_RESTORE_CONFIRM": "YES"},
         )
         assert restore.returncode == 0, restore.stderr or restore.stdout
         check = sqlite3.connect(restored)

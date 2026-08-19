@@ -5,19 +5,26 @@
 
 ## Summary
 
-Operator authentication is a **server-side session** referenced by an opaque `HttpOnly` cookie. Credentials are verified against `org_users` with **Argon2id**. Login, logout, session probe, and tenant context are the only auth APIs. JWT access/refresh tokens are **not** issued and are **not** accepted as operator sessions.
+Operator authentication is a **server-side session** referenced by an opaque `HttpOnly` cookie. Credentials are verified against `org_users` with **Argon2id**, or via **OIDC authorization-code + PKCE** when configured. JWT access/refresh tokens are **not** issued and are **not** accepted as operator sessions.
 
 ## API
 
 | Method | Path | Auth | Behavior |
 |--------|------|------|----------|
-| POST | `/api/v1/auth/login` | Public (rate-limited) | Verify credentials; set session cookie; audit `auth.login` |
+| POST | `/api/v1/auth/login` | Public (rate-limited) | Verify credentials; set session cookie; audit `auth.login`. Disabled when `MERCURY_AUTH_MODE=oidc` unless `MERCURY_ALLOW_PASSWORD_AUTH=true`. |
 | POST | `/api/v1/auth/logout` | Public (idempotent) | Delete session + cookie; audit `auth.logout` when a session existed |
 | GET | `/api/v1/auth/session` | Public | `authenticated: true/false` (HTTP 200 either way) |
+| GET | `/api/v1/auth/public-config` | Public | Auth mode, SSO availability, SIM visibility — no secrets |
+| GET | `/api/v1/auth/oidc/login` | Public | 302 to the IdP (PKCE). Fails closed if OIDC is not configured |
+| GET | `/api/v1/auth/oidc/callback` | Public | Code exchange + userinfo mapping onto `org_users`; set session cookie |
 | GET | `/api/v1/auth/context` | Session | Active org/site + switchable tenants |
 | POST | `/api/v1/auth/context` | Session | Switch org/site (denied without membership; API-key principals cannot switch) |
 
 There is **no** `/api/v1/auth/refresh` endpoint. Session lifetime is `MERCURY_SESSION_TTL_SECONDS` (cookie `Max-Age` and server `expires_at` stay aligned).
+
+## OIDC / SSO
+
+HTTPS (`HTTPS_ENABLED=true`) requires OIDC at startup. Configure `MERCURY_OIDC_ISSUER`, `MERCURY_OIDC_CLIENT_ID`, `MERCURY_OIDC_CLIENT_SECRET`, and `MERCURY_OIDC_REDIRECT_URI`. The integration is authorization-code + PKCE; identities must already exist in `org_users` unless `MERCURY_OIDC_AUTO_PROVISION=true` (off by default). Session cookies remain opaque — OIDC does not mint Mercury JWTs. ID-token JWT signature verification via JWKS is **not** implemented; identity is taken from TLS userinfo against the configured issuer. Do not insert placeholder IdP credentials.
 
 ## JWT and `JWT_SECRET`
 
@@ -32,6 +39,8 @@ There is **no** `/api/v1/auth/refresh` endpoint. Session lifetime is `MERCURY_SE
 ## Session management
 
 - Cookie: `HttpOnly`, `SameSite=Lax` (configurable), `Secure` forced in production/HTTPS
+- Successful login/OIDC callback invalidates any existing session cookie (session-fixation protection)
+- Mutating requests with a foreign `Origin`/`Referer` are rejected (CSRF origin check; SameSite=Lax remains primary)
 - Store: in-memory default; Redis when `REDIS_URL` is set
 - Expired records are rejected on read, not persisted with a synthetic TTL, and swept on the process heartbeat
 - Password reset revokes all sessions for that operator (`session_store.delete_for_operator`)
@@ -47,20 +56,21 @@ There is **no** `/api/v1/auth/refresh` endpoint. Session lifetime is `MERCURY_SE
 
 | Action | When |
 |--------|------|
-| `auth.login` | Successful login |
+| `auth.login` | Successful password or OIDC login (`details=method=password|oidc`; no session cookie value) |
 | `auth.logout` | Logout with a valid session |
 | `security.login_failure` | Invalid credentials |
 | `security.login_failure` (`details=rate_limited`) | Login rate-limit 429 |
+| `security.authz_denied` | RBAC permission failure |
 | `security.event` | Invalid credentials (companion) and denied org context switch |
 | `auth.context` | Successful tenant switch |
 
 ## Frontend
 
-- Boot: `GET /auth/session`; if unauthenticated, login overlay
+- Boot: `GET /auth/public-config` (SSO vs password, SIM visibility), then `GET /auth/session`; if unauthenticated, login overlay
 - All API fetches use `credentials: "include"`
 - `401` on non-login API calls dispatches `mercury:auth-required` and re-opens the overlay
 - Sign-out calls `POST /auth/logout` and reloads
 
 ## Regression tests
 
-`backend/tests/test_rc1_authentication.py` plus existing suites: `test_auth_directory.py`, `test_password_security.py`, `test_epic009_security.py`, `test_hardening_security.py`, `test_production_security.py`, `test_api.py`.
+`backend/tests/test_rc1_authentication.py`, `test_cycle6_production_iam.py`, `test_cycle6_idor.py`, plus existing suites: `test_auth_directory.py`, `test_password_security.py`, `test_epic009_security.py`, `test_hardening_security.py`, `test_production_security.py`, `test_api.py`.

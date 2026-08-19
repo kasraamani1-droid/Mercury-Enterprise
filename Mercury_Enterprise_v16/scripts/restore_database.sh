@@ -7,16 +7,62 @@
 
 set -eu
 
+umask 077
+
+DECRYPT_TMP=""
+cleanup_decrypt_tmp() {
+  if [ -n "${DECRYPT_TMP:-}" ] && [ -f "$DECRYPT_TMP" ]; then
+    rm -f "$DECRYPT_TMP"
+  fi
+}
+trap cleanup_decrypt_tmp EXIT
+
 ROOT="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
 BACKUP_FILE="${BACKUP_FILE:-}"
 if [ -z "$BACKUP_FILE" ]; then
   echo "BACKUP_FILE is required" >&2
   exit 1
 fi
+if [ "${MERCURY_RESTORE_CONFIRM:-}" != "YES" ]; then
+  echo "Refusing destructive restore. Set MERCURY_RESTORE_CONFIRM=YES to proceed." >&2
+  exit 1
+fi
 if [ ! -f "$BACKUP_FILE" ]; then
   echo "Backup file not found: $BACKUP_FILE" >&2
   exit 1
 fi
+
+RESTORE_KIND=""
+case "$BACKUP_FILE" in
+  *.db|*.db.enc) RESTORE_KIND="sqlite" ;;
+  *.dump|*.dump.enc) RESTORE_KIND="postgres" ;;
+  *)
+    echo "Unrecognized backup format: $BACKUP_FILE" >&2
+    exit 1
+    ;;
+esac
+
+decrypt_if_needed() {
+  case "$BACKUP_FILE" in
+    *.enc)
+      key_file="${MERCURY_BACKUP_KEY_FILE:-}"
+      if [ -z "$key_file" ] || [ ! -f "$key_file" ]; then
+        echo "Encrypted backup requires MERCURY_BACKUP_KEY_FILE" >&2
+        exit 1
+      fi
+      if ! command -v openssl >/dev/null 2>&1; then
+        echo "openssl is required to decrypt backups" >&2
+        exit 1
+      fi
+      tmp="$(mktemp)"
+      DECRYPT_TMP="$tmp"
+      openssl enc -d -aes-256-cbc -pbkdf2 -in "$BACKUP_FILE" -out "$tmp" -pass "file:$key_file"
+      BACKUP_FILE="$tmp"
+      ;;
+  esac
+}
+
+decrypt_if_needed
 
 DATABASE_URL="${DATABASE_URL:-}"
 if [ -z "$DATABASE_URL" ] && [ -f "$ROOT/.env" ]; then
@@ -42,8 +88,8 @@ use_compose_postgres() {
   return 1
 }
 
-case "$BACKUP_FILE" in
-  *.db)
+case "$RESTORE_KIND" in
+  sqlite)
     DB_PATH="$(printf '%s' "$DATABASE_URL" | sed -E 's#^sqlite([0-9])?:///##; s#^\./##')"
     if [ -z "$DB_PATH" ] || [ "$DB_PATH" = "$DATABASE_URL" ]; then
       DB_PATH="$ROOT/backend/mercury.db"
@@ -52,7 +98,7 @@ case "$BACKUP_FILE" in
     cp "$BACKUP_FILE" "$DB_PATH"
     echo "Restored SQLite database to $DB_PATH"
     ;;
-  *.dump)
+  postgres)
     if use_compose_postgres; then
       if ! command -v docker >/dev/null 2>&1; then
         echo "docker is required for Compose PostgreSQL restores" >&2
