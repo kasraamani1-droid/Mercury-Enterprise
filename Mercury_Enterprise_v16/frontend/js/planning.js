@@ -75,7 +75,7 @@ function fillUtilizationFromAircraft(form, aircraftId) {
   if (form.flight_cycles) form.flight_cycles.value = row.flight_cycles ?? "";
 }
 
-function renderDesk({ canManage, aircraft, checks, programs, mels }) {
+function renderDesk({ canManage, aircraft, checks, programs, mels, publications }) {
   const host = el("planOpsDesk");
   if (!host) return;
   if (!canManage) {
@@ -118,6 +118,7 @@ function renderDesk({ canManage, aircraft, checks, programs, mels }) {
           <input name="ad_number" required maxlength="80" placeholder="AD number" />
           <select name="authority"><option value="easa">easa</option><option value="faa">faa</option><option value="transport_canada">transport_canada</option><option value="manufacturer">manufacturer</option><option value="other">other</option></select>
           <input name="title" required maxlength="300" placeholder="AD title" />
+          <select name="publication_id"><option value="">Library publication (optional)</option>${optionList(publications, "id", (row) => `${row.publication_number || row.id} · ${row.title || ""}`)}</select>
           <button type="submit">Create AD</button>
         </form>
         <form data-plan-action="sb">
@@ -125,11 +126,13 @@ function renderDesk({ canManage, aircraft, checks, programs, mels }) {
           <select name="sb_type"><option value="sb">sb</option><option value="asb">asb</option><option value="csb">csb</option><option value="rsb">rsb</option></select>
           <input name="title" required maxlength="300" placeholder="SB title" />
           <select name="priority"><option value="recommended">recommended</option><option value="mandatory">mandatory</option></select>
+          <select name="publication_id"><option value="">Library publication (optional)</option>${optionList(publications, "id", (row) => `${row.publication_number || row.id} · ${row.title || ""}`)}</select>
           <button type="submit">Create SB</button>
         </form>
         <form data-plan-action="eo">
           <input name="eo_number" required maxlength="80" placeholder="EO number" />
           <input name="title" required maxlength="300" placeholder="EO title" />
+          <select name="publication_id"><option value="">Library publication (optional)</option>${optionList(publications, "id", (row) => `${row.publication_number || row.id} · ${row.title || ""}`)}</select>
           <button type="submit">Create EO</button>
         </form>
       </article>
@@ -213,6 +216,7 @@ export async function refreshPlanningWorkspace() {
     hangar,
     forecast,
     ordersRes,
+    publications,
   ] = await Promise.all([
     softGet("/planning/dashboard"),
     softGet("/planning/aircraft-status"),
@@ -228,6 +232,7 @@ export async function refreshPlanningWorkspace() {
     softGet("/planning/hangar-plans"),
     softGet("/planning/forecast?horizon_days=90"),
     softGet("/work-orders/orders?limit=80"),
+    softGet("/publications?limit=80"),
   ]);
   if (generation !== refreshGeneration) return;
 
@@ -290,6 +295,7 @@ export async function refreshPlanningWorkspace() {
     checks: checkRows,
     programs: programRows,
     mels: melRows,
+    publications: listify(publications.data),
   });
 
   renderRows(
@@ -532,29 +538,25 @@ async function handleDeskSubmit(form) {
     return ok(`Defect ${result.data?.defect_number || ""} created`);
   }
   if (action === "ad") {
-    const result = await runLocked(`desk-ad:${values.ad_number}`, () =>
-      softMutate("/planning/ads", {
-        body: { ad_number: values.ad_number, authority: values.authority, title: values.title, mandatory: true },
-      })
-    );
+    const body = { ad_number: values.ad_number, authority: values.authority, title: values.title, mandatory: true };
+    if (values.publication_id) body.publication_id = values.publication_id;
+    const result = await runLocked(`desk-ad:${values.ad_number}`, () => softMutate("/planning/ads", { body }));
     if (!result) return;
     if (!result.ok) return fail(result);
     return ok(`AD ${result.data?.ad_number || ""} created`);
   }
   if (action === "sb") {
-    const result = await runLocked(`desk-sb:${values.sb_number}`, () =>
-      softMutate("/planning/service-bulletins", {
-        body: { sb_number: values.sb_number, sb_type: values.sb_type, title: values.title, priority: values.priority },
-      })
-    );
+    const body = { sb_number: values.sb_number, sb_type: values.sb_type, title: values.title, priority: values.priority };
+    if (values.publication_id) body.publication_id = values.publication_id;
+    const result = await runLocked(`desk-sb:${values.sb_number}`, () => softMutate("/planning/service-bulletins", { body }));
     if (!result) return;
     if (!result.ok) return fail(result);
     return ok(`SB ${result.data?.sb_number || ""} created`);
   }
   if (action === "eo") {
-    const result = await runLocked(`desk-eo:${values.eo_number}`, () =>
-      softMutate("/planning/engineering-orders", { body: { eo_number: values.eo_number, title: values.title } })
-    );
+    const body = { eo_number: values.eo_number, title: values.title };
+    if (values.publication_id) body.publication_id = values.publication_id;
+    const result = await runLocked(`desk-eo:${values.eo_number}`, () => softMutate("/planning/engineering-orders", { body }));
     if (!result) return;
     if (!result.ok) return fail(result);
     return ok(`EO ${result.data?.eo_number || ""} created`);

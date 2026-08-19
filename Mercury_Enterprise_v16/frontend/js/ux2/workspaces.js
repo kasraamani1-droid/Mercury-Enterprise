@@ -29,7 +29,6 @@ import {
   uxFetchPlugins,
   uxFetchPlatformNotifications,
   uxFetchServiceBulletins,
-  uxFetchTwins,
   uxFetchWorkOrderDashboard,
   uxFetchWorkOrders,
 } from "./api.js";
@@ -47,6 +46,7 @@ import { refreshLogisticsWorkspace } from "../logistics.js";
 import { refreshPlanningWorkspace } from "../planning.js";
 import { refreshTechLibraryWorkspace } from "../library.js";
 import { refreshPersonnelWorkspace } from "../personnel.js";
+import { refreshAssetTwinWorkspace } from "../twin.js";
 
 function setHtml(id, html) {
   const node = document.getElementById(id);
@@ -676,42 +676,6 @@ export async function refreshMarketplaceWorkspace() {
   bindToolbar("mp", ({ q, status, sortKey, sortDir }) => {
     renderMarketplaceProducts(filterSortSearch(items, { q, status, sortKey: sortKey || "name", sortDir }));
   });
-}
-
-export async function refreshAssetTwinWorkspace() {
-  const res = await uxFetchTwins();
-  const items = listify(res.data);
-  const first = items[0];
-  setHtml(
-    "assetTwinStage",
-    `<div class="mx-twin-stage">
-      <div class="mx-twin-hud"><span class="mx-chip">Digital Twin</span><span class="mx-chip mx-chip-ok">Not a 3D model</span><span class="mx-chip">Lifecycle registry</span></div>
-      <div class="mx-twin-orbit"></div>
-      <div class="mx-twin-core">${esc(first?.display_name || first?.name || first?.twin_uuid || "Asset<br>Twin")}</div>
-      <div class="mx-twin-node" style="left:12%;top:28%">Passport</div>
-      <div class="mx-twin-node" style="right:14%;top:34%">Config</div>
-      <div class="mx-twin-node" style="left:18%;bottom:22%">History</div>
-      <div class="mx-twin-node" style="right:16%;bottom:26%">Reliability</div>
-    </div>`
-  );
-  setHtml(
-    "assetTwinList",
-    table(
-      ["Name", "UUID", "Lifecycle", "Entity"],
-      items.length
-        ? items
-            .map(
-              (t) => `<tr class="we-row-open" data-we-open="digitalTwin:${esc(String(t.id || ""))}" data-we-label="${esc(t.display_name || t.name || t.twin_uuid || t.id || "")}">
-            <td>${esc(t.display_name || t.name || "—")}</td>
-            <td class="mx-mono">${esc(t.twin_uuid || t.id || "")}</td>
-            <td><span class="mx-chip">${esc(t.lifecycle_state || t.status || "—")}</span></td>
-            <td>${esc([t.fabric_entity_type || t.entity_type, t.fabric_entity_id || t.linked_entity_id].filter(Boolean).join(" · ") || "—")}</td>
-          </tr>`
-            )
-            .join("")
-        : `<tr><td colspan="4">${res.ok ? "No twins registered." : esc(res.error || "Twin API unavailable")}</td></tr>`
-    )
-  );
 }
 
 export async function refreshAuthorityWorkspace() {

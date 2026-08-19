@@ -34,6 +34,7 @@ import {
 import {
   bindLogisticsOpsPanel,
   logisticsOpsCacheKeys,
+  runLocked,
   sessionCanStores,
 } from "./logistics-ops.js";
 import {
@@ -49,6 +50,15 @@ import {
   bindPersonnelOpsPanel,
   personnelOpsCacheKeys,
 } from "./personnel-ops.js";
+import {
+  bindTwinOpsPanel,
+  bindFabricEntityType,
+  bindTwinType,
+  defaultLifecycleForType,
+  linkedAssetTarget,
+  sessionCanManageTwins,
+  twinOpsCacheKeys,
+} from "./twin-ops.js";
 
 let host = null;
 let active = null; // { key, type, id, label, tab, record, bundle }
@@ -182,15 +192,16 @@ async function refreshActiveObject(mutation = {}) {
   const planKeys = planningOpsCacheKeys(active, mutation);
   const pubKeys = publicationsOpsCacheKeys(active, mutation);
   const persKeys = personnelOpsCacheKeys(active, mutation);
+  const twinKeys = twinOpsCacheKeys(active, mutation);
   cache.delete(sessionKey(type, id));
   keys.components.forEach((componentId) => cache.delete(sessionKey("component", componentId)));
-  [...keys.aircraft, ...opsKeys.aircraft, ...logKeys.aircraft, ...planKeys.aircraft, ...pubKeys.aircraft].forEach((aircraftId) => cache.delete(sessionKey("aircraft", aircraftId)));
+  [...keys.aircraft, ...opsKeys.aircraft, ...logKeys.aircraft, ...planKeys.aircraft, ...pubKeys.aircraft, ...twinKeys.aircraft].forEach((aircraftId) => cache.delete(sessionKey("aircraft", aircraftId)));
   [...opsKeys.workOrders, ...logKeys.workOrders, ...planKeys.workOrders, ...persKeys.workOrders].forEach((orderId) => cache.delete(sessionKey("workOrder", orderId)));
   [...opsKeys.jobCards, ...logKeys.jobCards, ...persKeys.jobCards].forEach((cardId) => cache.delete(sessionKey("jobCard", cardId)));
   logKeys.parts.forEach((partId) => cache.delete(sessionKey("part", partId)));
   logKeys.materialRequests.forEach((requestId) => cache.delete(sessionKey("materialRequest", requestId)));
   logKeys.purchaseOrders.forEach((poId) => cache.delete(sessionKey("purchaseOrder", poId)));
-  logKeys.tools.forEach((toolId) => cache.delete(sessionKey("tool", toolId)));
+  [...logKeys.tools, ...twinKeys.tools].forEach((toolId) => cache.delete(sessionKey("tool", toolId)));
   planKeys.findings.forEach((findingId) => cache.delete(sessionKey("finding", findingId)));
   planKeys.checks.forEach((checkId) => cache.delete(sessionKey("check", checkId)));
   [...planKeys.ads, ...pubKeys.ads].forEach((adId) => cache.delete(sessionKey("airworthinessDirective", adId)));
@@ -198,8 +209,9 @@ async function refreshActiveObject(mutation = {}) {
   [...planKeys.eos, ...pubKeys.eos].forEach((eoId) => cache.delete(sessionKey("engineeringOrder", eoId)));
   planKeys.mels.forEach((melId) => cache.delete(sessionKey("melItem", melId)));
   pubKeys.publications.forEach((publicationId) => cache.delete(sessionKey("publication", publicationId)));
-  pubKeys.components.forEach((componentId) => cache.delete(sessionKey("component", componentId)));
+  [...pubKeys.components, ...twinKeys.components].forEach((componentId) => cache.delete(sessionKey("component", componentId)));
   persKeys.employees.forEach((employeeId) => cache.delete(sessionKey("employee", employeeId)));
+  twinKeys.twins.forEach((twinId) => cache.delete(sessionKey("digitalTwin", twinId)));
   await openObject(type, id, { refresh: true, tab, label });
 }
 
@@ -235,6 +247,9 @@ function mountActive() {
       if (action.id === "logDefect" || action.id === "generateWp" || action.id === "approveEo") {
         return sessionCanManagePlanning(sessionRole);
       }
+      if (action.id === "addHistory") {
+        return sessionCanManageTwins(sessionRole) && active.type === "digitalTwin";
+      }
       return true;
     }),
   };
@@ -257,6 +272,7 @@ function mountActive() {
   bindPlanningOpsPanel(active, { onRefresh: refreshActiveObject });
   bindPublicationsOpsPanel(active, { onRefresh: refreshActiveObject });
   bindPersonnelOpsPanel(active, { onRefresh: refreshActiveObject });
+  bindTwinOpsPanel(active, { onRefresh: refreshActiveObject });
 
   const search = document.getElementById("weObjectSearch");
   if (search) {
@@ -284,6 +300,24 @@ function handleAction(action) {
   }
   if (action === "openTwin") {
     void openOrCreateTwin();
+    return;
+  }
+  if (action === "addHistory") {
+    if (active.type !== "digitalTwin") {
+      toast("Add history requires a twin object");
+      return;
+    }
+    setObjectTab("history");
+    document.getElementById("weTwinHistoryForm")?.scrollIntoView({ block: "nearest" });
+    return;
+  }
+  if (action === "openLinkedAsset") {
+    const target = linkedAssetTarget(active.record);
+    if (!target) {
+      toast("No fabric entity bound to this twin");
+      return;
+    }
+    void openObject(target.type, target.id, { refresh: true, label: target.label });
     return;
   }
   if (action === "createWo") {
@@ -512,27 +546,36 @@ async function openOrCreateTwin() {
   if (!active) return;
   let twinId = active.bundle?.twin?.id;
   if (!twinId && active.type === "digitalTwin") {
-    twinId = active.id;
+    twinId = active.record?.id || active.id;
   }
   if (twinId) {
     await openObject("digitalTwin", twinId, { refresh: true });
     return;
   }
-  if (active.type !== "aircraft") {
+  if (!["aircraft", "component", "tool"].includes(active.type)) {
     toast("No twin linked for this object");
     return;
   }
-  const ok = window.confirm(`No twin linked to ${active.label || active.id}. Create an aircraft twin?`);
+  if (!sessionCanManageTwins(active.bundle?.sessionRole)) {
+    toast("Twin manage required to register a twin");
+    return;
+  }
+  const ok = window.confirm(`No twin linked to ${active.label || active.id}. Create a ${active.type} twin?`);
   if (!ok) return;
-  const created = await uxCreateTwin({
-    twin_type: "aircraft",
-    display_name: String(active.label || active.id),
-    serial_number: String(active.record?.serial_number || ""),
-    fabric_entity_type: "aircraft",
-    fabric_entity_id: String(active.id),
-    lifecycle_state: "in_service",
-    ensure_passport: true,
-  });
+  const twinType = bindTwinType(active.type);
+  const created = await runLocked(`twin-create:${active.type}:${active.id}`, () =>
+    uxCreateTwin({
+      twin_type: twinType,
+      display_name: String(active.label || active.record?.display_name || active.id),
+      serial_number: String(active.record?.serial_number || active.record?.tool_code || ""),
+      part_number: String(active.record?.part_number || ""),
+      fabric_entity_type: bindFabricEntityType(active.type),
+      fabric_entity_id: String(active.id),
+      lifecycle_state: defaultLifecycleForType(twinType),
+      ensure_passport: true,
+    })
+  );
+  if (!created) return;
   if (!created.ok || !created.data?.id) {
     toast(created.error || "Twin create failed");
     return;

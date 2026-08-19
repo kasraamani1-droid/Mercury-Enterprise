@@ -42,6 +42,15 @@ import {
   renderPublicationWorkspace,
 } from "./publications-ops.js";
 import { renderEmployeeWorkspace, renderJobCardPersonnelBridge } from "./personnel-ops.js";
+import {
+  renderHostTwinPanel,
+  renderTwinConfiguration,
+  renderTwinHistory,
+  renderTwinOverview,
+  renderTwinPassport,
+  renderTwinRelationships,
+  renderTwinReliability,
+} from "./twin-ops.js";
 
 export function renderShellSkeleton() {
   return `
@@ -178,6 +187,21 @@ export function renderMainTab(session, typeDef, record, bundle, tabId) {
   if (session.type === "employee" && tabId === "overview") {
     return renderEmployeeWorkspace(session, record, bundle);
   }
+  if (session.type === "digitalTwin" && tabId === "overview") {
+    return renderTwinOverview(session, record, bundle);
+  }
+  if (session.type === "digitalTwin" && tabId === "passport") {
+    return renderTwinPassport(session, record, bundle);
+  }
+  if (session.type === "digitalTwin" && tabId === "history") {
+    return renderTwinHistory(session, record, bundle);
+  }
+  if (session.type === "digitalTwin" && tabId === "reliability") {
+    return renderTwinReliability(session, record, bundle);
+  }
+  if (session.type === "digitalTwin" && tabId === "relationships") {
+    return renderTwinRelationships(session, record, bundle);
+  }
   if (session.type === "melItem" && tabId === "overview") {
     return renderMelWorkspace(session, record, bundle);
   }
@@ -196,16 +220,7 @@ export function renderMainTab(session, typeDef, record, bundle, tabId) {
     `;
   }
   if (tabId === "digitalTwin") {
-    const twin = bundle.twin;
-    return `
-      <div class="mx-twin-stage we-twin">
-        <div class="mx-twin-hud"><span class="mx-chip">Digital Twin</span><span class="mx-chip mx-chip-ok">Architecture viz</span></div>
-        <div class="mx-twin-orbit"></div>
-        <div class="mx-twin-core">${esc(twin?.name || label)}</div>
-      </div>
-      <p class="mx-subtitle" style="margin-top:12px">${twin ? `Bound twin ${esc(twin.twin_uuid || twin.id)}` : "No twin linked yet — open Digital Twin workspace to register."}</p>
-      ${twin ? `<button type="button" class="mx-btn mx-btn-ghost" data-we-open="digitalTwin:${esc(twin.id)}">Open twin object</button>` : ""}
-    `;
+    return renderHostTwinPanel(session, record, bundle);
   }
   if (tabId === "workOrders" || tabId === "tasks") {
     const rows = (bundle.workOrders || bundle.jobCards || []).slice(0, 30);
@@ -238,21 +253,7 @@ export function renderMainTab(session, typeDef, record, bundle, tabId) {
       </article>`;
   }
   if (tabId === "configuration" && session.type === "digitalTwin") {
-    const rows = bundle.configurations || [];
-    if (!rows.length) return empty("No configuration snapshots for this twin.");
-    return table(
-      ["Revision", "Status", "Effective", "Notes"],
-      rows
-        .map(
-          (c) => `<tr>
-            <td class="mx-mono">${esc(String(c.revision || c.version || c.id || "—"))}</td>
-            <td><span class="mx-chip">${esc(c.status || "—")}</span></td>
-            <td>${esc(c.effective_at || c.created_at || "—")}</td>
-            <td>${esc(c.notes || c.summary || "—")}</td>
-          </tr>`
-        )
-        .join("")
-    );
+    return renderTwinConfiguration(session, record, bundle);
   }
   if (tabId === "reliability") {
     const rows = bundle.reliability || [];
@@ -267,8 +268,8 @@ export function renderMainTab(session, typeDef, record, bundle, tabId) {
           (r) => `<tr>
             <td>${esc(r.metric_code || r.name || r.id || "—")}</td>
             <td>${esc(String(r.value ?? r.metric_value ?? "—"))}</td>
-            <td>${esc(r.window || r.period || "—")}</td>
-            <td>${esc(r.notes || r.summary || "—")}</td>
+            <td>${esc(r.window_label || r.window || r.period || "—")}</td>
+            <td>${esc(r.notes || r.summary || r.unit || "—")}</td>
           </tr>`
         )
         .join("")
@@ -342,6 +343,7 @@ export function renderMainTab(session, typeDef, record, bundle, tabId) {
 
 function listifyRelationships(rel) {
   if (!rel || typeof rel !== "object") return [];
+  if (Array.isArray(rel.fabric_relationships)) return rel.fabric_relationships;
   if (Array.isArray(rel.links)) return rel.links;
   if (Array.isArray(rel.relationships)) return rel.relationships;
   if (Array.isArray(rel.items)) return rel.items;
