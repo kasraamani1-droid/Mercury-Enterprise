@@ -25,6 +25,8 @@ import { initializeEnterprise8, refreshIntegrations } from "./enterprise8.js";
 import { initializeMaintenance } from "./maintenance.js";
 import { initializePlanning } from "./planning.js";
 import { initializeLogistics } from "./logistics.js";
+import { initializeLibrary } from "./library.js";
+import { initializePersonnel } from "./personnel.js";
 import { initializeWebSocket } from "./websocket.js";
 import { initializeUx2 } from "./ux2/index.js";
 let currentSession = null;
@@ -569,6 +571,8 @@ async function initialize(){
   initializeMaintenance();
   initializePlanning();
   initializeLogistics();
+  initializeLibrary();
+  initializePersonnel();
   await ensureSession();
   await loadSessionContext();
   applyRoleAccess();

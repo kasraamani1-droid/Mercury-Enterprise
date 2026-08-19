@@ -241,6 +241,17 @@ def create_authorization(
     return out
 
 
+@router.get("/employees/{employee_id}/stamps", response_model=list[StampOut])
+def list_stamps(
+    employee_id: str,
+    db: Session = Depends(get_db),
+    session: dict[str, datetime | str] = Depends(require_personnel_read),
+) -> list[StampOut]:
+    return _svc(db).list_stamps(
+        employee_id, username=str(session["operator"]), session_role=str(session["role"])
+    )
+
+
 @router.post("/employees/{employee_id}/stamps", response_model=StampOut, status_code=201)
 def create_stamp(
     employee_id: str,

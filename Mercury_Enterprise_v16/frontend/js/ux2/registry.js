@@ -22,6 +22,7 @@ export const NAV_SECTIONS = [
       { id: "logbook", label: "Digital Logbook", icon: "▤", shortcut: "G L", keywords: "tech log release" },
       { id: "engineering", label: "Engineering", icon: "⌬", shortcut: "G E", keywords: "eo sb ad engineering" },
       { id: "techLibrary", label: "Technical Library", icon: "▤", shortcut: "G B", keywords: "publications library ammm" },
+      { id: "personnel", label: "Personnel", icon: "♟", shortcut: "G J", keywords: "qualifications stamps aca employee" },
       { id: "approvals", label: "Approvals Inbox", icon: "✓", shortcut: "G R", keywords: "approvals inbox" },
     ],
   },

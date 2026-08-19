@@ -31,6 +31,12 @@ See [TECHNICAL_LIBRARY.md](TECHNICAL_LIBRARY.md). Locators only: `external_url`,
 | `publication.manage` | Operator+ |
 | `publication.admin` | Administrator (`*`) — archive, access classification, revision activation |
 
+## Operator UI (Sprint 8e)
+
+Technical Library area (`#techLibraryWorkspace`) and Workspace Engine `publication` objects use these APIs. Viewer/Reviewer browse and search. Operator creates metadata and **draft** revisions (`activate: false`). Administrator activates revisions, changes access classification, and archives.
+
+Aircraft **Publications** tab: `GET /publications/by-aircraft/{id}`. Component tab: `GET /publications/by-component/{id}`. AD/SB/EO overviews open a linked publication when `publication_id` is present.
+
 ## APIs
 
 `/api/v1/publications/*` and `/api/v1/library/*`

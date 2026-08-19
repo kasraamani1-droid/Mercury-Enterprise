@@ -2,6 +2,23 @@
 
 All notable changes to Mercury Enterprise are summarized here. Package/API version remains `16.0.0` unless noted; sprint tags mark security/ops increments.
 
+## Publications and personnel operator integration
+
+### Added
+- Technical Library desk: manufacturer → family → model → type → ATA browse, search/filters, role-gated publication create, AD/SB/EO chips with `publication_id`
+- Workspace Engine `publication` object (revisions, ATA link, admin activate/access/archive) on existing `/api/v1/publications` and `/api/v1/library`
+- Aircraft and component **Publications** tabs from `GET /publications/by-aircraft/{id}` and `GET /publications/by-component/{id}`
+- Personnel desk: employees, qualification expiry alerts, stamp profiles; Workspace Engine `employee` object
+- Job-card personnel context chips (visibility only — inspect/release stay on certification APIs)
+- `GET /api/v1/personnel/employees/{id}/stamps` so the UI can list stamp profiles (create already existed)
+- Contract suites `backend/tests/test_publications_operator_ui.py` and `backend/tests/test_personnel_operator_ui.py`
+
+### Notes
+- No new publications/personnel domains. Storage remains locators only; OEM binaries are not hosted.
+- Operator may create publications and draft revisions (`publication.manage`). Archive, access classification, and later revision activation require `publication.admin` (Administrator).
+- Creating a stamp profile does not auto-retire prior stamps. Inspect/release authority is not granted by this UI.
+- Aviation personas remain documentation-only. Command/Radar/Cloud stay labeled SIM.
+
 ## Maintenance planning operator integration
 
 ### Added

@@ -9,6 +9,8 @@ Manufacturer → Aircraft Family → Aircraft Model → Publication Type → ATA
 
 Browse: `GET /api/v1/library/browse` (supports `family_id`). Search: `GET /api/v1/library/search`.
 
+The Technical Library desk walks that path in the vanilla JS UI (`library.js` + `publications-ops.js`). OEM binaries are never uploaded; create forms store locators only.
+
 Catalog includes AMM, CMM, IPC/AIPC, WDM, SDM, FIM, MFIM, TSM, SB, EO, ARM, GHSI (ground handling), ATA-AMM/ATA-SPM, CDL, MEL/DDG, MPD, WBM (weight & balance), SRM, NDT, SPM (standard practices), and related flight/engineering types.
 
 Also related: Service Bulletins · Engineering Orders · Fault Codes · Technical Logbook entries.

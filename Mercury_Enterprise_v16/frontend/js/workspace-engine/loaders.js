@@ -43,6 +43,8 @@ export async function loadObjectRecord(type, id) {
     serviceBulletin: `/planning/service-bulletins/${encodeURIComponent(id)}`,
     engineeringOrder: `/planning/engineering-orders/${encodeURIComponent(id)}`,
     melItem: `/planning/mel-items/${encodeURIComponent(id)}`,
+    publication: `/publications/${encodeURIComponent(id)}`,
+    employee: `/personnel/employees/${encodeURIComponent(id)}`,
   };
 
   if (routes[type]) {
@@ -98,7 +100,7 @@ export async function loadRelatedBundle(type, id, record) {
   };
 
   if (type === "aircraft") {
-    const [wos, due, twins, cfg, serialized, ata, catalog, fleet, session, logbook, cards, checks, ads, sbs, eos, defects, mels] = await Promise.all([
+    const [wos, due, twins, cfg, serialized, ata, catalog, fleet, session, logbook, cards, checks, ads, sbs, eos, defects, mels, pubs] = await Promise.all([
       softGet(`/work-orders/orders?aircraft_id=${encodeURIComponent(id)}&limit=20`),
       softGet(`/planning/due-list?limit=20`),
       softGet(`/twin/twins?limit=40`),
@@ -116,6 +118,7 @@ export async function loadRelatedBundle(type, id, record) {
       softGet(`/planning/engineering-orders?limit=40`),
       softGet(`/planning/deferred-defects?aircraft_id=${encodeURIComponent(id)}&limit=50`),
       softGet(`/planning/mel-items?limit=40`),
+      softGet(`/publications/by-aircraft/${encodeURIComponent(id)}`),
     ]);
     bundle.workOrdersLoad = { ok: wos.ok, status: wos.status, error: wos.error || "" };
     bundle.workOrders = listify(wos.data);
@@ -139,6 +142,8 @@ export async function loadRelatedBundle(type, id, record) {
     bundle.engineeringOrders = listify(eos.data);
     bundle.defects = listify(defects.data);
     bundle.melItems = listify(mels.data);
+    bundle.publicationsLoad = { ok: pubs.ok, status: pubs.status, error: pubs.error || "" };
+    bundle.publications = listify(pubs.data);
     const twinList = listify(twins.data);
     bundle.twin =
       twinList.find(
@@ -229,15 +234,18 @@ export async function loadRelatedBundle(type, id, record) {
 
   if (type === "component") {
     const hostId = record?.current_aircraft_id;
-    const [history, session, host] = await Promise.all([
+    const [history, session, host, pubs] = await Promise.all([
       softGet(`/components/serialized/${encodeURIComponent(id)}/history`),
       softGet(`/auth/session`),
       hostId ? softGet(`/fleet/aircraft/${encodeURIComponent(hostId)}`) : Promise.resolve({ ok: false, data: null }),
+      softGet(`/publications/by-component/${encodeURIComponent(id)}`),
     ]);
     bundle.historyLoad = { ok: history.ok, status: history.status, error: history.error || "" };
     bundle.installHistory = listify(history.data);
     bundle.sessionRole = session.ok ? session.data?.role || "" : "";
     bundle.hostAircraft = host.ok ? host.data : null;
+    bundle.componentPublicationsLoad = { ok: pubs.ok, status: pubs.status, error: pubs.error || "" };
+    bundle.componentPublications = pubs.ok ? pubs.data : null;
     bundle.timeline = bundle.installHistory.slice(0, 12).map((h) => ({
       title: h.event_type || "History",
       at: h.occurred_at || "",
@@ -366,7 +374,8 @@ export async function loadRelatedBundle(type, id, record) {
     const aircraftId = record?.aircraft_id;
     const woId = record?.linked_work_order_id;
     const wpId = record?.generated_work_package_id || record?.work_package_id;
-    const [session, mels, aircraft, order, pkgOrders] = await Promise.all([
+    const pubId = record?.publication_id;
+    const [session, mels, aircraft, order, pkgOrders, linkedPub] = await Promise.all([
       softGet(`/auth/session`),
       softGet(`/planning/mel-items?limit=40`),
       aircraftId ? softGet(`/fleet/aircraft/${encodeURIComponent(aircraftId)}`) : Promise.resolve({ ok: false, data: null }),
@@ -374,6 +383,7 @@ export async function loadRelatedBundle(type, id, record) {
       wpId
         ? softGet(`/work-orders/orders?work_package_id=${encodeURIComponent(wpId)}&limit=20`)
         : Promise.resolve({ ok: false, data: null }),
+      pubId ? softGet(`/publications/${encodeURIComponent(pubId)}`) : Promise.resolve({ ok: false, data: null }),
     ]);
     bundle.sessionRole = session.ok ? session.data?.role || "" : "";
     bundle.melItems = listify(mels.data);
@@ -386,6 +396,39 @@ export async function loadRelatedBundle(type, id, record) {
       bundle.workOrders = fromPackage;
       bundle.workOrder = fromPackage[0];
     }
+    bundle.publications = linkedPub.ok && linkedPub.data ? [linkedPub.data] : [];
+  }
+
+  if (type === "publication") {
+    const [session, revisions, ata] = await Promise.all([
+      softGet(`/auth/session`),
+      softGet(`/publications/${encodeURIComponent(id)}/revisions`),
+      softGet(`/components/ata-chapters`),
+    ]);
+    bundle.sessionRole = session.ok ? session.data?.role || "" : "";
+    bundle.revisionsLoad = { ok: revisions.ok, status: revisions.status, error: revisions.error || "" };
+    bundle.revisions = listify(revisions.data);
+    bundle.ataChapters = listify(ata.data);
+    bundle.timeline = bundle.revisions.slice(0, 12).map((row) => ({
+      title: `Revision ${row.revision_number || row.id} · ${row.status || ""}`,
+      at: row.updated_at || row.created_at || "",
+      detail: row.change_summary || row.storage_kind || "",
+    }));
+  }
+
+  if (type === "employee") {
+    const [session, quals, auths, stamps] = await Promise.all([
+      softGet(`/auth/session`),
+      softGet(`/personnel/employees/${encodeURIComponent(id)}/qualifications`),
+      softGet(`/personnel/employees/${encodeURIComponent(id)}/authorizations`),
+      softGet(`/personnel/employees/${encodeURIComponent(id)}/stamps`),
+    ]);
+    bundle.sessionRole = session.ok ? session.data?.role || "" : "";
+    bundle.qualificationsLoad = { ok: quals.ok, status: quals.status, error: quals.error || "" };
+    bundle.qualifications = listify(quals.data);
+    bundle.authorizations = listify(auths.data);
+    bundle.stampsLoad = { ok: stamps.ok, status: stamps.status, error: stamps.error || "" };
+    bundle.stamps = listify(stamps.data);
   }
 
   // Synthetic timeline seed from record
@@ -460,6 +503,33 @@ export async function searchObjects(query) {
         });
       });
   }
+  const pubs = await softGet(`/publications?q=${encodeURIComponent(q)}&limit=20`);
+  if (pubs.ok) {
+    listify(pubs.data)
+      .slice(0, 8)
+      .forEach((row) => {
+        results.push({
+          type: "publication",
+          id: String(row.id),
+          label: row.publication_number || row.title || row.id,
+          meta: row.publication_code || "publication",
+        });
+      });
+  }
+  const people = await softGet(`/personnel/employees?limit=50`);
+  if (people.ok) {
+    listify(people.data)
+      .filter((row) => `${row.full_name || ""} ${row.employee_number || ""} ${row.id || ""}`.toLowerCase().includes(q.toLowerCase()))
+      .slice(0, 8)
+      .forEach((row) => {
+        results.push({
+          type: "employee",
+          id: String(row.id),
+          label: row.full_name || row.employee_number || row.id,
+          meta: row.employee_number || "employee",
+        });
+      });
+  }
   return results;
 }
 
@@ -482,5 +552,7 @@ function mapSearchType(kind) {
   if (k.includes("bulletin") || k === "sb") return "serviceBulletin";
   if (k.includes("engineering") || k === "eo") return "engineeringOrder";
   if (k.includes("mel")) return "melItem";
+  if (k.includes("publication") || k.includes("library") || k.includes("manual")) return "publication";
+  if (k.includes("employee") || k.includes("personnel")) return "employee";
   return "project";
 }
