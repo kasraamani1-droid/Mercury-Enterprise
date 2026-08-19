@@ -365,7 +365,7 @@ class ComponentService:
         row = self.repo.get_component(component_id, with_catalog=True, for_update=for_update)
         if row is None or row.status != "active":
             raise HTTPException(status_code=404, detail="Component not found")
-        self.assert_org_access(username=username, session_role=session_role, organization_id=row.organization_id)
+        self.org.assert_resource_visible(username=username, session_role=session_role, organization_id=row.organization_id)
         return row
 
     def _assert_aircraft_in_org(self, *, organization_id: str, aircraft_id: str) -> None:

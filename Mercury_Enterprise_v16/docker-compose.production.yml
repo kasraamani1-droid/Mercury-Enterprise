@@ -1,0 +1,20 @@
+# Internet-facing production overlay.
+# Usage (from this package directory, after filling .env with real secrets + OIDC):
+#   docker compose --profile production -f docker-compose.yml -f docker-compose.production.yml up --build
+#
+# This file:
+#   - unpublishes frontend :3000 (TLS edge is nginx :80/:443)
+#   - requires POSTGRES_PASSWORD (no silent "mercury" default)
+# Compose concatenates `ports` across files, so `ports: []` would NOT remove :3000.
+# `!reset` clears the LAN mapping. Keep DATABASE_URL in .env in sync with POSTGRES_PASSWORD.
+# Postgres and Redis remain unpublished.
+
+services:
+  postgres:
+    environment:
+      POSTGRES_DB: mercury
+      POSTGRES_USER: mercury
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env for production}
+
+  frontend:
+    ports: !reset []

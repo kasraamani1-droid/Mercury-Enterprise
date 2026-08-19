@@ -20,8 +20,13 @@
   <form id="loginForm" class="login-card" method="post" action="/" autocomplete="on">
     <h2 id="loginTitle">Operator sign-in</h2>
     <p class="muted">Session required. Demo auto-login is disabled.</p>
-    <label>Operator <input id="loginOperator" name="operator" autocomplete="username" required></label>
-    <label>Password <input id="loginPassword" name="password" type="password" autocomplete="current-password" required></label>
+    <p id="loginSsoWrap" class="hidden">
+      <a id="oidcLoginLink" class="mx-btn" href="/api/v1/auth/oidc/login">Sign in with SSO</a>
+    </p>
+    <div id="loginPasswordFields">
+      <label>Operator <input id="loginOperator" name="operator" autocomplete="username" required></label>
+      <label>Password <input id="loginPassword" name="password" type="password" autocomplete="current-password" required></label>
+    </div>
     <p id="loginError" class="login-error hidden" role="alert"></p>
     <button type="submit" id="loginSubmit">Sign in</button>
   </form>

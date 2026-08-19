@@ -77,6 +77,10 @@ export async function logout() {
   ).json();
 }
 
+export async function getPublicAuthConfig() {
+  return (await request("/auth/public-config")).json();
+}
+
 export async function getSessionStatus() {
   return (await request("/auth/session")).json();
 }

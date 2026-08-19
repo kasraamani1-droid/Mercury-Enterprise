@@ -74,6 +74,8 @@ ACTION_ROLE_CHANGE = "user.role_change"
 ACTION_CONFIG_CHANGE = "config.change"
 ACTION_API_ACCESS = "api.access"
 ACTION_SECURITY_EVENT = "security.event"
+ACTION_AUTHZ_DENIED = "security.authz_denied"
+ACTION_OIDC_LOGIN = "auth.oidc_login"
 
 
 def list_audit_events(

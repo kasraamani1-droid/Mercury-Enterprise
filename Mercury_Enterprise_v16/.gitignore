@@ -37,6 +37,12 @@ backups/
 *.dump
 *.dump.sha256
 
+# Runtime data (never commit customer or demo operational files)
+data/
+*.pem
+*.key
+*.enc
+
 # Environment
 .env
 .env.*

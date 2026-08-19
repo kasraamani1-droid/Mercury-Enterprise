@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
 from ..shared import clamp_page
@@ -131,6 +131,21 @@ class OrgRepository:
     # Users / memberships
     def get_user_by_username(self, username: str) -> OrgUser | None:
         return self.db.scalar(select(OrgUser).where(OrgUser.username == username))
+
+    def get_user_by_email(self, email: str) -> OrgUser | None:
+        value = (email or "").strip().lower()
+        if not value:
+            return None
+        return self.db.scalar(select(OrgUser).where(func.lower(OrgUser.email) == value))
+
+    def get_user_by_oidc(self, issuer: str, subject: str) -> OrgUser | None:
+        issuer_value = (issuer or "").rstrip("/")
+        subject_value = (subject or "").strip()
+        if not issuer_value or not subject_value:
+            return None
+        return self.db.scalar(
+            select(OrgUser).where(OrgUser.oidc_issuer == issuer_value, OrgUser.oidc_subject == subject_value)
+        )
 
     def list_users(self, *, limit: int | None = None, offset: int | None = None) -> list[OrgUser]:
         stmt = self._apply_page(select(OrgUser).order_by(OrgUser.username), limit=limit, offset=offset)

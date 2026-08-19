@@ -4,7 +4,7 @@
 
 | Control | Behavior |
 |---------|----------|
-| Authentication | Session cookie (`HttpOnly`, `SameSite=Lax`, `Secure` in production/HTTPS). JWT access/refresh tokens are **not** used for operator sessions. See [docs/engineering/AUTHENTICATION.md](docs/engineering/AUTHENTICATION.md) |
+| Authentication | Session cookie (`HttpOnly`, `SameSite=Lax`, `Secure` in production/HTTPS). Optional **OIDC authorization-code + PKCE** when configured. JWT access/refresh tokens are **not** used for operator sessions. See [docs/engineering/AUTHENTICATION.md](docs/engineering/AUTHENTICATION.md) |
 | Session store | In-memory by default; **Redis** when `REDIS_URL` is set (multi-worker ready) |
 | Machine auth | Optional `MERCURY_API_KEY` via `X-API-Key` or `Authorization: Bearer` (constant-time compare) |
 | Authorization | Server-side RBAC (Administrator / Operator / Reviewer / Viewer) |
@@ -27,6 +27,8 @@
 - `GET /metrics` (keep on internal Compose network)
 - `POST /api/v1/auth/login`, `POST /api/v1/auth/logout`
 - `GET /api/v1/auth/session` (returns `authenticated: false` without cookie)
+- `GET /api/v1/auth/public-config` (no secrets)
+- `GET /api/v1/auth/oidc/login`, `GET /api/v1/auth/oidc/callback` (fail closed if OIDC is not configured)
 
 **Administrator only**
 
@@ -37,14 +39,16 @@
 
 - Domain APIs under `/api/v1/*` require a valid session cookie **or** (when configured) a matching machine API key
 
-## Deferred (RC exclusion — not in this release)
+## Deferred (not claimed as done)
 
-- OIDC / Azure AD / SSO / MFA  
-- SCIM / LDAP directory sync  
-- Kubernetes network policies / service mesh  
-- Payment / PCI integrations  
+- Hosted IdP / Azure AD tenant (customer must issue the OIDC client)
+- SCIM / LDAP directory sync
+- MFA inside Mercury (use the IdP)
+- Kubernetes network policies / service mesh
+- Payment / PCI integrations
+- ID-token JWT signature verification via JWKS (Cycle 6 validates PKCE + TLS userinfo to the configured issuer)
 
-See [docs/security/EPIC009_RC_NOTES.md](docs/security/EPIC009_RC_NOTES.md).
+See [docs/security/EPIC009_RC_NOTES.md](docs/security/EPIC009_RC_NOTES.md) and [docs/pilot/PRODUCTION.md](docs/pilot/PRODUCTION.md).
 
 ## Related
 

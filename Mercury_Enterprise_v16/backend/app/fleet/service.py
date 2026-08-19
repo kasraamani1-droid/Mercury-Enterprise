@@ -264,6 +264,9 @@ class FleetService:
     def assert_org_access(self, *, username: str, session_role: str, organization_id: str) -> None:
         self.org.assert_org_access(username=username, session_role=session_role, organization_id=organization_id)
 
+    def assert_resource_visible(self, *, username: str, session_role: str, organization_id: str) -> None:
+        self.org.assert_resource_visible(username=username, session_role=session_role, organization_id=organization_id)
+
     def resolve_org_id(
         self,
         *,

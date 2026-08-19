@@ -348,14 +348,14 @@ class WorkOrderService:
         row = self.repo.get_package(package_id, for_update=for_update)
         if row is None:
             raise HTTPException(status_code=404, detail="Work package not found")
-        self.assert_org_access(username=username, session_role=session_role, organization_id=row.organization_id)
+        self.org.assert_resource_visible(username=username, session_role=session_role, organization_id=row.organization_id)
         return row
 
     def _get_org_order(self, order_id: str, *, username: str, session_role: str, for_update: bool = False) -> WorkOrder:
         row = self.repo.get_order(order_id, for_update=for_update)
         if row is None:
             raise HTTPException(status_code=404, detail="Work order not found")
-        self.assert_org_access(username=username, session_role=session_role, organization_id=row.organization_id)
+        self.org.assert_resource_visible(username=username, session_role=session_role, organization_id=row.organization_id)
         return row
 
     def _get_org_card(
@@ -364,7 +364,7 @@ class WorkOrderService:
         row = self.repo.get_job_card(job_card_id, for_update=for_update)
         if row is None:
             raise HTTPException(status_code=404, detail="Job card not found")
-        self.assert_org_access(username=username, session_role=session_role, organization_id=row.organization_id)
+        self.org.assert_resource_visible(username=username, session_role=session_role, organization_id=row.organization_id)
         return row
 
     def _employee_in_org(self, employee_id: str | None, org_id: str) -> None:

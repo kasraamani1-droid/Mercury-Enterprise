@@ -38,7 +38,7 @@ Mercury ships as an incremental FastAPI + vanilla JS foundation. Items below are
 
 1. **Runtime merge of custom roles / temporary access** into `has_permissions`
 2. **Migrate domain status machines** (work orders, logistics approvals) onto the generic workflow engine incrementally
-3. **OIDC / SSO adapters** on MFA/SSO-ready identity surfaces
+3. **OIDC / SSO adapters** on MFA/SSO-ready identity surfaces — **Cycle 6 shipped the OIDC code-flow boundary**; remaining work is customer IdP credentials, JWKS ID-token verification, and SCIM
 4. **Object store + virus-scan workers** bound to file metadata
 5. **Search indexer workers** / future OpenSearch bridge
 6. **Runtime persona RBAC** — enforce Technician/Inspector/ACA/Planner/Supervisor overlays

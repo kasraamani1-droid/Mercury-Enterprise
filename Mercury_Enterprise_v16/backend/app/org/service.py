@@ -342,6 +342,15 @@ class OrganizationService:
         if organization_id not in allowed:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Organization access denied")
 
+    def assert_resource_visible(self, *, username: str, session_role: str, organization_id: str) -> None:
+        """Get-by-id IDOR guard: same membership check, 404 instead of 403."""
+        try:
+            self.assert_org_access(username=username, session_role=session_role, organization_id=organization_id)
+        except HTTPException as exc:
+            if exc.status_code == status.HTTP_403_FORBIDDEN:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found") from exc
+            raise
+
     def assert_site_in_org(self, *, organization_id: str, site_id: str) -> OrgSite:
         site = self.repo.get_site(site_id)
         if site is None or site.organization_id != organization_id or site.status != "active":

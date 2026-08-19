@@ -1,6 +1,8 @@
 # Pilot deploy — start, stop, backup, restore
 
-Trusted network only (localhost or LAN). This is not internet-facing production. The TLS edge (`docker compose --profile production`) is optional and still lacks OIDC/SSO.
+Trusted network only (localhost or LAN) unless you complete [PRODUCTION.md](PRODUCTION.md). Default Compose HTTP on `:3000` is **not** internet-facing production.
+
+The TLS edge is `docker compose --profile production -f docker-compose.yml -f docker-compose.production.yml` (unpublishes `:3000`). HTTPS deployments require OIDC.
 
 ## Prerequisites
 
@@ -65,6 +67,7 @@ Store dumps **outside git**. `backups/` is gitignored.
 export MERCURY_BACKUP_VIA_COMPOSE=1
 export DATABASE_URL=postgresql+psycopg://mercury:mercury@postgres:5432/mercury
 export BACKUP_FILE=./backups/mercury-postgres-….dump
+export MERCURY_RESTORE_CONFIRM=YES
 sh scripts/restore_database.sh
 ```
 

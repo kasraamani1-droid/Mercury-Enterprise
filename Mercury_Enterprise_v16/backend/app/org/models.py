@@ -107,10 +107,14 @@ class OrgUser(Base):
     password_hash: Mapped[str] = mapped_column(String(255), default="")
     platform_role: Mapped[str] = mapped_column(String(40), default="")
     status: Mapped[str] = mapped_column(String(40), default="active", index=True)
+    oidc_issuer: Mapped[str | None] = mapped_column(String(400), nullable=True, default=None)
+    oidc_subject: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     memberships: Mapped[list["Membership"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+
+    __table_args__ = (Index("ix_org_users_oidc_issuer_subject", "oidc_issuer", "oidc_subject"),)
 
 
 class Membership(Base):

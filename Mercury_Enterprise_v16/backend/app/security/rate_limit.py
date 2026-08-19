@@ -57,7 +57,12 @@ def classify_rate_limit_path(path: str) -> str | None:
     """Return 'login', 'api', or None (unlimited)."""
     if is_probe_path(path):
         return None
-    if path in {"/login", "/api/v1/auth/login"} or path.endswith("/auth/login"):
+    if path in {
+        "/login",
+        "/api/v1/auth/login",
+        "/api/v1/auth/oidc/login",
+        "/api/v1/auth/oidc/callback",
+    } or "/auth/oidc/" in path:
         return "login"
     if path.startswith("/api"):
         return "api"

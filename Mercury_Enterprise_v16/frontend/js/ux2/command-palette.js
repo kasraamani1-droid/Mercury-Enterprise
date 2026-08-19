@@ -1,4 +1,4 @@
-import { allWorkspaces, SHORTCUT_ACTIONS } from "./registry.js";
+import { allWorkspaces, getSimWorkspacesVisible, SHORTCUT_ACTIONS } from "./registry.js";
 import { uxFetchPlatformSearch } from "./api.js";
 import { listObjectTypes, searchObjects } from "../workspace-engine/index.js";
 import { esc } from "../utils.js";
@@ -77,6 +77,7 @@ async function refreshList(query) {
 
   const workspaces = allWorkspaces()
     .filter((w) => {
+      if (!getSimWorkspacesVisible() && w.simulated) return false;
       if (!q) return true;
       return `${w.label} ${w.keywords} ${w.section}`.toLowerCase().includes(q);
     })

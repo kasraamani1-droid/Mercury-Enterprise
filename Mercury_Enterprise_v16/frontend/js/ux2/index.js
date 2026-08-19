@@ -1,4 +1,4 @@
-import { NAV_SECTIONS, WORKSPACE_IDS, workspaceById } from "./registry.js";
+import { WORKSPACE_IDS, getSimWorkspacesVisible, isSimulatedWorkspace, setSimWorkspacesVisible, visibleNavSections, workspaceById } from "./registry.js";
 import { getFavorites, getOpenTabs, getPins, getRecent, pushRecent, setOpenTabs, toggleFavorite, togglePin } from "./prefs.js";
 import { closePalette, initCommandPalette, isPaletteOpen, openPalette } from "./command-palette.js";
 import { initTheme, toggleTheme } from "./theme.js";
@@ -18,6 +18,10 @@ let openTabs = [];
 let activeId = "home";
 let weApi = null;
 
+function navSections() {
+  return visibleNavSections(getSimWorkspacesVisible());
+}
+
 function $(id) {
   return document.getElementById(id);
 }
@@ -27,7 +31,7 @@ function renderSidebar() {
   if (!root) return;
   const pins = new Set(getPins());
   const favs = new Set(getFavorites());
-  root.innerHTML = NAV_SECTIONS.map((section) => {
+  root.innerHTML = navSections().map((section) => {
     const items = section.items
       .map((item) => {
         const pinned = pins.has(item.id);
@@ -154,6 +158,9 @@ export function navigate(rawId, _ctx = {}) {
     if (cmd === "sidebar") toggleSidebar();
     if (cmd === "notifications") $("notificationButton")?.click();
     return;
+  }
+  if (!getSimWorkspacesVisible() && isSimulatedWorkspace(rawId)) {
+    rawId = "home";
   }
   const id = WORKSPACE_IDS.includes(rawId) ? rawId : "home";
   activeId = id;
@@ -355,4 +362,4 @@ export function getRecentWorkspaces() {
   return getRecent();
 }
 
-export { openObject };
+export { openObject, setSimWorkspacesVisible };

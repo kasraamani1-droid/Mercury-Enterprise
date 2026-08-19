@@ -25,6 +25,12 @@ jobs:
         working-directory: Mercury_Enterprise_v16
         run: docker compose config
         continue-on-error: true
+      - name: Validate production compose overlay
+        working-directory: Mercury_Enterprise_v16
+        env:
+          POSTGRES_PASSWORD: ci-compose-not-for-production
+        run: docker compose -f docker-compose.yml -f docker-compose.production.yml config
+        continue-on-error: true
       - name: Docker build (best-effort)
         working-directory: Mercury_Enterprise_v16
         run: docker compose build

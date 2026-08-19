@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -60,6 +60,8 @@ from .security.authorization import Role
 from .security.runtime_authz import require_allowed
 from .security.operators import authenticate_credentials, hash_password, operator_store
 from .security.rate_limit import classify_rate_limit_path, client_key, rate_limiter
+from .security.oidc import oidc_service, public_auth_config
+from .security.csrf import csrf_blocked
 from .shared import clamp_page
 from .timeline import TimelineManager
 from .openapi_docs import OPENAPI_TAGS, enrich_openapi
@@ -136,18 +138,24 @@ decision_engine = DecisionEngine(
 # Back-compat alias for admin metrics; prefer session_store.
 _sessions = session_store
 
-_ROLE_BY_OPERATOR = {
-    "admin": Role.ADMINISTRATOR.value,
-    settings.auth_operator: Role.OPERATOR.value,
-    "reviewer": Role.REVIEWER.value,
-    "viewer": Role.VIEWER.value,
-}
+
+def directory_roles() -> dict[str, str]:
+    """Production omits shared demo reviewer/viewer unless MERCURY_SEED_DEMO=true."""
+    roles: dict[str, str] = {"admin": Role.ADMINISTRATOR.value}
+    operator_name = (settings.auth_operator or "operator").strip() or "operator"
+    roles[operator_name] = Role.OPERATOR.value
+    if settings.seed_demo_data:
+        roles.setdefault("operator", Role.OPERATOR.value)
+        roles["reviewer"] = Role.REVIEWER.value
+        roles["viewer"] = Role.VIEWER.value
+    return roles
+
 
 # Bootstrap mutable operator directory from static roles + shared password.
 operator_store.bootstrap(
     auth_operator=settings.auth_operator,
     auth_password=settings.auth_password,
-    role_by_operator=_ROLE_BY_OPERATOR,
+    role_by_operator=directory_roles(),
 )
 
 
@@ -208,7 +216,7 @@ def seed_organizations() -> None:
     try:
         OrganizationService(db).ensure_seed_data(
             default_password_hash=hash_password(settings.auth_password),
-            operator_roles=dict(_ROLE_BY_OPERATOR),
+            operator_roles=directory_roles(),
             auth_password=settings.auth_password,
         )
         operator_store.hydrate_from_db(db)
@@ -363,7 +371,7 @@ def seed_event_fabric() -> None:
         db.close()
 
 
-def _create_session(operator: str, role: str) -> tuple[str, datetime]:
+def _create_session(operator: str, role: str, *, auth_method: str = "session") -> tuple[str, datetime]:
     now = utcnow()
     session_id = secrets.token_urlsafe(32)
     expires_at = now + timedelta(seconds=settings.session_ttl_seconds)
@@ -381,10 +389,22 @@ def _create_session(operator: str, role: str) -> tuple[str, datetime]:
         "site_id": site_id,
         "created_at": now,
         "expires_at": expires_at,
-        "auth_method": "session",
+        "auth_method": auth_method,
     }
     session_store.save(session_id, record)
     return session_id, expires_at
+
+
+def _set_session_cookie(response: Response, session_id: str) -> None:
+    response.set_cookie(
+        key=settings.session_cookie_name,
+        value=session_id,
+        max_age=settings.session_ttl_seconds,
+        httponly=True,
+        secure=settings.session_cookie_secure,
+        samesite=settings.session_cookie_samesite,
+        path="/",
+    )
 
 
 def _validate_session(session_id: str | None) -> dict[str, datetime | str] | None:
@@ -798,6 +818,25 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+if settings.https_enabled and (settings.domain or "").strip():
+    from starlette.middleware.trustedhost import TrustedHostMiddleware
+    from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+
+    app.add_middleware(
+        TrustedHostMiddleware,
+        allowed_hosts=[settings.domain, f"www.{settings.domain}", "localhost", "127.0.0.1"],
+    )
+    app.add_middleware(
+        ProxyHeadersMiddleware,
+        trusted_hosts=[settings.domain, f"www.{settings.domain}"],
+    )
+
+
+@app.middleware("http")
+async def csrf_origin_guard(request: Request, call_next):
+    if csrf_blocked(request, cors_origins=settings.cors_origins, domain=settings.domain):
+        return JSONResponse(status_code=status.HTTP_403_FORBIDDEN, content={"detail": "CSRF origin rejected"})
+    return await call_next(request)
 
 
 @app.middleware("http")
@@ -945,7 +984,12 @@ def platform_status(
         "Creates a server-side session and sets an HttpOnly cookie. Does not return a JWT or refresh token."
     ),
 )
-def login(payload: LoginRequest, response: Response, db: Session = Depends(get_db)):
+def login(payload: LoginRequest, request: Request, response: Response, db: Session = Depends(get_db)):
+    if not settings.password_login_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Password authentication is disabled. Sign in with SSO.",
+        )
     role = authenticate_credentials(db, payload.operator, payload.password)
     if role is None:
         metrics_mod.observe_login(success=False)
@@ -997,21 +1041,13 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
             logger.exception("Failed to record login failure audit")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
     metrics_mod.observe_login(success=True)
-    session_id, expires_at = _create_session(payload.operator, role)
+    _invalidate_session(_request_session_id(request))
+    session_id, expires_at = _create_session(payload.operator, role, auth_method="password")
     session = session_store.get(session_id)
     if session is None:
         raise HTTPException(status_code=500, detail="Session could not be established")
     effective_role = str(session["role"])
-    # Auth cookies: always HttpOnly + SameSite=Lax (or configured); Secure required in production/HTTPS.
-    response.set_cookie(
-        key=settings.session_cookie_name,
-        value=session_id,
-        max_age=settings.session_ttl_seconds,
-        httponly=True,
-        secure=settings.session_cookie_secure,
-        samesite=settings.session_cookie_samesite,
-        path="/",
-    )
+    _set_session_cookie(response, session_id)
     try:
         record_audit(
             db,
@@ -1021,11 +1057,11 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
             organization_id=str(session["organization_id"]),
             site_id=str(session["site_id"]),
             target_type="session",
-            target_id=session_id,
+            target_id="session",
             source="api",
             outcome="success",
             origin="operator",
-            details="",
+            details="method=password",
         )
         _safe_commit_audit(db)
     except Exception:
@@ -1036,6 +1072,7 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
         "operator": payload.operator,
         "role": effective_role,
         "expires_at": expires_at.isoformat(),
+        "auth_method": "password",
     }
 
 @app.post(
@@ -1056,7 +1093,7 @@ def logout(response: Response, request: Request, db: Session = Depends(get_db)):
                 organization_id=str(session["organization_id"]),
                 site_id=str(session["site_id"]),
                 target_type="session",
-                target_id=_request_session_id(request),
+                target_id="session",
                 source="api",
                 outcome="success",
                 origin="operator",
@@ -1094,7 +1131,91 @@ def session_status(request: Request):
         "organization_id": str(session["organization_id"]),
         "site_id": str(session["site_id"]),
         "expires_at": session["expires_at"].isoformat(),
+        "auth_method": str(session.get("auth_method") or "session"),
     }
+
+
+@app.get(
+    "/api/v1/auth/public-config",
+    tags=["auth"],
+    summary="Public authentication and deployment flags",
+    description="Unauthenticated. No secrets. Used by the login overlay and SIM workspace visibility.",
+)
+def auth_public_config():
+    return public_auth_config()
+
+
+@app.get(
+    "/api/v1/auth/oidc/login",
+    tags=["auth"],
+    summary="Start OIDC authorization-code login",
+    description="Redirects to the configured IdP. Fails closed when OIDC is not configured.",
+)
+def oidc_login():
+    url = oidc_service.start_authorization()
+    return RedirectResponse(url, status_code=status.HTTP_302_FOUND)
+
+
+@app.get(
+    "/api/v1/auth/oidc/callback",
+    tags=["auth"],
+    summary="OIDC authorization-code callback",
+    description="Exchanges the authorization code, maps the IdP subject onto a provisioned OrgUser, and sets the session cookie.",
+)
+def oidc_callback(
+    request: Request,
+    db: Session = Depends(get_db),
+    code: str = Query(default=""),
+    state: str = Query(default=""),
+    error: str = Query(default=""),
+):
+    if error:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="OIDC authentication was denied")
+    claims = oidc_service.complete(code=code, state=state)
+    user = oidc_service.resolve_directory_user(db, claims)
+    role = (user.platform_role or Role.VIEWER.value).strip() or Role.VIEWER.value
+    operator_store.register_role(user.username, role)
+    _invalidate_session(_request_session_id(request))
+    session_id, expires_at = _create_session(user.username, role, auth_method="oidc")
+    session = session_store.get(session_id)
+    if session is None:
+        raise HTTPException(status_code=500, detail="Session could not be established")
+    try:
+        record_audit(
+            db,
+            action=ACTION_LOGIN,
+            actor=user.username,
+            actor_role=str(session["role"]),
+            organization_id=str(session["organization_id"]),
+            site_id=str(session["site_id"]),
+            target_type="session",
+            target_id="session",
+            source="api",
+            outcome="success",
+            origin="operator",
+            details="method=oidc",
+        )
+        _safe_commit_audit(db)
+    except Exception:
+        logger.exception("Failed to record OIDC auth.login audit")
+    metrics_mod.observe_login(success=True)
+    metrics_mod.set_active_users(session_store.count())
+    accept = (request.headers.get("accept") or "").lower()
+    if "application/json" in accept and "text/html" not in accept:
+        payload = JSONResponse(
+            {
+                "authenticated": True,
+                "operator": user.username,
+                "role": str(session["role"]),
+                "expires_at": expires_at.isoformat(),
+                "auth_method": "oidc",
+            }
+        )
+        _set_session_cookie(payload, session_id)
+        return payload
+    redirect = RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
+    _set_session_cookie(redirect, session_id)
+    return redirect
 
 
 @app.get(
