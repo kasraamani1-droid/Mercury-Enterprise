@@ -38,6 +38,9 @@ from .schemas import (
     SbOut,
     UtilizationOut,
     UtilizationUpsert,
+    WorkforcePlanLineCreate,
+    WorkforcePlanLineOut,
+    WorkforcePlanLineUpdate,
 )
 from .service import PlanningService
 
@@ -544,6 +547,85 @@ def create_hangar(
         session_org_id=str(session["organization_id"]),
     )
     _audit(db, session, action="planning.hangar.create", target_type="hangar_plan", target_id=out.id, organization_id=out.organization_id)
+    return out
+
+
+@router.get("/workforce-plan-lines", response_model=list[WorkforcePlanLineOut])
+def list_workforce(
+    organization_id: str | None = None,
+    work_package_id: str | None = None,
+    limit: int = 200,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    session: dict[str, datetime | str] = Depends(require_planning_read),
+) -> list[WorkforcePlanLineOut]:
+    return _svc(db).list_workforce_lines(
+        username=str(session["operator"]),
+        session_role=str(session["role"]),
+        session_org_id=str(session["organization_id"]),
+        organization_id=organization_id,
+        work_package_id=work_package_id,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.post("/workforce-plan-lines", response_model=WorkforcePlanLineOut, status_code=201)
+def create_workforce(
+    payload: WorkforcePlanLineCreate,
+    db: Session = Depends(get_db),
+    session: dict[str, datetime | str] = Depends(require_planning_manage),
+) -> WorkforcePlanLineOut:
+    out = _svc(db).create_workforce_line(
+        payload,
+        username=str(session["operator"]),
+        session_role=str(session["role"]),
+        session_org_id=str(session["organization_id"]),
+    )
+    _audit(
+        db,
+        session,
+        action="planning.workforce.create",
+        target_type="workforce_plan_line",
+        target_id=out.id,
+        organization_id=out.organization_id,
+        details=f"employee_id={out.employee_id};role={out.role_code};wp={out.work_package_id or ''}",
+    )
+    return out
+
+
+@router.get("/workforce-plan-lines/{line_id}", response_model=WorkforcePlanLineOut)
+def get_workforce(
+    line_id: str,
+    db: Session = Depends(get_db),
+    session: dict[str, datetime | str] = Depends(require_planning_read),
+) -> WorkforcePlanLineOut:
+    return _svc(db).get_workforce_line(line_id, username=str(session["operator"]), session_role=str(session["role"]))
+
+
+@router.patch("/workforce-plan-lines/{line_id}", response_model=WorkforcePlanLineOut)
+def update_workforce(
+    line_id: str,
+    payload: WorkforcePlanLineUpdate,
+    db: Session = Depends(get_db),
+    session: dict[str, datetime | str] = Depends(require_planning_manage),
+) -> WorkforcePlanLineOut:
+    out = _svc(db).update_workforce_line(
+        line_id,
+        payload,
+        username=str(session["operator"]),
+        session_role=str(session["role"]),
+        session_org_id=str(session["organization_id"]),
+    )
+    _audit(
+        db,
+        session,
+        action="planning.workforce.update",
+        target_type="workforce_plan_line",
+        target_id=out.id,
+        organization_id=out.organization_id,
+        details=f"status={out.status};role={out.role_code}",
+    )
     return out
 
 

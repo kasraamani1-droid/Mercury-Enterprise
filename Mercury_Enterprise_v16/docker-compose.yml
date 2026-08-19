@@ -1,3 +1,6 @@
+# Default stack is LAN/local HTTP on host :3000. Postgres and Redis stay on the
+# Compose network (not published). This is a trusted-network pilot topology,
+# not internet-facing production. Use `--profile production` for the TLS edge.
 services:
   postgres:
     image: postgres:17-alpine

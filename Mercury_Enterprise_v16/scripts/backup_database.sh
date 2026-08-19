@@ -22,6 +22,20 @@ if [ -z "$DATABASE_URL" ]; then
   exit 1
 fi
 
+compose_file() {
+  if [ -f "$ROOT/docker-compose.yml" ]; then
+    printf '%s' "$ROOT/docker-compose.yml"
+  else
+    printf '%s' "$ROOT/docker-compose.yaml"
+  fi
+}
+
+use_compose_postgres() {
+  [ "${MERCURY_BACKUP_VIA_COMPOSE:-}" = "1" ] && return 0
+  printf '%s' "$DATABASE_URL" | grep -Eq '@postgres(:|[/?])|://postgres(:|[/?])' && return 0
+  return 1
+}
+
 case "$DATABASE_URL" in
   sqlite*)
     # sqlite:///./mercury.db or sqlite:////abs/path
@@ -47,11 +61,19 @@ case "$DATABASE_URL" in
     # postgresql+psycopg://user:pass@host:port/db
     CLEAN="$(printf '%s' "$DATABASE_URL" | sed -E 's#^postgresql\+psycopg#postgresql#; s#^postgres\+psycopg#postgres#')"
     OUT="$BACKUP_DIR/mercury-postgres-$STAMP.dump"
-    if ! command -v pg_dump >/dev/null 2>&1; then
-      echo "pg_dump is required for PostgreSQL backups" >&2
-      exit 1
+    if use_compose_postgres; then
+      if ! command -v docker >/dev/null 2>&1; then
+        echo "docker is required for Compose PostgreSQL backups" >&2
+        exit 1
+      fi
+      docker compose -f "$(compose_file)" exec -T postgres pg_dump -U mercury -Fc mercury > "$OUT"
+    else
+      if ! command -v pg_dump >/dev/null 2>&1; then
+        echo "pg_dump is required for PostgreSQL backups" >&2
+        exit 1
+      fi
+      pg_dump --format=custom --file="$OUT" "$CLEAN"
     fi
-    pg_dump --format=custom --file="$OUT" "$CLEAN"
     sha256sum "$OUT" > "$OUT.sha256" 2>/dev/null || shasum -a 256 "$OUT" > "$OUT.sha256"
     echo "$OUT"
     ;;

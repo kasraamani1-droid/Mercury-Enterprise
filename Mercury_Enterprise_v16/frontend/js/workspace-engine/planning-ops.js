@@ -48,6 +48,27 @@ export function forecastRows(forecast) {
   return [...(forecast.overdue || []), ...(forecast.due_soon || []), ...(forecast.future || [])];
 }
 
+export function filterWorkforceLines(rows, { workPackageId = "", roleCode = "", q = "" } = {}) {
+  const wp = String(workPackageId || "").trim();
+  const role = String(roleCode || "").trim().toLowerCase();
+  const query = String(q || "").trim().toLowerCase();
+  return (Array.isArray(rows) ? rows : []).filter((row) => {
+    if (wp && String(row.work_package_id || "") !== wp) return false;
+    if (role && String(row.role_code || "").toLowerCase() !== role) return false;
+    if (!query) return true;
+    const hay = `${row.role_code || ""} ${row.employee_id || ""} ${row.status || ""} ${row.shift_code || ""} ${row.work_package_id || ""}`.toLowerCase();
+    return hay.includes(query);
+  });
+}
+
+export function workforceFlagLabel(row) {
+  const bits = [];
+  if (row?.license_ok) bits.push("license");
+  if (row?.authorization_ok) bits.push("auth");
+  if (row?.available) bits.push("available");
+  return bits.length ? bits.join(" · ") : "flags unset";
+}
+
 export function dueObjectTarget(item) {
   const source = String(item?.source_type || "").toLowerCase();
   const id = item?.source_id || item?.id;
@@ -88,7 +109,10 @@ export function planningOpsCacheKeys(session, mutation = {}) {
   push(sbs, mutation.sbId);
   push(eos, mutation.eoId);
   push(mels, mutation.melId);
-  return { aircraft, workOrders, findings, checks, ads, sbs, eos, mels };
+  const workforcePlanLines = [];
+  if (session?.type === "workforcePlanLine") push(workforcePlanLines, session.id);
+  push(workforcePlanLines, mutation.workforcePlanLineId);
+  return { aircraft, workOrders, findings, checks, ads, sbs, eos, mels, workforcePlanLines };
 }
 
 function role(bundle) {
@@ -275,11 +299,92 @@ export function renderAircraftDirectives(session, bundle, tabId) {
   `;
 }
 
+export function renderWorkforcePlanWorkspace(session, record, bundle) {
+  const row = record || {};
+  const canManage = sessionCanManagePlanning(role(bundle));
+  const employee = bundle?.employee;
+  const employeeLabel = employee?.full_name || employee?.employee_number || row.employee_id || "Employee";
+  const orders = bundle?.workOrders || [];
+  const orderChips = orders
+    .slice(0, 8)
+    .map(
+      (order) =>
+        `<button type="button" class="mx-chip" data-we-open="workOrder:${esc(String(order.id))}" data-we-label="${esc(order.wo_number || order.id)}">${esc(order.wo_number || order.id)}</button>`
+    )
+    .join("");
+  return `
+    ${loadBanner(bundle?.recordLoad, "Workforce plan line")}
+    <article class="mx-card">
+      <div class="mx-card-header"><h3>${esc(row.role_code || session.id)}</h3><span class="mx-chip">${esc(row.status || "—")}</span></div>
+      <p class="mx-subtitle">Planner-entered assignment on the work package. License / authorization / available flags are not a certification determination.</p>
+      <div class="mx-row" style="flex-wrap:wrap;gap:8px;margin-top:8px">
+        <span class="mx-chip">Shift ${esc(row.shift_code || "—")}</span>
+        <span class="mx-chip">${esc(String(row.workload_hours ?? "0"))} h</span>
+        <span class="mx-chip">${esc(workforceFlagLabel(row))}</span>
+        ${row.work_package_id ? `<span class="mx-chip">WP ${esc(String(row.work_package_id))}</span>` : ""}
+      </div>
+      <div class="mx-row" style="flex-wrap:wrap;gap:8px;margin-top:8px">
+        ${
+          row.employee_id
+            ? `<button type="button" class="mx-chip" data-we-open="employee:${esc(String(row.employee_id))}" data-we-label="${esc(employeeLabel)}">${esc(employeeLabel)}</button>`
+            : ""
+        }
+        ${orderChips}
+      </div>
+    </article>
+    ${
+      canManage
+        ? `<form id="weWorkforceStatusForm" class="mx-card" style="padding:12px;margin-top:12px">
+            <strong>Update assignment</strong>
+            <input type="hidden" name="line_id" value="${esc(String(row.id || session.id))}" />
+            <label class="mx-field">Status
+              <select class="mx-input" name="status">
+                ${["planned", "assigned", "released", "complete", "cancelled"]
+                  .map((status) => `<option value="${esc(status)}"${status === String(row.status || "") ? " selected" : ""}>${esc(status)}</option>`)
+                  .join("")}
+              </select>
+            </label>
+            <label class="mx-field">Shift<input class="mx-input" name="shift_code" maxlength="40" value="${esc(row.shift_code || "")}" /></label>
+            <label class="mx-field">Workload hours<input class="mx-input" name="workload_hours" type="number" min="0" step="0.25" value="${esc(String(row.workload_hours ?? "0"))}" /></label>
+            <label class="mx-field"><input type="checkbox" name="license_ok"${row.license_ok ? " checked" : ""} /> License flag</label>
+            <label class="mx-field"><input type="checkbox" name="authorization_ok"${row.authorization_ok ? " checked" : ""} /> Authorization flag</label>
+            <label class="mx-field"><input type="checkbox" name="available"${row.available ? " checked" : ""} /> Available flag</label>
+            <button class="mx-btn" type="submit">Save workforce line</button>
+          </form>`
+        : `<p class="mx-subtitle">Planning manage is required to update workforce assignments. This session is read-only.</p>`
+    }
+    <p class="mx-subtitle" id="wePlanMsg"></p>
+  `;
+}
+
+export function renderWorkOrderWorkforce(session, record, bundle) {
+  const lines = bundle?.workforcePlanLines || [];
+  const rows = lines
+    .map(
+      (line) => `<tr class="we-row-open" data-we-open="workforcePlanLine:${esc(String(line.id))}" data-we-label="${esc(line.role_code || line.id)}">
+        <td>${esc(line.role_code || "—")}</td>
+        <td class="mx-mono">${esc(line.employee_id || "—")}</td>
+        <td>${esc(line.shift_code || "—")}</td>
+        <td>${esc(line.status || "—")}</td>
+        <td>${esc(workforceFlagLabel(line))}</td>
+      </tr>`
+    )
+    .join("");
+  return `<article class="mx-card" style="margin-top:16px">
+    <div class="mx-card-header"><h3>Workforce plan</h3></div>
+    <p class="mx-subtitle">Assignments on work package ${esc(record?.work_package_id || "—")}. Flags are planner-entered.</p>
+    ${loadBanner(bundle?.workforcePlanLinesLoad, "Workforce")}
+    ${lines.length ? table(["Role", "Employee", "Shift", "Status", "Flags"], rows) : empty("No workforce plan lines on this package.")}
+  </article>`;
+}
+
 export function renderAircraftPlanningBridge(session, record, bundle) {
   const canManage = sessionCanManagePlanning(role(bundle));
   const mels = bundle?.melItems || [];
   const defects = (bundle?.defects || []).filter((row) => String(row.aircraft_id) === String(session.id));
   const checks = (bundle?.checks || []).filter((row) => String(row.aircraft_id) === String(session.id));
+  const packageIds = new Set((bundle?.workOrders || []).map((row) => String(row.work_package_id || "")).filter(Boolean));
+  const workforce = (bundle?.workforcePlanLines || []).filter((row) => !packageIds.size || packageIds.has(String(row.work_package_id || "")));
   const defectList = defects.length
     ? defects
         .slice(0, 8)
@@ -298,12 +403,23 @@ export function renderAircraftPlanningBridge(session, record, bundle) {
         )
         .join("")
     : `<span class="mx-subtitle">No checks for this aircraft.</span>`;
+  const workforceList = workforce.length
+    ? workforce
+        .slice(0, 8)
+        .map(
+          (row) =>
+            `<button type="button" class="mx-chip" data-we-open="workforcePlanLine:${esc(String(row.id))}" data-we-label="${esc(row.role_code || row.id)}">${esc(row.role_code || "line")} · ${esc(row.status || "")}</button>`
+        )
+        .join("")
+    : `<span class="mx-subtitle">No workforce plan lines for this aircraft's packages.</span>`;
   return `<article class="mx-card" style="margin-top:16px">
     <div class="mx-card-header"><h3>Planning</h3></div>
     <p class="mx-subtitle">Checks</p>
     <div class="mx-row" style="flex-wrap:wrap;gap:8px">${checkList}</div>
     <p class="mx-subtitle" style="margin-top:8px">Deferred defects</p>
     <div class="mx-row" style="flex-wrap:wrap;gap:8px">${defectList}</div>
+    <p class="mx-subtitle" style="margin-top:8px">Workforce plan</p>
+    <div class="mx-row" style="flex-wrap:wrap;gap:8px">${workforceList}</div>
     ${
       canManage
         ? `<form id="wePlanDefectForm" class="we-cfg-form-grid" style="margin-top:12px">
@@ -343,6 +459,7 @@ function refreshHint(active, extra = {}) {
     sbId: extra.sbId || (active?.type === "serviceBulletin" ? active.id : ""),
     eoId: extra.eoId || (active?.type === "engineeringOrder" ? active.id : ""),
     melId: extra.melId || (active?.type === "melItem" ? active.id : ""),
+    workforcePlanLineId: extra.workforcePlanLineId || (active?.type === "workforcePlanLine" ? active.id : ""),
   };
 }
 
@@ -409,5 +526,27 @@ export function bindPlanningOpsPanel(active, { onRefresh } = {}) {
     if (!result.ok) return fail(result);
     toast(`Defect ${result.data?.defect_number || ""} logged`);
     await onRefresh?.(refreshHint(active, { findingId: result.data?.id, aircraftId: values.aircraft_id }));
+  });
+
+  document.getElementById("weWorkforceStatusForm")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!sessionCanManagePlanning(role(active.bundle))) return fail({ status: 403, error: "planning.manage required" });
+    const values = formValues(event.target);
+    const lineId = values.line_id || active.id;
+    const body = {
+      status: values.status,
+      shift_code: values.shift_code || "",
+      license_ok: Boolean(values.license_ok),
+      authorization_ok: Boolean(values.authorization_ok),
+      available: Boolean(values.available),
+    };
+    if (values.workload_hours !== "") body.workload_hours = Number(values.workload_hours);
+    const result = await runLocked(`workforce:${lineId}`, () =>
+      softMutate(`/planning/workforce-plan-lines/${encodeURIComponent(lineId)}`, { method: "PATCH", body })
+    );
+    if (!result) return;
+    if (!result.ok) return fail(result);
+    toast("Workforce plan line updated");
+    await onRefresh?.(refreshHint(active, { workforcePlanLineId: lineId }));
   });
 }

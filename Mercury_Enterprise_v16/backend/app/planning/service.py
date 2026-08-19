@@ -62,6 +62,9 @@ from .schemas import (
     SbOut,
     UtilizationOut,
     UtilizationUpsert,
+    WorkforcePlanLineCreate,
+    WorkforcePlanLineOut,
+    WorkforcePlanLineUpdate,
 )
 
 logger = logging.getLogger("mercury.planning")
@@ -115,6 +118,7 @@ class PlanningService:
         if self.org.repo.get_organization(org_id) is None:
             return
         if self.repo.get_program_by_code(org_id, "MP-A320-LINE") is not None:
+            self._ensure_demo_workforce_lines(org_id)
             return
         now = _utcnow()
         program = MaintenanceProgram(
@@ -341,6 +345,7 @@ class PlanningService:
             )
         )
         self.repo.commit()
+        self._ensure_demo_workforce_lines(org_id)
 
     def _commit_or_conflict(self, *, detail: str) -> None:
         try:
@@ -1307,6 +1312,189 @@ class PlanningService:
             for r in self.repo.list_hangar_plans(org_id)
         ]
 
+    def workforce_out(self, row: WorkforcePlanLine) -> WorkforcePlanLineOut:
+        return WorkforcePlanLineOut(
+            id=row.id,
+            organization_id=row.organization_id,
+            work_package_id=row.work_package_id,
+            employee_id=row.employee_id,
+            role_code=row.role_code,
+            shift_code=row.shift_code or "",
+            license_ok=_truthy(row.license_ok),
+            authorization_ok=_truthy(row.authorization_ok),
+            available=_truthy(row.available),
+            workload_hours=Decimal(str(row.workload_hours or 0)),
+            status=row.status,
+            created_at=row.created_at,
+        )
+
+    def _require_employee(self, employee_id: str, *, organization_id: str):
+        employee = self.work_orders.personnel.get_employee(employee_id)
+        if employee is None or employee.organization_id != organization_id:
+            raise HTTPException(status_code=404, detail="Employee not found")
+        return employee
+
+    def _require_work_package(self, work_package_id: str | None, *, organization_id: str):
+        if not work_package_id:
+            return None
+        package = self.work_orders.repo.get_package(work_package_id)
+        if package is None or package.organization_id != organization_id:
+            raise HTTPException(status_code=404, detail="Work package not found")
+        return package
+
+    def _assign_seed_workforce(
+        self, *, organization_id: str, work_package_id: str, shift_code: str = ""
+    ) -> None:
+        """Planner-entered demo assignments. Flags are not a certification determination."""
+        existing = {
+            (row.employee_id, row.role_code)
+            for row in self.repo.list_workforce_lines(organization_id, work_package_id)
+        }
+        assignments = (
+            ("E-1001", "technician", Decimal("8.00")),
+            ("E-2001", "aca", Decimal("2.00")),
+            ("E-3001", "ii", Decimal("2.00")),
+        )
+        now = _utcnow()
+        for number, role_code, hours in assignments:
+            employee = self.work_orders.personnel.get_by_org_number(organization_id, number)
+            if employee is None or (employee.id, role_code) in existing:
+                continue
+            self.repo.add_workforce_line(
+                WorkforcePlanLine(
+                    organization_id=organization_id,
+                    work_package_id=work_package_id,
+                    employee_id=employee.id,
+                    role_code=role_code,
+                    shift_code=shift_code,
+                    license_ok=_flag(True),
+                    authorization_ok=_flag(True),
+                    available=_flag(True),
+                    workload_hours=hours,
+                    status="assigned",
+                    created_at=now,
+                )
+            )
+
+    def _ensure_demo_workforce_lines(self, org_id: str) -> None:
+        package = self.work_orders.repo.get_package("wp-demo-c-gmea") or self.work_orders.repo.get_package_by_number(
+            org_id, "WP-DEMO-001"
+        )
+        if package is None:
+            return
+        if self.repo.list_workforce_lines(org_id, package.id):
+            return
+        self._assign_seed_workforce(
+            organization_id=org_id,
+            work_package_id=package.id,
+            shift_code=package.shift_code or "DAY",
+        )
+        self.repo.commit()
+
+    def create_workforce_line(
+        self, payload: WorkforcePlanLineCreate, *, username: str, session_role: str, session_org_id: str
+    ) -> WorkforcePlanLineOut:
+        org_id = self.resolve_org_id(
+            username=username,
+            session_role=session_role,
+            session_org_id=session_org_id,
+            requested_org_id=payload.organization_id,
+        )
+        work_package_id = (payload.work_package_id or "").strip() or None
+        self._require_employee(payload.employee_id, organization_id=org_id)
+        self._require_work_package(work_package_id, organization_id=org_id)
+        row = WorkforcePlanLine(
+            organization_id=org_id,
+            work_package_id=work_package_id,
+            employee_id=payload.employee_id.strip(),
+            role_code=payload.role_code,
+            shift_code=(payload.shift_code or "").strip(),
+            license_ok=_flag(payload.license_ok),
+            authorization_ok=_flag(payload.authorization_ok),
+            available=_flag(payload.available),
+            workload_hours=payload.workload_hours or Decimal("0.00"),
+            status=payload.status,
+            created_at=_utcnow(),
+        )
+        self.repo.add_workforce_line(row)
+        self._commit_or_conflict(detail="Workforce plan line conflict")
+        self.repo.refresh(row)
+        return self.workforce_out(row)
+
+    def list_workforce_lines(
+        self,
+        *,
+        username: str,
+        session_role: str,
+        session_org_id: str,
+        organization_id: str | None = None,
+        work_package_id: str | None = None,
+        limit: int = 200,
+        offset: int = 0,
+    ) -> list[WorkforcePlanLineOut]:
+        org_id = self.resolve_org_id(
+            username=username, session_role=session_role, session_org_id=session_org_id, requested_org_id=organization_id
+        )
+        work_package_id = (work_package_id or "").strip() or None
+        if work_package_id:
+            self._require_work_package(work_package_id, organization_id=org_id)
+        return [
+            self.workforce_out(row)
+            for row in self.repo.list_workforce_lines(
+                org_id, work_package_id=work_package_id, limit=limit, offset=offset
+            )
+        ]
+
+    def get_workforce_line(self, line_id: str, *, username: str, session_role: str) -> WorkforcePlanLineOut:
+        row = self._require_live(
+            self.repo.get_workforce_line(line_id),
+            username=username,
+            session_role=session_role,
+            not_found="Workforce plan line not found",
+        )
+        return self.workforce_out(row)
+
+    def update_workforce_line(
+        self,
+        line_id: str,
+        payload: WorkforcePlanLineUpdate,
+        *,
+        username: str,
+        session_role: str,
+        session_org_id: str,
+    ) -> WorkforcePlanLineOut:
+        row = self.repo.get_workforce_line(line_id, for_update=True)
+        row = self._require_live(
+            row, username=username, session_role=session_role, not_found="Workforce plan line not found"
+        )
+        org_id = row.organization_id
+        self.resolve_org_id(
+            username=username, session_role=session_role, session_org_id=session_org_id, requested_org_id=org_id
+        )
+        updates = payload.model_dump(exclude_unset=True)
+        if "work_package_id" in updates:
+            raw_wp = updates["work_package_id"]
+            work_package_id = (str(raw_wp).strip() or None) if raw_wp else None
+            self._require_work_package(work_package_id, organization_id=org_id)
+            row.work_package_id = work_package_id
+        if "role_code" in updates and updates["role_code"] is not None:
+            row.role_code = updates["role_code"]
+        if "shift_code" in updates and updates["shift_code"] is not None:
+            row.shift_code = str(updates["shift_code"]).strip()
+        if "license_ok" in updates and updates["license_ok"] is not None:
+            row.license_ok = _flag(bool(updates["license_ok"]))
+        if "authorization_ok" in updates and updates["authorization_ok"] is not None:
+            row.authorization_ok = _flag(bool(updates["authorization_ok"]))
+        if "available" in updates and updates["available"] is not None:
+            row.available = _flag(bool(updates["available"]))
+        if "workload_hours" in updates and updates["workload_hours"] is not None:
+            row.workload_hours = updates["workload_hours"]
+        if "status" in updates and updates["status"] is not None:
+            row.status = updates["status"]
+        self._commit_or_conflict(detail="Workforce plan line conflict")
+        self.repo.refresh(row)
+        return self.workforce_out(row)
+
     # --- forecast / due list ---
     def _urgency(self, due_at: datetime | None, *, now: datetime, soon_days: int = 30) -> str:
         if due_at is None:
@@ -1723,7 +1911,7 @@ class PlanningService:
             )
             job_card_ids.append(card.id)
 
-        # Hangar + workforce planning stubs
+        # Hangar + workforce plan lines for the generated package
         self.repo.add_hangar_plan(
             HangarPlan(
                 organization_id=check.organization_id,
@@ -1741,6 +1929,11 @@ class PlanningService:
                 created_at=_utcnow(),
                 updated_at=_utcnow(),
             )
+        )
+        self._assign_seed_workforce(
+            organization_id=check.organization_id,
+            work_package_id=pkg.id,
+            shift_code=check.shift_code or "",
         )
         check.generated_work_package_id = pkg.id
         check.status = "in_work"

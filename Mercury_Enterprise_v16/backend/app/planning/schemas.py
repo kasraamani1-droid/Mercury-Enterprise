@@ -478,3 +478,42 @@ class GeneratePackageOut(BaseModel):
     work_order_ids: list[str]
     job_card_ids: list[str]
     check_id: str
+
+
+class WorkforcePlanLineCreate(BaseModel):
+    organization_id: str | None = None
+    work_package_id: str | None = None
+    employee_id: str = Field(min_length=1, max_length=80)
+    role_code: str = Field(pattern="^(technician|inspector|ii|aca|engineer|stores)$")
+    shift_code: str = ""
+    license_ok: bool = True
+    authorization_ok: bool = True
+    available: bool = True
+    workload_hours: Decimal = Field(default=Decimal("0.00"), ge=0)
+    status: str = Field(default="assigned", pattern="^(planned|assigned|released|complete|cancelled)$")
+
+
+class WorkforcePlanLineUpdate(BaseModel):
+    work_package_id: str | None = None
+    role_code: str | None = Field(default=None, pattern="^(technician|inspector|ii|aca|engineer|stores)$")
+    shift_code: str | None = None
+    license_ok: bool | None = None
+    authorization_ok: bool | None = None
+    available: bool | None = None
+    workload_hours: Decimal | None = Field(default=None, ge=0)
+    status: str | None = Field(default=None, pattern="^(planned|assigned|released|complete|cancelled)$")
+
+
+class WorkforcePlanLineOut(BaseModel):
+    id: str
+    organization_id: str
+    work_package_id: str | None
+    employee_id: str
+    role_code: str
+    shift_code: str
+    license_ok: bool
+    authorization_ok: bool
+    available: bool
+    workload_hours: Decimal
+    status: str
+    created_at: datetime
