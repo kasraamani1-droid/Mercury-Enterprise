@@ -2,6 +2,9 @@
 
 Full IdP activation requires operator-supplied issuer, client id/secret, and
 redirect URI. Missing production OIDC config fails closed. No fake credentials.
+
+ID tokens are signature-verified via JWKS (RS256/ES256). PKCE state lives in
+Redis for production OIDC (no in-memory fallback).
 """
 
 from __future__ import annotations
@@ -11,7 +14,6 @@ import hashlib
 import json
 import logging
 import secrets
-import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -23,34 +25,17 @@ from sqlalchemy.orm import Session
 
 from ..core.config import settings
 from ..org.models import OrgUser
+from .jwks import JwksCache, verify_id_token
+from .oidc_pending import PENDING_TTL_SECONDS, MemoryPendingStore, PendingStore, build_pending_store
 from .operators import validate_operator_name
 from .redact import redact_text
 
 logger = logging.getLogger("mercury.security.oidc")
 
-PENDING_TTL_SECONDS = 600
 HTTP_TIMEOUT_SECONDS = 10
-_PENDING: dict[str, tuple[dict[str, Any], float]] = {}
 
 HttpGet = Callable[[str, dict[str, str] | None], dict[str, Any]]
 HttpPostForm = Callable[[str, dict[str, str], dict[str, str] | None], dict[str, Any]]
-
-def _pending_save(state: str, record: dict[str, Any]) -> None:
-    _PENDING[state] = (record, time.monotonic() + PENDING_TTL_SECONDS)
-
-
-def _pending_pop(state: str) -> dict[str, Any] | None:
-    entry = _PENDING.pop(state, None)
-    if entry is None:
-        return None
-    record, expires = entry
-    if expires <= time.monotonic():
-        return None
-    return record
-
-
-def reset_pending_for_tests() -> None:
-    _PENDING.clear()
 
 
 def _b64url(raw: bytes) -> str:
@@ -126,10 +111,25 @@ class OidcService:
         *,
         http_get: HttpGet | None = None,
         http_post_form: HttpPostForm | None = None,
+        pending_store: PendingStore | None = None,
     ) -> None:
         self._http_get = http_get or _http_get
         self._http_post_form = http_post_form or _http_post_form
+        self._pending: PendingStore | None = pending_store
         self._discovery: dict[str, Any] | None = None
+        ttl = int(getattr(settings, "oidc_jwks_cache_seconds", 300) or 300)
+        self._jwks = JwksCache(self._http_get, ttl_seconds=ttl)
+
+    def _store(self) -> PendingStore:
+        if self._pending is not None:
+            return self._pending
+        self._pending = build_pending_store()
+        return self._pending
+
+    def reset_pending_for_tests(self) -> None:
+        if self._pending is None:
+            self._pending = MemoryPendingStore()
+        self._pending.clear()
 
     def require_configured(self) -> None:
         if not settings.oidc_is_configured:
@@ -147,7 +147,7 @@ class OidcService:
         discovered_issuer = str(document.get("issuer") or "").rstrip("/")
         if discovered_issuer and discovered_issuer != issuer:
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="OIDC issuer mismatch")
-        for key in ("authorization_endpoint", "token_endpoint", "userinfo_endpoint"):
+        for key in ("authorization_endpoint", "token_endpoint", "userinfo_endpoint", "jwks_uri"):
             if not str(document.get(key) or "").strip():
                 raise HTTPException(
                     status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -162,12 +162,13 @@ class OidcService:
         state = secrets.token_urlsafe(32)
         nonce = secrets.token_urlsafe(32)
         verifier, challenge = generate_pkce()
-        _pending_save(
+        self._store().save(
             state,
             {
                 "code_verifier": verifier,
                 "nonce": nonce,
             },
+            ttl_seconds=PENDING_TTL_SECONDS,
         )
         params = {
             "response_type": "code",
@@ -188,10 +189,11 @@ class OidcService:
         state = (state or "").strip()
         if not code or not state:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid OIDC callback")
-        pending = _pending_pop(state)
+        pending = self._store().consume(state)
         if pending is None:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired OIDC state")
         verifier = str(pending.get("code_verifier") or "")
+        nonce = str(pending.get("nonce") or "")
         if not verifier:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired OIDC state")
         document = self.discover()
@@ -208,14 +210,33 @@ class OidcService:
             None,
         )
         access_token = str(token_payload.get("access_token") or "").strip()
+        id_token = str(token_payload.get("id_token") or "").strip()
         if not access_token:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="OIDC token exchange failed")
+        if not id_token:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="OIDC id_token missing")
+        jwks_uri = str(document.get("jwks_uri") or "").strip()
+        if not jwks_uri:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="OIDC discovery document is incomplete",
+            )
+        jwks = self._jwks.jwks_for_token(jwks_uri, id_token)
+        id_claims = verify_id_token(
+            id_token,
+            issuer=settings.oidc_issuer.rstrip("/"),
+            audience=settings.oidc_client_id,
+            jwks=jwks,
+            nonce=nonce or None,
+            leeway_seconds=int(getattr(settings, "oidc_clock_skew_seconds", 60) or 60),
+        )
         claims = self._http_get(
             str(document["userinfo_endpoint"]),
             {"Authorization": f"Bearer {access_token}", "Accept": "application/json"},
         )
         subject = str(claims.get("sub") or "").strip()
-        if not subject:
+        id_subject = str(id_claims.get("sub") or "").strip()
+        if not subject or not id_subject or subject != id_subject:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="OIDC identity is incomplete")
         username_claim = str(
             claims.get(settings.oidc_username_claim)
@@ -297,6 +318,10 @@ class OidcService:
 
 
 oidc_service = OidcService()
+
+
+def reset_pending_for_tests() -> None:
+    oidc_service.reset_pending_for_tests()
 
 
 def log_oidc_event(message: str, **fields: str) -> None:

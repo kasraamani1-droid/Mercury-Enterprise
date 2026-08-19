@@ -5,7 +5,7 @@
 | Control | Behavior |
 |---------|----------|
 | Authentication | Session cookie (`HttpOnly`, `SameSite=Lax`, `Secure` in production/HTTPS). Optional **OIDC authorization-code + PKCE** when configured. JWT access/refresh tokens are **not** used for operator sessions. See [docs/engineering/AUTHENTICATION.md](docs/engineering/AUTHENTICATION.md) |
-| Session store | In-memory by default; **Redis** when `REDIS_URL` is set (multi-worker ready) |
+| Session store | In-memory by default; **Redis** when `REDIS_URL` is set (multi-worker ready). Production OIDC PKCE/state requires Redis (no memory fallback) |
 | Machine auth | Optional `MERCURY_API_KEY` via `X-API-Key` or `Authorization: Bearer` (constant-time compare) |
 | Authorization | Server-side RBAC (Administrator / Operator / Reviewer / Viewer) |
 | Tenant isolation | `assert_org_access` / org-scoped queries; incident writes via `_get_scoped_incident`; WebSocket incident fan-out is org/site scoped. See [docs/engineering/TENANT_ISOLATION.md](docs/engineering/TENANT_ISOLATION.md); suites `test_epic009_security.py`, `test_rc1_tenant_isolation.py` |
@@ -41,12 +41,12 @@
 
 ## Deferred (not claimed as done)
 
-- Hosted IdP / Azure AD tenant (customer must issue the OIDC client)
+- Hosted IdP / Azure AD / Okta / Auth0 tenant (customer must issue the OIDC client)
 - SCIM / LDAP directory sync
 - MFA inside Mercury (use the IdP)
 - Kubernetes network policies / service mesh
 - Payment / PCI integrations
-- ID-token JWT signature verification via JWKS (Cycle 6 validates PKCE + TLS userinfo to the configured issuer)
+- Public DNS and publicly trusted TLS certificates (Let's Encrypt overlay exists; certs are not in git)
 
 See [docs/security/EPIC009_RC_NOTES.md](docs/security/EPIC009_RC_NOTES.md) and [docs/pilot/PRODUCTION.md](docs/pilot/PRODUCTION.md).
 

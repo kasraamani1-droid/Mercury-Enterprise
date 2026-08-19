@@ -165,36 +165,54 @@ def test_oidc_flow_maps_provisioned_user_and_sets_cookie():
     reset_pending_for_tests()
     from app.core import config as config_mod
     from app.security import oidc as oidc_mod
+    from oidc_test_idp import (
+        AUDIENCE,
+        ISSUER,
+        KID,
+        SUBJECT,
+        default_claims,
+        generate_rsa_pair,
+        jwks_document,
+        rsa_jwk,
+        sign_id_token,
+    )
 
     monkey_settings = config_mod.settings
     object.__setattr__(monkey_settings, "oidc_is_configured", True)
-    object.__setattr__(monkey_settings, "oidc_issuer", "https://idp.example.test")
-    object.__setattr__(monkey_settings, "oidc_client_id", "mercury-client")
+    object.__setattr__(monkey_settings, "oidc_issuer", ISSUER)
+    object.__setattr__(monkey_settings, "oidc_client_id", AUDIENCE)
     object.__setattr__(monkey_settings, "oidc_client_secret", "not-a-production-secret-value")
     object.__setattr__(monkey_settings, "oidc_redirect_uri", "https://mercury.example.test/api/v1/auth/oidc/callback")
     object.__setattr__(monkey_settings, "oidc_auto_provision", False)
 
+    private_key, public_key = generate_rsa_pair()
+    jwks = jwks_document(rsa_jwk(public_key))
     discovery = {
-        "issuer": "https://idp.example.test",
-        "authorization_endpoint": "https://idp.example.test/authorize",
-        "token_endpoint": "https://idp.example.test/token",
-        "userinfo_endpoint": "https://idp.example.test/userinfo",
+        "issuer": ISSUER,
+        "authorization_endpoint": f"{ISSUER}/authorize",
+        "token_endpoint": f"{ISSUER}/token",
+        "userinfo_endpoint": f"{ISSUER}/userinfo",
+        "jwks_uri": f"{ISSUER}/jwks",
     }
 
     def http_get(url: str, headers=None):
         if "userinfo" in url:
             return {
-                "sub": "oidc-operator-1",
+                "sub": SUBJECT,
                 "preferred_username": "operator",
                 "email": "operator@example.test",
                 "name": "Operator",
             }
+        if "jwks" in url:
+            return jwks
         return discovery
+
+    captured = {"id_token": sign_id_token(private_key, kid=KID)}
 
     def http_post_form(url: str, fields, headers=None):
         assert fields.get("code_verifier")
         assert "password" not in str(fields).lower() or fields.get("client_secret")
-        return {"access_token": "opaque-access-token", "token_type": "Bearer"}
+        return {"access_token": "opaque-access-token", "token_type": "Bearer", "id_token": captured["id_token"]}
 
     service = OidcService(http_get=http_get, http_post_form=http_post_form)
     previous = oidc_mod.oidc_service
@@ -210,8 +228,11 @@ def test_oidc_flow_maps_provisioned_user_and_sets_cookie():
         assert "state=" in location
         from urllib.parse import parse_qs, urlparse
 
-        state = parse_qs(urlparse(location).query).get("state", [""])[0]
+        parsed = parse_qs(urlparse(location).query)
+        state = parsed.get("state", [""])[0]
+        nonce = parsed.get("nonce", [""])[0]
         assert state
+        captured["id_token"] = sign_id_token(private_key, kid=KID, claims=default_claims(nonce=nonce))
         callback = client.get(
             "/api/v1/auth/oidc/callback",
             params={"code": "auth-code", "state": state},

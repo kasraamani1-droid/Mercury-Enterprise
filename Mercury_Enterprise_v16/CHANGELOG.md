@@ -2,6 +2,23 @@
 
 All notable changes to Mercury Enterprise are summarized here. Package/API version remains `16.0.0` unless noted; sprint tags mark security/ops increments.
 
+## Production OIDC / JWKS (Cycle 7)
+
+### Added
+- JWKS ID-token signature verification (RS256/ES256) using discovery `jwks_uri`, with kid cache, issuer/audience/expiry/nonce checks
+- Redis-backed PKCE `state` + `code_verifier` (+ nonce), single-use consume, fail-closed when production OIDC Redis is down
+- Cycle 7 tests with ephemeral RSA/EC keys (not production secrets) and fakeredis two-worker replay coverage
+
+### Changed
+- Production Compose overlay sets `REDIS_REQUIRED=true` and `--workers 2` (sessions + PKCE are Redis-backed)
+- HTTPS/production OIDC startup requires reachable `REDIS_URL` (no in-memory PKCE fallback)
+- Callback rejects missing/invalid ID tokens even if userinfo would succeed
+
+### Notes
+- **Code-complete** for JWKS + Redis PKCE. **Not** internet-production-ready until a real IdP client, public DNS, and TLS certificates exist outside this repo.
+- No live Okta/Auth0/Entra tenant is configured here. Tests use a local mock JWKS and generated keys.
+- Do not insert placeholder production client secrets. `:3000` is still not the public endpoint.
+
 ## Commercial production readiness (Cycle 6)
 
 ### Added
@@ -21,8 +38,6 @@ All notable changes to Mercury Enterprise are summarized here. Package/API versi
 
 ### Notes
 - OIDC **activation** still needs a real IdP client (issuer, client id/secret, redirect URI). No fake production credentials are shipped.
-- ID-token JWT/JWKS verification is not included; identity is taken from TLS userinfo to the configured issuer.
-- PKCE pending state is in-process; Compose backend stays at one uvicorn worker.
 - Production overlay uses Compose `ports: !reset []` because `ports` lists are concatenated across files.
 - Not a TC/FAA/EASA certification. Workforce flags remain planner-entered.
 
