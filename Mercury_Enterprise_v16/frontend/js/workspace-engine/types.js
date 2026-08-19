@@ -81,6 +81,7 @@ export const OBJECT_TYPES = {
     ],
     quickActions: [
       { id: "createWo", label: "Create work order" },
+      { id: "openTwin", label: "Open twin" },
       { id: "pin", label: "Pin object" },
     ],
     resolveLabel: (o) => o.serial_number || o.name || o.id,
@@ -483,10 +484,14 @@ export const OBJECT_TYPES = {
     icon: "⚒",
     tabs: [
       { id: "overview", label: "Crib" },
+      { id: "digitalTwin", label: "Digital Twin" },
       { id: "history", label: "History" },
       { id: "aiAssistant", label: "AI Assistant" },
     ],
-    quickActions: [{ id: "pin", label: "Pin object" }],
+    quickActions: [
+      { id: "openTwin", label: "Open twin" },
+      { id: "pin", label: "Pin object" },
+    ],
     resolveLabel: (o) => o.tool_code || o.description || o.id,
   },
   digitalTwin: {
@@ -504,9 +509,10 @@ export const OBJECT_TYPES = {
     ],
     quickActions: [
       { id: "addHistory", label: "Add history event" },
+      { id: "openLinkedAsset", label: "Open linked asset" },
       { id: "pin", label: "Pin object" },
     ],
-    resolveLabel: (o) => o.name || o.twin_uuid || o.id,
+    resolveLabel: (o) => o.display_name || o.name || o.twin_uuid || o.id,
   },
 };
 

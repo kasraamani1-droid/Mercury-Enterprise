@@ -1,6 +1,7 @@
 import { API_BASE } from "../config.js";
 import { listify } from "../ux2/api.js";
 import { notifyAuthRequired } from "../api.js";
+import { matchTwinToEntity } from "./twin-ops.js";
 
 async function softGet(path) {
   try {
@@ -50,6 +51,10 @@ export async function loadObjectRecord(type, id) {
   if (routes[type]) {
     const res = await softGet(routes[type]);
     if (res.ok && res.data) return { ...res, source: "api" };
+    if (type === "digitalTwin" && res.status === 404) {
+      const byUuid = await softGet(`/twin/twins/by-uuid/${encodeURIComponent(id)}`);
+      if (byUuid.ok && byUuid.data) return { ...byUuid, source: "api" };
+    }
     if (type === "finding") {
       const listed = await softGet("/planning/deferred-defects?limit=100");
       const hit = listify(listed.data).find(
@@ -90,6 +95,35 @@ export async function loadObjectRecord(type, id) {
   };
 }
 
+async function hydrateTwinDetails(bundle, twinId, { asPrimaryTimeline = false } = {}) {
+  if (!twinId) return;
+  const [hist, cfg, rel, relationships, passport] = await Promise.all([
+    softGet(`/twin/twins/${encodeURIComponent(twinId)}/history?limit=30`),
+    softGet(`/twin/twins/${encodeURIComponent(twinId)}/configurations?limit=20`),
+    softGet(`/twin/twins/${encodeURIComponent(twinId)}/reliability?limit=20`),
+    softGet(`/twin/twins/${encodeURIComponent(twinId)}/relationships`),
+    softGet(`/twin/twins/${encodeURIComponent(twinId)}/passport`),
+  ]);
+  bundle.historyLoad = { ok: hist.ok, status: hist.status, error: hist.error || "" };
+  bundle.twinHistory = listify(hist.data);
+  if (asPrimaryTimeline) {
+    bundle.history = bundle.twinHistory;
+    bundle.timeline = bundle.twinHistory.map((row) => ({
+      title: row.title || row.history_kind || row.event_type || row.summary || "Twin event",
+      at: row.occurred_at || row.created_at || "",
+      detail: [row.summary, row.related_ref, row.actor].filter(Boolean).join(" · "),
+    }));
+  }
+  bundle.configurationsLoad = { ok: cfg.ok, status: cfg.status, error: cfg.error || "" };
+  bundle.configurations = listify(cfg.data);
+  bundle.reliabilityLoad = { ok: rel.ok, status: rel.status, error: rel.error || "" };
+  bundle.reliability = listify(rel.data);
+  bundle.relationshipsLoad = { ok: relationships.ok, status: relationships.status, error: relationships.error || "" };
+  bundle.relationships = relationships.ok ? relationships.data : null;
+  bundle.passportLoad = { ok: passport.ok, status: passport.status, error: passport.error || "" };
+  bundle.passport = passport.ok ? passport.data : null;
+}
+
 export async function loadRelatedBundle(type, id, record) {
   const bundle = {
     timeline: [],
@@ -103,7 +137,7 @@ export async function loadRelatedBundle(type, id, record) {
     const [wos, due, twins, cfg, serialized, ata, catalog, fleet, session, logbook, cards, checks, ads, sbs, eos, defects, mels, pubs] = await Promise.all([
       softGet(`/work-orders/orders?aircraft_id=${encodeURIComponent(id)}&limit=20`),
       softGet(`/planning/due-list?limit=20`),
-      softGet(`/twin/twins?limit=40`),
+      softGet(`/twin/twins?limit=100`),
       softGet(`/components/aircraft/${encodeURIComponent(id)}/configuration`),
       softGet(`/components/serialized`),
       softGet(`/components/ata-chapters`),
@@ -144,17 +178,10 @@ export async function loadRelatedBundle(type, id, record) {
     bundle.melItems = listify(mels.data);
     bundle.publicationsLoad = { ok: pubs.ok, status: pubs.status, error: pubs.error || "" };
     bundle.publications = listify(pubs.data);
+    bundle.twinsLoad = { ok: twins.ok, status: twins.status, error: twins.error || "" };
     const twinList = listify(twins.data);
-    bundle.twin =
-      twinList.find(
-        (t) =>
-          String(t.fabric_entity_id || t.linked_entity_id || t.entity_id || "") === String(id) &&
-          String(t.fabric_entity_type || t.linked_entity_type || t.entity_type || "aircraft")
-            .toLowerCase()
-            .includes("aircraft")
-      ) ||
-      twinList.find((t) => String(t.fabric_entity_id || t.linked_entity_id || t.entity_id || "") === String(id)) ||
-      null;
+    bundle.twin = matchTwinToEntity(twinList, { entityId: id, entityType: "aircraft" });
+    if (bundle.twin?.id) await hydrateTwinDetails(bundle, bundle.twin.id, { asPrimaryTimeline: false });
   }
 
   if (type === "workOrder") {
@@ -234,11 +261,12 @@ export async function loadRelatedBundle(type, id, record) {
 
   if (type === "component") {
     const hostId = record?.current_aircraft_id;
-    const [history, session, host, pubs] = await Promise.all([
+    const [history, session, host, pubs, twins] = await Promise.all([
       softGet(`/components/serialized/${encodeURIComponent(id)}/history`),
       softGet(`/auth/session`),
       hostId ? softGet(`/fleet/aircraft/${encodeURIComponent(hostId)}`) : Promise.resolve({ ok: false, data: null }),
       softGet(`/publications/by-component/${encodeURIComponent(id)}`),
+      softGet(`/twin/twins?limit=100`),
     ]);
     bundle.historyLoad = { ok: history.ok, status: history.status, error: history.error || "" };
     bundle.installHistory = listify(history.data);
@@ -246,6 +274,9 @@ export async function loadRelatedBundle(type, id, record) {
     bundle.hostAircraft = host.ok ? host.data : null;
     bundle.componentPublicationsLoad = { ok: pubs.ok, status: pubs.status, error: pubs.error || "" };
     bundle.componentPublications = pubs.ok ? pubs.data : null;
+    bundle.twinsLoad = { ok: twins.ok, status: twins.status, error: twins.error || "" };
+    bundle.twin = matchTwinToEntity(listify(twins.data), { entityId: id, entityType: "component" });
+    if (bundle.twin?.id) await hydrateTwinDetails(bundle, bundle.twin.id, { asPrimaryTimeline: false });
     bundle.timeline = bundle.installHistory.slice(0, 12).map((h) => ({
       title: h.event_type || "History",
       at: h.occurred_at || "",
@@ -254,20 +285,10 @@ export async function loadRelatedBundle(type, id, record) {
   }
 
   if (type === "digitalTwin") {
-    const [hist, cfg, rel, relationships] = await Promise.all([
-      softGet(`/twin/twins/${encodeURIComponent(id)}/history?limit=30`),
-      softGet(`/twin/twins/${encodeURIComponent(id)}/configurations?limit=20`),
-      softGet(`/twin/twins/${encodeURIComponent(id)}/reliability?limit=20`),
-      softGet(`/twin/twins/${encodeURIComponent(id)}/relationships`),
-    ]);
-    bundle.timeline = listify(hist.data).map((h) => ({
-      title: h.event_type || h.summary || "Twin event",
-      at: h.occurred_at || h.created_at || "",
-      detail: h.details || h.payload_json || "",
-    }));
-    bundle.configurations = listify(cfg.data);
-    bundle.reliability = listify(rel.data);
-    bundle.relationships = relationships.ok ? relationships.data : null;
+    const twinId = record?.id || id;
+    const session = await softGet(`/auth/session`);
+    bundle.sessionRole = session.ok ? session.data?.role || "" : "";
+    await hydrateTwinDetails(bundle, twinId, { asPrimaryTimeline: true });
   }
 
   if (type === "marketplaceListing") {
@@ -350,17 +371,24 @@ export async function loadRelatedBundle(type, id, record) {
   }
 
   if (type === "tool") {
-    const [session, history] = await Promise.all([
+    const [session, history, twins] = await Promise.all([
       softGet(`/auth/session`),
       softGet(`/logistics/tools/${encodeURIComponent(id)}/history`),
+      softGet(`/twin/twins?twin_type=tool&limit=100`),
     ]);
     bundle.sessionRole = session.ok ? session.data?.role || "" : "";
-    bundle.history = listify(history.data);
-    bundle.timeline = bundle.history.slice(0, 12).map((row) => ({
-      title: row.event_type || "Tool event",
-      at: row.created_at || "",
-      detail: row.details || row.performed_by || "",
-    }));
+    bundle.toolHistory = listify(history.data);
+    bundle.history = bundle.toolHistory;
+    bundle.twinsLoad = { ok: twins.ok, status: twins.status, error: twins.error || "" };
+    bundle.twin = matchTwinToEntity(listify(twins.data), { entityId: id, entityType: "tool" });
+    if (bundle.twin?.id) await hydrateTwinDetails(bundle, bundle.twin.id, { asPrimaryTimeline: false });
+    if (!bundle.timeline?.length) {
+      bundle.timeline = bundle.toolHistory.slice(0, 12).map((row) => ({
+        title: row.event_type || "Tool event",
+        at: row.created_at || "",
+        detail: row.details || row.performed_by || "",
+      }));
+    }
   }
 
   if (
@@ -500,6 +528,19 @@ export async function searchObjects(query) {
           id: String(row.id),
           label: row.oem_part_number || row.description || row.id,
           meta: row.part_class || "part",
+        });
+      });
+  }
+  const twinsSearch = await softGet(`/twin/search?q=${encodeURIComponent(q)}&limit=20`);
+  if (twinsSearch.ok) {
+    listify(twinsSearch.data?.items || twinsSearch.data)
+      .slice(0, 8)
+      .forEach((row) => {
+        results.push({
+          type: "digitalTwin",
+          id: String(row.twin_id || row.id),
+          label: row.title || row.twin_uuid || row.serial_number || row.id,
+          meta: row.twin_type || "twin",
         });
       });
   }

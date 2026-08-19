@@ -27,6 +27,7 @@ import { initializePlanning } from "./planning.js";
 import { initializeLogistics } from "./logistics.js";
 import { initializeLibrary } from "./library.js";
 import { initializePersonnel } from "./personnel.js";
+import { initializeTwin } from "./twin.js";
 import { initializeWebSocket } from "./websocket.js";
 import { initializeUx2 } from "./ux2/index.js";
 let currentSession = null;
@@ -573,6 +574,7 @@ async function initialize(){
   initializeLogistics();
   initializeLibrary();
   initializePersonnel();
+  initializeTwin();
   await ensureSession();
   await loadSessionContext();
   applyRoleAccess();

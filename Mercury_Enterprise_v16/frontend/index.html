@@ -610,10 +610,31 @@
 </section>
 
 <section id="assetTwinWorkspace" class="workspace-page ux2-page hidden">
-  <div class="ux2-page-header"><div><div class="mx-label">Digital Twin</div><h1>Asset Lifecycle Twin</h1><p>Permanent UUID twins bound to Digital Passports — architecture visualization, not a 3D modeler.</p></div>
-    <button type="button" class="mx-btn mx-btn-ghost" data-ux2-goto="digitalTwin">Ops Airport Twin (SIM)</button></div>
+  <div class="enterprise-header">
+    <div>
+      <span class="eyebrow">Program 15 · Digital Twin</span>
+      <h1>Asset Lifecycle Twin</h1>
+      <p>Permanent UUID twins bound to Digital Passports — architecture visualization, not a 3D modeler. Reliability is architecture-only.</p>
+    </div>
+    <div>
+      <button type="button" class="mx-btn mx-btn-ghost" data-ux2-goto="digitalTwin">Ops Airport Twin (SIM)</button>
+      <button id="twinRefresh" class="ghost" type="button">Refresh twins</button>
+    </div>
+  </div>
+  <p class="muted" id="twinStatus">Loading…</p>
+  <div class="form-row">
+    <input id="twinSearch" placeholder="Search name, UUID, serial, passport" />
+    <select id="twinTypeFilter"><option value="">All types</option></select>
+    <select id="twinLifecycleFilter"><option value="">All lifecycle</option></select>
+    <button id="twinApplyFilters" class="ghost small" type="button">Apply</button>
+  </div>
+  <section class="enterprise-kpis" id="twinDashKpis"></section>
+  <div id="twinOpsDesk"></div>
   <div id="assetTwinStage" style="margin-bottom:16px"></div>
-  <div id="assetTwinList"></div>
+  <div class="enterprise-grid">
+    <article class="card"><h3>Registry</h3><div id="assetTwinList"></div></article>
+    <article class="card"><h3>Search</h3><div id="twinSearchResults" class="integration-list"></div></article>
+  </div>
 </section>
 
 <section id="authorityWorkspace" class="workspace-page ux2-page hidden">

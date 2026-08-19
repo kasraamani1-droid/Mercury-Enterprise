@@ -118,6 +118,7 @@ def test_loaders_and_types_planning_objects() -> None:
     assert "runLocked" in ops
     assert "/planning/checks/generate-package" in ops
     assert "planning: refreshPlanningWorkspace" in _read(UX2 / "workspaces.js")
+    assert 'name="publication_id"' in _read(FRONTEND / "js" / "planning.js")
 
 
 def test_pr8_pr9_pr10_pr11_contracts_still_present() -> None:
