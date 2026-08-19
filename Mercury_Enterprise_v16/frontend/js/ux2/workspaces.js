@@ -39,13 +39,14 @@ import {
   getDashboardSummary,
   getHealth,
   getSessionStatus,
-  listPublications,
   listWorkPackages,
 } from "../api.js";
 import { sessionCanManageWorkOrders } from "../workspace-engine/maintenance-ops.js";
 import { qtyAvailable } from "../workspace-engine/logistics-ops.js";
 import { refreshLogisticsWorkspace } from "../logistics.js";
 import { refreshPlanningWorkspace } from "../planning.js";
+import { refreshTechLibraryWorkspace } from "../library.js";
+import { refreshPersonnelWorkspace } from "../personnel.js";
 
 function setHtml(id, html) {
   const node = document.getElementById(id);
@@ -840,39 +841,6 @@ export async function refreshApprovalsWorkspace() {
   });
 }
 
-export async function refreshTechLibraryWorkspace() {
-  let items = [];
-  let error = null;
-  try {
-    items = await listPublications({ limit: 40 });
-    if (!Array.isArray(items)) items = listify(items);
-  } catch (err) {
-    const soft = await softGet("/publications?limit=40");
-    items = listify(soft.data);
-    if (!soft.ok) error = soft.error || err?.message;
-  }
-  setHtml(
-    "techLibraryBoard",
-    error
-      ? `<div class="mx-empty">${esc(error)}</div>`
-      : items.length
-        ? table(
-            ["Publication", "Type", "Status", "ID"],
-            items
-              .map(
-                (p) => `<tr>
-              <td>${esc(p.title || p.name || p.document_number || "—")}</td>
-              <td>${esc(p.publication_type || p.type_code || p.doc_type || "—")}</td>
-              <td><span class="mx-chip">${esc(p.status || "—")}</span></td>
-              <td class="mx-mono">${esc(p.id || "")}</td>
-            </tr>`
-              )
-              .join("")
-          )
-        : `<div class="mx-empty">No publications in library.</div>`
-  );
-}
-
 export async function refreshOemWorkspace() {
   const res = await softGet("/oem/manufacturers");
   const items = listify(res.data);
@@ -906,6 +874,7 @@ const LOADERS = {
   developer: refreshDeveloperWorkspace,
   approvals: refreshApprovalsWorkspace,
   techLibrary: refreshTechLibraryWorkspace,
+  personnel: refreshPersonnelWorkspace,
   oem: refreshOemWorkspace,
 };
 

@@ -23,6 +23,8 @@ frontend/js/workspace-engine/
   maintenance-ops.js  Work order, job card, logbook, planning-context operator UI
   logistics-ops.js  Part, material request, PO receiving, tool crib, WO/JC materials
   planning-ops.js  Check, AD/SB/EO, finding, MEL, aircraft planning bridge
+  publications-ops.js  Publication revisions/ATA/admin, aircraft/component publications, AD/SB/EO link chips
+  personnel-ops.js  Employee qualifications/authorizations/stamps, job-card personnel chips
   engine.js     openObject / close / tab / mount
   index.js      Public exports
 frontend/css/workspace-engine.css
@@ -45,13 +47,13 @@ Deep link: `#/object/{type}/{id}`
 
 ## Supported object types
 
-Aircraft · Engine · APU · Work Order · Inspection · Finding · Component · Marketplace Listing · Supplier · Organization · Engineer · Planner · Technician · QA · Project · Digital Twin
+Aircraft · Engine · APU · Work Order · Inspection · Finding · Component · Publication · Employee · Marketplace Listing · Supplier · Organization · Engineer · Planner · Technician · QA · Project · Digital Twin
 
 Every type defines **context tabs** + **quick actions**. Every session mounts the **shared rail**: Timeline, Pinned widgets, Activity, Attachments, Comments, Notifications, Search, AI Panel.
 
 ## Aircraft example tabs
 
-Overview · Configuration · Digital Twin · Maintenance · Work Orders · History · Logbook · Reliability · SB · AD · Components · Marketplace · Documents · AI Assistant
+Overview · Configuration · Digital Twin · Maintenance · Work Orders · History · Logbook · Reliability · SB · AD · Publications · Components · Marketplace · Documents · AI Assistant
 
 ## Layering
 

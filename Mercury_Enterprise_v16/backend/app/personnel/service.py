@@ -523,3 +523,7 @@ class PersonnelService:
         self._commit_or_conflict(detail="Stamp conflict")
         self.repo.refresh(row)
         return self.stamp_out(row)
+
+    def list_stamps(self, employee_id: str, *, username: str, session_role: str) -> list[StampOut]:
+        employee = self._get_org_employee(employee_id, username=username, session_role=session_role)
+        return [self.stamp_out(row) for row in self.repo.list_stamps(employee.id)]

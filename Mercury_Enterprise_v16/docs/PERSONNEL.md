@@ -13,10 +13,24 @@ Enterprise personnel records for aviation maintenance organizations.
 
 Base: `/api/v1/personnel`
 
+| Method | Path |
+|--------|------|
+| GET/POST | `/employees` |
+| GET/PATCH | `/employees/{id}` |
+| GET/POST | `/employees/{id}/qualifications` |
+| GET/POST | `/employees/{id}/authorizations` |
+| GET/POST | `/employees/{id}/stamps` |
+
+`GET .../stamps` lists profiles for the Personnel desk and employee object. `POST .../stamps` inserts a new profile; **prior stamps are not auto-retired**.
+
 | Permission | Roles |
 |------------|-------|
 | `personnel.read` | Viewer+ |
 | `personnel.manage` | Operator+ |
+
+## Operator UI (Sprint 8e)
+
+Personnel area (`#personnelWorkspace`) lists employees, qualification expiry alerts (display only: expired / expiring within 30 days), and stamp codes. Workspace Engine `employee` objects create qualifications/authorizations/stamps for Operator+. Job-card **Personnel context** chips open employees; inspect/release stay on job-card certification APIs.
 
 ## Audit
 

@@ -35,6 +35,13 @@ import {
   renderMelWorkspace,
   renderSbWorkspace,
 } from "./planning-ops.js";
+import {
+  renderAircraftPublications,
+  renderComponentPublications,
+  renderLinkedPublication,
+  renderPublicationWorkspace,
+} from "./publications-ops.js";
+import { renderEmployeeWorkspace, renderJobCardPersonnelBridge } from "./personnel-ops.js";
 
 export function renderShellSkeleton() {
   return `
@@ -110,6 +117,12 @@ export function renderMainTab(session, typeDef, record, bundle, tabId) {
   if (session.type === "aircraft" && (tabId === "ad" || tabId === "sb")) {
     return renderAircraftDirectives(session, bundle, tabId);
   }
+  if (session.type === "aircraft" && tabId === "publications") {
+    return renderAircraftPublications(session, bundle);
+  }
+  if (session.type === "component" && tabId === "publications") {
+    return renderComponentPublications(session, bundle);
+  }
   if (session.type === "workOrder" && tabId === "overview") {
     return renderWorkOrderOverview(session, record, bundle);
   }
@@ -130,7 +143,7 @@ export function renderMainTab(session, typeDef, record, bundle, tabId) {
   }
   if (session.type === "jobCard" && (tabId === "overview" || tabId === "inspections" || tabId === "history")) {
     const body = renderJobCardWorkspace(session, record, bundle);
-    return tabId === "overview" ? `${body}${renderJobCardMaterialsBridge(session, record, bundle)}` : body;
+    return tabId === "overview" ? `${body}${renderJobCardMaterialsBridge(session, record, bundle)}${renderJobCardPersonnelBridge(session, record, bundle)}` : body;
   }
   if (session.type === "part" && tabId === "overview") {
     return renderPartWorkspace(session, record, bundle);
@@ -151,13 +164,19 @@ export function renderMainTab(session, typeDef, record, bundle, tabId) {
     return renderCheckWorkspace(session, record, bundle);
   }
   if (session.type === "airworthinessDirective" && tabId === "overview") {
-    return renderAdWorkspace(session, record, bundle);
+    return `${renderAdWorkspace(session, record, bundle)}${renderLinkedPublication(record, bundle)}`;
   }
   if (session.type === "serviceBulletin" && tabId === "overview") {
-    return renderSbWorkspace(session, record, bundle);
+    return `${renderSbWorkspace(session, record, bundle)}${renderLinkedPublication(record, bundle)}`;
   }
   if (session.type === "engineeringOrder" && tabId === "overview") {
-    return renderEoWorkspace(session, record, bundle);
+    return `${renderEoWorkspace(session, record, bundle)}${renderLinkedPublication(record, bundle)}`;
+  }
+  if (session.type === "publication" && tabId === "overview") {
+    return renderPublicationWorkspace(session, record, bundle);
+  }
+  if (session.type === "employee" && tabId === "overview") {
+    return renderEmployeeWorkspace(session, record, bundle);
   }
   if (session.type === "melItem" && tabId === "overview") {
     return renderMelWorkspace(session, record, bundle);

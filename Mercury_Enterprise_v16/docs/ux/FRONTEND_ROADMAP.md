@@ -12,6 +12,7 @@
 - Maintenance operations integration — WO / job card / logbook (PR #10)
 - Enterprise logistics operator integration — stores desk, materials bridge, part/MR/PO/tool objects
 - Maintenance planning operator integration — due/forecast desk, AD/SB/EO, MEL/defects, selected-check WP generation
+- Publications / Technical Library + Personnel operator integration — library/personnel desks, publication/employee objects, stamp list GET
 
 ## Near term (UX 2.1)
 

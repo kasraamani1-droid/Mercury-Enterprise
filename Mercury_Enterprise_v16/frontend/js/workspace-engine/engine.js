@@ -41,6 +41,14 @@ import {
   planningOpsCacheKeys,
   sessionCanManagePlanning,
 } from "./planning-ops.js";
+import {
+  bindPublicationsOpsPanel,
+  publicationsOpsCacheKeys,
+} from "./publications-ops.js";
+import {
+  bindPersonnelOpsPanel,
+  personnelOpsCacheKeys,
+} from "./personnel-ops.js";
 
 let host = null;
 let active = null; // { key, type, id, label, tab, record, bundle }
@@ -98,6 +106,7 @@ export async function openObject(type, id, options = {}) {
     record = loaded.data || { id: oid };
     bundle = await loadRelatedBundle(type, oid, record);
     if (generation !== openGeneration) return null;
+    bundle.recordLoad = { ok: loaded.ok, status: loaded.status, error: loaded.error || "" };
     cache.set(key, { record, bundle });
   }
   if (generation !== openGeneration) return null;
@@ -171,21 +180,26 @@ async function refreshActiveObject(mutation = {}) {
   const opsKeys = maintenanceOpsCacheKeys(active, mutation);
   const logKeys = logisticsOpsCacheKeys(active, mutation);
   const planKeys = planningOpsCacheKeys(active, mutation);
+  const pubKeys = publicationsOpsCacheKeys(active, mutation);
+  const persKeys = personnelOpsCacheKeys(active, mutation);
   cache.delete(sessionKey(type, id));
   keys.components.forEach((componentId) => cache.delete(sessionKey("component", componentId)));
-  [...keys.aircraft, ...opsKeys.aircraft, ...logKeys.aircraft, ...planKeys.aircraft].forEach((aircraftId) => cache.delete(sessionKey("aircraft", aircraftId)));
-  [...opsKeys.workOrders, ...logKeys.workOrders, ...planKeys.workOrders].forEach((orderId) => cache.delete(sessionKey("workOrder", orderId)));
-  [...opsKeys.jobCards, ...logKeys.jobCards].forEach((cardId) => cache.delete(sessionKey("jobCard", cardId)));
+  [...keys.aircraft, ...opsKeys.aircraft, ...logKeys.aircraft, ...planKeys.aircraft, ...pubKeys.aircraft].forEach((aircraftId) => cache.delete(sessionKey("aircraft", aircraftId)));
+  [...opsKeys.workOrders, ...logKeys.workOrders, ...planKeys.workOrders, ...persKeys.workOrders].forEach((orderId) => cache.delete(sessionKey("workOrder", orderId)));
+  [...opsKeys.jobCards, ...logKeys.jobCards, ...persKeys.jobCards].forEach((cardId) => cache.delete(sessionKey("jobCard", cardId)));
   logKeys.parts.forEach((partId) => cache.delete(sessionKey("part", partId)));
   logKeys.materialRequests.forEach((requestId) => cache.delete(sessionKey("materialRequest", requestId)));
   logKeys.purchaseOrders.forEach((poId) => cache.delete(sessionKey("purchaseOrder", poId)));
   logKeys.tools.forEach((toolId) => cache.delete(sessionKey("tool", toolId)));
   planKeys.findings.forEach((findingId) => cache.delete(sessionKey("finding", findingId)));
   planKeys.checks.forEach((checkId) => cache.delete(sessionKey("check", checkId)));
-  planKeys.ads.forEach((adId) => cache.delete(sessionKey("airworthinessDirective", adId)));
-  planKeys.sbs.forEach((sbId) => cache.delete(sessionKey("serviceBulletin", sbId)));
-  planKeys.eos.forEach((eoId) => cache.delete(sessionKey("engineeringOrder", eoId)));
+  [...planKeys.ads, ...pubKeys.ads].forEach((adId) => cache.delete(sessionKey("airworthinessDirective", adId)));
+  [...planKeys.sbs, ...pubKeys.sbs].forEach((sbId) => cache.delete(sessionKey("serviceBulletin", sbId)));
+  [...planKeys.eos, ...pubKeys.eos].forEach((eoId) => cache.delete(sessionKey("engineeringOrder", eoId)));
   planKeys.mels.forEach((melId) => cache.delete(sessionKey("melItem", melId)));
+  pubKeys.publications.forEach((publicationId) => cache.delete(sessionKey("publication", publicationId)));
+  pubKeys.components.forEach((componentId) => cache.delete(sessionKey("component", componentId)));
+  persKeys.employees.forEach((employeeId) => cache.delete(sessionKey("employee", employeeId)));
   await openObject(type, id, { refresh: true, tab, label });
 }
 
@@ -241,6 +255,8 @@ function mountActive() {
   bindMaintenanceOpsPanel(active, { onRefresh: refreshActiveObject });
   bindLogisticsOpsPanel(active, { onRefresh: refreshActiveObject });
   bindPlanningOpsPanel(active, { onRefresh: refreshActiveObject });
+  bindPublicationsOpsPanel(active, { onRefresh: refreshActiveObject });
+  bindPersonnelOpsPanel(active, { onRefresh: refreshActiveObject });
 
   const search = document.getElementById("weObjectSearch");
   if (search) {
@@ -327,6 +343,14 @@ function handleAction(action) {
   }
   if (action === "newEo") {
     onAreaNavigate?.("planning");
+    return;
+  }
+  if (action === "openLibrary") {
+    onAreaNavigate?.("techLibrary");
+    return;
+  }
+  if (action === "openPersonnel") {
+    onAreaNavigate?.("personnel");
     return;
   }
   if (action === "openAircraft") {

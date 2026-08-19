@@ -25,6 +25,7 @@ export const OBJECT_TYPES = {
       { id: "reliability", label: "Reliability" },
       { id: "sb", label: "SB" },
       { id: "ad", label: "AD" },
+      { id: "publications", label: "Publications" },
       { id: "components", label: "Components" },
       { id: "marketplace", label: "Marketplace" },
       { id: "documents", label: "Documents" },
@@ -236,6 +237,36 @@ export const OBJECT_TYPES = {
     quickActions: [{ id: "pin", label: "Pin object" }],
     resolveLabel: (o) => o.item_number || o.title || o.id,
   },
+  publication: {
+    type: "publication",
+    label: "Publication",
+    icon: "▤",
+    tabs: [
+      { id: "overview", label: "Document" },
+      { id: "history", label: "History" },
+      { id: "aiAssistant", label: "AI Assistant" },
+    ],
+    quickActions: [
+      { id: "openLibrary", label: "Open library" },
+      { id: "pin", label: "Pin object" },
+    ],
+    resolveLabel: (o) => o.publication_number || o.title || o.id,
+  },
+  employee: {
+    type: "employee",
+    label: "Employee",
+    icon: "♟",
+    tabs: [
+      { id: "overview", label: "Qualifications" },
+      { id: "history", label: "History" },
+      { id: "aiAssistant", label: "AI Assistant" },
+    ],
+    quickActions: [
+      { id: "openPersonnel", label: "Personnel desk" },
+      { id: "pin", label: "Pin object" },
+    ],
+    resolveLabel: (o) => o.full_name || o.employee_number || o.id,
+  },
   component: {
     type: "component",
     label: "Component",
@@ -247,6 +278,7 @@ export const OBJECT_TYPES = {
       { id: "reliability", label: "Reliability" },
       { id: "marketplace", label: "Marketplace" },
       { id: "documents", label: "Documents" },
+      { id: "publications", label: "Publications" },
       { id: "history", label: "History" },
       { id: "aiAssistant", label: "AI Assistant" },
     ],

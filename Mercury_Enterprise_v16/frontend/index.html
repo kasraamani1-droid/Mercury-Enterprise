@@ -632,9 +632,64 @@
 </section>
 
 <section id="techLibraryWorkspace" class="workspace-page ux2-page hidden">
-  <div class="ux2-page-header"><div><div class="mx-label">Technical Library</div><h1>Publications</h1><p>Metadata catalog from publications APIs. License-safe storage remains server-side.</p></div>
-    <button type="button" class="mx-btn mx-btn-ghost" data-ux2-goto="engineering">Engineering AD/SB/EO</button></div>
-  <div id="techLibraryBoard"></div>
+  <div class="enterprise-header">
+    <div>
+      <span class="eyebrow">Sprint 7b · Technical library</span>
+      <h1>Publications &amp; Technical Library</h1>
+      <p>Browse manufacturer → family → model → type → ATA. Metadata and locators only — OEM binaries stay off-platform.</p>
+    </div>
+    <button id="libRefresh" class="ghost" type="button">Refresh library</button>
+  </div>
+  <p class="muted" id="libStatus">Loading…</p>
+  <div class="form-row">
+    <input id="libSearch" placeholder="Search title, number, code" />
+    <select id="libCodeFilter"><option value="">All types</option></select>
+    <select id="libStatusFilter">
+      <option value="">All status</option>
+      <option value="active">active</option>
+      <option value="archived">archived</option>
+    </select>
+    <button id="libApplyFilters" class="ghost small" type="button">Apply</button>
+  </div>
+  <section class="enterprise-kpis" id="libDashKpis"></section>
+  <div id="libOpsDesk"></div>
+  <div class="enterprise-grid">
+    <article class="card"><h3>Library browse</h3><div id="libBrowse" class="integration-list"></div></article>
+    <article class="card"><h3>Publications</h3><div id="libPublications" class="integration-list"></div></article>
+    <article class="card"><h3>Search results</h3><div id="libSearchResults" class="integration-list"></div></article>
+    <article class="card"><h3>Linked ADs</h3><div id="libAds" class="integration-list"></div></article>
+    <article class="card"><h3>Linked SBs</h3><div id="libSbs" class="integration-list"></div></article>
+    <article class="card"><h3>Linked EOs</h3><div id="libEos" class="integration-list"></div></article>
+  </div>
+</section>
+
+<section id="personnelWorkspace" class="workspace-page ux2-page hidden">
+  <div class="enterprise-header">
+    <div>
+      <span class="eyebrow">Sprint 7b · Personnel</span>
+      <h1>Qualifications · Authorizations · Stamps</h1>
+      <p>Org-scoped employees. Inspect/release authority remains on job-card certification APIs.</p>
+    </div>
+    <button id="persRefresh" class="ghost" type="button">Refresh personnel</button>
+  </div>
+  <p class="muted" id="persStatus">Loading…</p>
+  <div class="form-row">
+    <input id="persSearch" placeholder="Search name, number, username" />
+    <select id="persStatusFilter">
+      <option value="">All status</option>
+      <option value="active">active</option>
+      <option value="inactive">inactive</option>
+      <option value="suspended">suspended</option>
+    </select>
+    <button id="persApplyFilters" class="ghost small" type="button">Apply</button>
+  </div>
+  <section class="enterprise-kpis" id="persDashKpis"></section>
+  <div id="persOpsDesk"></div>
+  <div class="enterprise-grid">
+    <article class="card"><h3>Employees</h3><div id="persEmployees" class="integration-list"></div></article>
+    <article class="card"><h3>Qualification alerts</h3><div id="persAlerts" class="integration-list"></div></article>
+    <article class="card"><h3>Stamp profiles</h3><div id="persStamps" class="integration-list"></div></article>
+  </div>
 </section>
 
 <section id="oemWorkspace" class="workspace-page ux2-page hidden">
