@@ -2,7 +2,7 @@
 
 Trusted network only (localhost or LAN) unless you complete [PRODUCTION.md](PRODUCTION.md). Default Compose HTTP on `:3000` is **not** internet-facing production.
 
-The TLS edge is `docker compose --profile production -f docker-compose.yml -f docker-compose.production.yml` (unpublishes `:3000`). HTTPS deployments require OIDC. Internet-facing activation (DNS, certs, real IdP) is **OWNER ACTION REQUIRED** — see [ACTIVATION.md](ACTIVATION.md).
+The TLS edge is `docker compose --profile production -f docker-compose.yml -f docker-compose.production.yml` (unpublishes `:3000`). HTTPS deployments require OIDC. Internet-facing activation (DNS, certs, real IdP) is **OWNER ACTION REQUIRED** — start at [OWNER_HANDOFF.md](OWNER_HANDOFF.md).
 
 ## Prerequisites
 

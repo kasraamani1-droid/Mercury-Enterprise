@@ -1,5 +1,7 @@
 # Internet-facing activation checklist (Cycle 8)
 
+**Start here for the sequential owner procedure:** [OWNER_HANDOFF.md](OWNER_HANDOFF.md) (VPS minimum specs, secret-generation commands, firewall examples, exact env names, compose/health/rollback commands). This file remains the **A/B/C audit**. Do not treat the two as competing checklists.
+
 This document is the **pre-activation audit** for Mercury Enterprise v16. It distinguishes **repository / code readiness** from **deployed infrastructure readiness**.
 
 Mercury is **not** internet-facing until the owner completes every **B** item. This repository does **not** contain a real domain, IdP tenant, issued TLS certificate, or production secret. Cursor will not invent those values.
@@ -25,7 +27,7 @@ Classification used below:
 | Item | Class | Notes |
 | --- | --- | --- |
 | Production domain / DNS `A`/`AAAA` for `$DOMAIN` | **B** | No domain is registered in this repo. Set `DOMAIN` in `.env` only after DNS exists. |
-| Hosting / runtime (public IP, VPS or equivalent) | **B** | Compose files are templates. Nothing is deployed. |
+| Hosting / runtime (public IP, VPS or equivalent) | **B** | Compose files are templates. Nothing is deployed. **Min specs** (pilot): 2 vCPU / 4 GiB RAM / 40 GiB SSD; recommended 4 / 8 / 80. See [OWNER_HANDOFF.md](OWNER_HANDOFF.md) §2. |
 | HTTPS / TLS certificates (Let's Encrypt or equivalent) | **B** | nginx + certbot **path** exists (`deploy/`, `docs/security/HTTPS.md`). No issued certs in git. |
 | ACME / certbot Compose service | **C** | Profile `production` in `docker-compose.yml` |
 | nginx TLS 1.2/1.3, HSTS, CSP, HTTP→HTTPS | **C** | `deploy/nginx-production.conf` + `.template` |
@@ -37,13 +39,13 @@ Classification used below:
 | Production OIDC **validation** (issuer https, client id, redirect matches `DOMAIN`, `jwks_uri`) | **A** → **C** (Cycle 8) | Fail-closed at startup. Does not contact the IdP. |
 | Production PostgreSQL | **A** templates / **B** operations | Compose `postgres` service. Owner sets `POSTGRES_PASSWORD` and keeps `DATABASE_URL` in sync. No managed cloud DB is provisioned here. |
 | Production Redis | **A** templates / **B** operations | Compose `redis`, overlay `REDIS_REQUIRED=true`, `noeviction`. Unpublished. |
-| Secrets / env vars (`.env` from `.env.example`) | **A** template / **B** values | Never commit `.env`. Generate `JWT_SECRET`, `COOKIE_SECRET`, `MERCURY_AUTH_PASSWORD`. |
+| Secrets / env vars (`.env` from `.env.example`) | **A** template / **B** values | Never commit `.env`. Owner generates with `python -c "import secrets; print(secrets.token_urlsafe(48))"` or `openssl rand -base64 48` — commands in [OWNER_HANDOFF.md](OWNER_HANDOFF.md) §8. Cursor does not generate or commit values. |
 | Encryption / key requirements | **A** docs+scripts / **B** keys | `JWT_SECRET` / `COOKIE_SECRET` ≥ 32 chars; optional `MERCURY_BACKUP_KEY_FILE`; host volume encryption is the owner's disk. |
 | Off-box encrypted backups | **A** tooling / **B** copy destination | Scripts encrypt dumps. **No** cloud bucket is invented. Owner copies `*.enc` off the host. |
 | Email / notification | **C** not required for SSO | Mercury login does not send mail. Connect catalog lists SMTP as a **future** connector, not a production mailer. Optional later (**B** if you want mail). |
 | Health checks `/live` `/ready` `/health` | **C** | Do not return secrets. Overlay healthchecks probe `/ready`. |
 | Logging / audit | **C** + Cycle 8 redact | JSON logs redact secrets; audit details are redacted; login/logout do not store cookies. |
-| Firewall / network | **B** | Owner opens 80/443 only; do not publish Postgres, Redis, or `:3000`. |
+| Firewall / network | **B** | Owner opens 80/443 only; do not publish Postgres, Redis, or `:3000`. `ufw` / nftables / security-group examples: [OWNER_HANDOFF.md](OWNER_HANDOFF.md) §3. |
 | Persistent storage | **C** volumes | `mercury_postgres`, `mercury_redis`, `certbot_*`. Owner must not `down -v` on a live host. |
 | Deployment / rollback | **A** docs + verify script (Cycle 8) | See [ROLLBACK.md](ROLLBACK.md). Image/git pin is the owner's registry choice (**B** if using a remote registry). |
 | Redis-backed rate limits (multi-worker) | **A** → **C** (Cycle 8) | Application limiter uses Redis when `REDIS_URL` is attached / required. nginx edge limits remain. |
@@ -70,7 +72,7 @@ Complete these **in order**. Development on LAN can continue without them. **Int
 
 1. **Service:** VPS / VM with a public IP (or a reverse proxy you already operate).
 2. **Why:** Let's Encrypt HTTP-01 and user browsers must reach ports 80 and 443.
-3. **Options:** A single well-hardened VPS is enough for a pilot. Kubernetes is **out of scope**.
+3. **Options:** A single well-hardened VPS is enough for a pilot. Kubernetes is **out of scope**. Minimum: **2 vCPU, 4 GiB RAM, 40 GiB SSD**, Ubuntu 22.04/24.04 or Debian 12, Docker Engine 24+ / Compose v2, public IPv4, disk encryption. Recommended: **4 vCPU, 8 GiB RAM, 80 GiB SSD**. Full table: [OWNER_HANDOFF.md](OWNER_HANDOFF.md) §2.
 4. **What Cursor needs afterward:** confirmation that Compose runs on that host; still **no** secrets in chat.
 5. **Where:** operator host, not this git repo.
 6. **Precautions:** Firewall allow 80/443 only. Postgres and Redis stay on the Compose network. Disk encryption (BitLocker/LUKS/cloud volume).
@@ -143,12 +145,12 @@ Complete these **in order**. Development on LAN can continue without them. **Int
 3. **Options:** nftables, ufw, cloud security groups.
 4. **Config:** `docker compose --profile production -f docker-compose.yml -f docker-compose.production.yml`
 5. **Where:** host, not git.
-6. **Precautions:** Do not port-forward Postgres, Redis, uvicorn `:8000`, or `:3000`.
+6. **Precautions:** Do not port-forward Postgres, Redis, uvicorn `:8000`, or `:3000`. Example `ufw`: allow 80/443 and SSH from your admin IP only — [OWNER_HANDOFF.md](OWNER_HANDOFF.md) §3.
 7. **Continue without it?** LAN yes.
 
 ## Repository commands (no live IdP required)
 
-From `Mercury_Enterprise_v16/`:
+From `Mercury_Enterprise_v16/`. Exact compose, health, and secret-generation commands: [OWNER_HANDOFF.md](OWNER_HANDOFF.md) §§8, 11–13.
 
 ```powershell
 python scripts/verify_activation.py
@@ -160,7 +162,7 @@ docker compose -f docker-compose.yml -f docker-compose.production.yml config
 Internet start (only after B items exist):
 
 ```powershell
-docker compose --profile production -f docker-compose.yml -f docker-compose.production.yml up --build
+docker compose --profile production -f docker-compose.yml -f docker-compose.production.yml up --build -d
 ```
 
 ## What this cycle did **not** do

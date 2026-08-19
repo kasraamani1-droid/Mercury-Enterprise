@@ -24,6 +24,10 @@ REQUIRED_ENV_NAMES = (
     "DOMAIN",
     "HTTPS_ENABLED",
     "LETSENCRYPT_EMAIL",
+    "MERCURY_AUTH_MODE",
+    "MERCURY_REQUIRE_OIDC",
+    "MERCURY_ALLOW_PASSWORD_AUTH",
+    "MERCURY_SEED_DEMO",
     "MERCURY_OIDC_ISSUER",
     "MERCURY_OIDC_CLIENT_ID",
     "MERCURY_OIDC_CLIENT_SECRET",
@@ -95,6 +99,24 @@ def check_repo_files() -> list[str]:
     if "OWNER ACTION REQUIRED" not in activation:
         raise Failure("ACTIVATION.md must list OWNER ACTION REQUIRED")
     notes.append("activation runbook present")
+
+    handoff = _read(ROOT / "docs" / "pilot" / "OWNER_HANDOFF.md")
+    for needle in (
+        "OWNER ACTION REQUIRED",
+        "2 vCPU",
+        "token_urlsafe",
+        "ufw",
+        "https://$DOMAIN/api/v1/auth/oidc/callback",
+        "docker-compose.production.yml",
+    ):
+        if needle not in handoff:
+            raise Failure(f"OWNER_HANDOFF.md missing {needle}")
+    notes.append("owner handoff checklist present")
+
+    letsencrypt = _read(ROOT / "deploy" / "init-letsencrypt.sh")
+    if "docker-compose.production.yml" not in letsencrypt:
+        raise Failure("init-letsencrypt.sh must use docker-compose.production.yml (do not publish :3000)")
+    notes.append("init-letsencrypt uses production overlay")
     return notes
 
 

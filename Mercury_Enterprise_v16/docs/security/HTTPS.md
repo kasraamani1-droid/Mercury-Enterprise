@@ -53,10 +53,10 @@ sh deploy/init-letsencrypt.sh
 
 Windows (Git Bash / WSL): run the same script. For a staging certificate first, set `STAGING=1`.
 
-4. Start the full stack:
+4. Start the full stack (production overlay unpublishes `:3000`):
 
 ```bash
-docker compose --profile production up --build -d
+docker compose --profile production -f docker-compose.yml -f docker-compose.production.yml up --build -d
 ```
 
 5. Verify:
@@ -75,12 +75,12 @@ Sign in at `https://$DOMAIN` via OIDC SSO when `HTTPS_ENABLED=true` (password lo
 Certbot renews automatically in the `certbot` service. To renew manually:
 
 ```bash
-docker compose --profile production run --rm certbot certonly \
+docker compose --profile production -f docker-compose.yml -f docker-compose.production.yml run --rm certbot certonly \
   --webroot -w /var/www/certbot \
   -d "$DOMAIN" \
   --email "$LETSENCRYPT_EMAIL" \
   --agree-tos --no-eff-email --force-renewal
-docker compose --profile production exec nginx nginx -s reload
+docker compose --profile production -f docker-compose.yml -f docker-compose.production.yml exec nginx nginx -s reload
 ```
 
 ## Local HTTP (non-TLS) Compose
@@ -97,6 +97,7 @@ Default `docker compose up --build` publishes the frontend proxy on `http://loca
 | `deploy/validate_deployment.py` | Offline Compose/NGINX requirement validator (`python deploy/validate_deployment.py`) |
 | `frontend/nginx.conf` | Internal UI + `/api` proxy (gzip, WS, timeouts, rate limits, security headers) |
 | `docker-compose.yml` | `production` profile for `nginx` + `certbot` |
+| `docker-compose.production.yml` | Unpublish `:3000`; require `POSTGRES_PASSWORD`; Redis `noeviction` + `REDIS_REQUIRED`; `--workers 2` |
 
 ## Health probes
 
@@ -119,7 +120,7 @@ Edge NGINX proxies:
 ## Rollback
 
 ```bash
-docker compose --profile production down
+docker compose --profile production -f docker-compose.yml -f docker-compose.production.yml down
 docker compose up --build -d
 ```
 
