@@ -75,11 +75,11 @@ function fillUtilizationFromAircraft(form, aircraftId) {
   if (form.flight_cycles) form.flight_cycles.value = row.flight_cycles ?? "";
 }
 
-function renderDesk({ canManage, aircraft, checks, programs, mels, publications }) {
+function renderDesk({ canManage, aircraft, checks, programs, mels, publications, employees, packages }) {
   const host = el("planOpsDesk");
   if (!host) return;
   if (!canManage) {
-    host.innerHTML = `<p class="muted">Planning mutations require planning.manage (Operator or Administrator). Viewer/Reviewer can inspect due, forecast, AD/SB/EO, defects, and hangar plans.</p>`;
+    host.innerHTML = `<p class="muted">Planning mutations require planning.manage (Operator or Administrator). Viewer/Reviewer can inspect due, forecast, AD/SB/EO, defects, hangar, and workforce plan lines.</p>`;
     return;
   }
   const eligible = eligibleChecks(checks);
@@ -161,6 +161,34 @@ function renderDesk({ canManage, aircraft, checks, programs, mels, publications 
           <input name="shift_code" placeholder="Shift" />
           <button type="submit">Create hangar plan</button>
         </form>
+        <form data-plan-action="workforce">
+          <select name="work_package_id" required>
+            <option value="">Work package</option>
+            ${optionList(packages, "id", (row) => `${row.package_number || row.id} · ${row.aircraft_id || ""}`)}
+          </select>
+          <select name="employee_id" required>
+            <option value="">Employee</option>
+            ${optionList(employees, "id", (row) => `${row.employee_number || row.id} · ${row.full_name || ""}`)}
+          </select>
+          <select name="role_code">
+            <option value="technician">technician</option>
+            <option value="inspector">inspector</option>
+            <option value="ii">ii</option>
+            <option value="aca">aca</option>
+            <option value="engineer">engineer</option>
+            <option value="stores">stores</option>
+          </select>
+          <input name="shift_code" placeholder="Shift" />
+          <input name="workload_hours" type="number" min="0" step="0.25" placeholder="Hours" />
+          <select name="status">
+            <option value="assigned">assigned</option>
+            <option value="planned">planned</option>
+            <option value="released">released</option>
+            <option value="complete">complete</option>
+            <option value="cancelled">cancelled</option>
+          </select>
+          <button type="submit">Assign workforce line</button>
+        </form>
         <form data-plan-action="utilization">
           <select name="aircraft_id" required>
             <option value="">Aircraft</option>
@@ -214,9 +242,12 @@ export async function refreshPlanningWorkspace() {
     defects,
     mels,
     hangar,
+    workforce,
     forecast,
     ordersRes,
     publications,
+    employees,
+    packages,
   ] = await Promise.all([
     softGet("/planning/dashboard"),
     softGet("/planning/aircraft-status"),
@@ -230,9 +261,12 @@ export async function refreshPlanningWorkspace() {
     softGet("/planning/deferred-defects?limit=40"),
     softGet("/planning/mel-items?limit=40"),
     softGet("/planning/hangar-plans"),
+    softGet("/planning/workforce-plan-lines?limit=200"),
     softGet("/planning/forecast?horizon_days=90"),
     softGet("/work-orders/orders?limit=80"),
     softGet("/publications?limit=80"),
+    softGet("/personnel/employees?limit=80"),
+    softGet("/work-orders/packages?limit=80"),
   ]);
   if (generation !== refreshGeneration) return;
 
@@ -273,6 +307,9 @@ export async function refreshPlanningWorkspace() {
   const defectRows = listify(defects.data);
   const melRows = listify(mels.data);
   const hangarRows = listify(hangar.data);
+  const workforceRows = listify(workforce.data);
+  const employeeRows = listify(employees.data);
+  const byEmployee = (employeeId) => employeeRows.find((row) => String(row.id) === String(employeeId));
   const orders = listify(ordersRes.data);
   const delayed = orders.filter((row) => String(row.status || "") === "delayed");
   const byAircraft = (aircraftId) => orders.filter((row) => String(row.aircraft_id) === String(aircraftId)).slice(0, 3);
@@ -296,6 +333,8 @@ export async function refreshPlanningWorkspace() {
     programs: programRows,
     mels: melRows,
     publications: listify(publications.data),
+    employees: listify(employees.data),
+    packages: listify(packages.data),
   });
 
   renderRows(
@@ -459,6 +498,25 @@ export async function refreshPlanningWorkspace() {
     hangar.ok ? "No hangar plans." : hangar.error || "Hangar unavailable"
   );
 
+  const packageAircraft = Object.fromEntries(listify(packages.data).map((row) => [String(row.id), row.aircraft_id || ""]));
+  renderRows(
+    "planWorkforce",
+    workforceRows
+      .filter((line) => !acFilter || String(packageAircraft[String(line.work_package_id || "")] || "") === acFilter)
+      .map((line) => {
+        const person = byEmployee(line.employee_id);
+        return rowOpen(
+          "workforcePlanLine",
+          line.id,
+          line.role_code || line.id,
+          `<b>${esc(line.role_code)}</b><span>${esc(person?.employee_number || line.employee_id || "—")} · ${esc(person?.full_name || "")} · ${esc(line.shift_code || "—")} · WP ${esc(line.work_package_id || "—")}</span><em>${esc(line.status)}</em>
+          <div>${line.employee_id ? `<button type="button" class="ghost small" data-we-open="employee:${esc(line.employee_id)}" data-we-label="${esc(person?.full_name || line.employee_id)}">Employee</button>` : ""}</div>`
+        );
+      })
+      .join(""),
+    workforce.ok ? "No workforce plan lines." : workforce.error || "Workforce unavailable"
+  );
+
   const fcRows = filterDueItems(forecastRows(forecast.data), { q, aircraftId: acFilter, urgency: urgFilter, sourceType: srcFilter }).slice(0, 50);
   renderRows(
     "planForecast",
@@ -590,6 +648,25 @@ async function handleDeskSubmit(form) {
     if (!result) return;
     if (!result.ok) return fail(result);
     return ok("Hangar plan created");
+  }
+  if (action === "workforce") {
+    const body = {
+      work_package_id: values.work_package_id,
+      employee_id: values.employee_id,
+      role_code: values.role_code || "technician",
+      shift_code: values.shift_code || "",
+      status: values.status || "assigned",
+      license_ok: true,
+      authorization_ok: true,
+      available: true,
+    };
+    if (values.workload_hours !== "") body.workload_hours = Number(values.workload_hours);
+    const result = await runLocked(`desk-workforce:${body.work_package_id}:${body.employee_id}`, () =>
+      softMutate("/planning/workforce-plan-lines", { body })
+    );
+    if (!result) return;
+    if (!result.ok) return fail(result);
+    return ok("Workforce plan line assigned");
   }
   if (action === "utilization") {
     const body = {

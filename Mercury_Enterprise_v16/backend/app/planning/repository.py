@@ -380,8 +380,22 @@ class PlanningRepository:
         self.db.add(row)
         return row
 
-    def list_workforce_lines(self, organization_id: str, work_package_id: str | None = None) -> list[WorkforcePlanLine]:
+    def get_workforce_line(self, line_id: str, *, for_update: bool = False) -> WorkforcePlanLine | None:
+        stmt = select(WorkforcePlanLine).where(WorkforcePlanLine.id == line_id)
+        if for_update:
+            stmt = stmt.with_for_update()
+        return self.db.scalars(stmt).first()
+
+    def list_workforce_lines(
+        self,
+        organization_id: str,
+        work_package_id: str | None = None,
+        limit: int = 200,
+        offset: int = 0,
+    ) -> list[WorkforcePlanLine]:
         stmt = select(WorkforcePlanLine).where(WorkforcePlanLine.organization_id == organization_id)
         if work_package_id:
             stmt = stmt.where(WorkforcePlanLine.work_package_id == work_package_id)
+        lim, off = clamp_page(limit, offset)
+        stmt = stmt.order_by(WorkforcePlanLine.created_at.desc()).limit(lim).offset(off)
         return list(self.db.scalars(stmt).all())

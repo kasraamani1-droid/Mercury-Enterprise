@@ -34,6 +34,8 @@ import {
   renderFindingWorkspace,
   renderMelWorkspace,
   renderSbWorkspace,
+  renderWorkforcePlanWorkspace,
+  renderWorkOrderWorkforce,
 } from "./planning-ops.js";
 import {
   renderAircraftPublications,
@@ -133,7 +135,7 @@ export function renderMainTab(session, typeDef, record, bundle, tabId) {
     return renderComponentPublications(session, bundle);
   }
   if (session.type === "workOrder" && tabId === "overview") {
-    return renderWorkOrderOverview(session, record, bundle);
+    return `${renderWorkOrderOverview(session, record, bundle)}${renderWorkOrderWorkforce(session, record, bundle)}`;
   }
   if (session.type === "workOrder" && tabId === "tasks") {
     return renderWorkOrderTasks(session, record, bundle);
@@ -180,6 +182,9 @@ export function renderMainTab(session, typeDef, record, bundle, tabId) {
   }
   if (session.type === "engineeringOrder" && tabId === "overview") {
     return `${renderEoWorkspace(session, record, bundle)}${renderLinkedPublication(record, bundle)}`;
+  }
+  if (session.type === "workforcePlanLine" && tabId === "overview") {
+    return renderWorkforcePlanWorkspace(session, record, bundle);
   }
   if (session.type === "publication" && tabId === "overview") {
     return renderPublicationWorkspace(session, record, bundle);

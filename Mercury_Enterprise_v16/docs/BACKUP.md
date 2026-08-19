@@ -34,6 +34,30 @@ sh scripts/restore_database.sh
 
 PostgreSQL restore uses `pg_restore --clean --if-exists`. SQLite restore replaces the target DB file.
 
+## Compose (pilot)
+
+Default `docker-compose.yml` does **not** publish Postgres. Backup from the host with:
+
+```bash
+export MERCURY_BACKUP_VIA_COMPOSE=1
+export DATABASE_URL=postgresql+psycopg://mercury:mercury@postgres:5432/mercury
+export BACKUP_DIR=./backups
+sh scripts/backup_database.sh
+```
+
+The scripts call `docker compose exec` `pg_dump` / `docker compose cp` + `pg_restore` inside the `postgres` service. Restore:
+
+```bash
+export MERCURY_BACKUP_VIA_COMPOSE=1
+export DATABASE_URL=postgresql+psycopg://mercury:mercury@postgres:5432/mercury
+export BACKUP_FILE=./backups/mercury-postgres-YYYYMMDDThhmmssZ.dump
+sh scripts/restore_database.sh
+```
+
+On Windows, run the `sh` scripts from Git Bash so custom-format dumps stay binary-safe. PowerShell `>` redirection can corrupt `pg_dump -Fc` output.
+
+Volume `mercury_postgres` is not a substitute for `pg_dump` backups. Take a dump (and optionally a volume tarball) before `docker compose up -d --build`. Recreating containers does not destroy the named volume; `docker compose down -v` does.
+
 ## Operations tips
 
 1. Take a backup before upgrades and before destructive admin changes.

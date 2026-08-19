@@ -46,6 +46,7 @@ export async function loadObjectRecord(type, id) {
     melItem: `/planning/mel-items/${encodeURIComponent(id)}`,
     publication: `/publications/${encodeURIComponent(id)}`,
     employee: `/personnel/employees/${encodeURIComponent(id)}`,
+    workforcePlanLine: `/planning/workforce-plan-lines/${encodeURIComponent(id)}`,
   };
 
   if (routes[type]) {
@@ -134,7 +135,7 @@ export async function loadRelatedBundle(type, id, record) {
   };
 
   if (type === "aircraft") {
-    const [wos, due, twins, cfg, serialized, ata, catalog, fleet, session, logbook, cards, checks, ads, sbs, eos, defects, mels, pubs] = await Promise.all([
+    const [wos, due, twins, cfg, serialized, ata, catalog, fleet, session, logbook, cards, checks, ads, sbs, eos, defects, mels, pubs, workforce] = await Promise.all([
       softGet(`/work-orders/orders?aircraft_id=${encodeURIComponent(id)}&limit=20`),
       softGet(`/planning/due-list?limit=20`),
       softGet(`/twin/twins?limit=100`),
@@ -153,6 +154,7 @@ export async function loadRelatedBundle(type, id, record) {
       softGet(`/planning/deferred-defects?aircraft_id=${encodeURIComponent(id)}&limit=50`),
       softGet(`/planning/mel-items?limit=40`),
       softGet(`/publications/by-aircraft/${encodeURIComponent(id)}`),
+      softGet(`/planning/workforce-plan-lines?limit=200`),
     ]);
     bundle.workOrdersLoad = { ok: wos.ok, status: wos.status, error: wos.error || "" };
     bundle.workOrders = listify(wos.data);
@@ -178,6 +180,8 @@ export async function loadRelatedBundle(type, id, record) {
     bundle.melItems = listify(mels.data);
     bundle.publicationsLoad = { ok: pubs.ok, status: pubs.status, error: pubs.error || "" };
     bundle.publications = listify(pubs.data);
+    bundle.workforcePlanLinesLoad = { ok: workforce.ok, status: workforce.status, error: workforce.error || "" };
+    bundle.workforcePlanLines = listify(workforce.data);
     bundle.twinsLoad = { ok: twins.ok, status: twins.status, error: twins.error || "" };
     const twinList = listify(twins.data);
     bundle.twin = matchTwinToEntity(twinList, { entityId: id, entityType: "aircraft" });
@@ -186,7 +190,8 @@ export async function loadRelatedBundle(type, id, record) {
 
   if (type === "workOrder") {
     const aircraftId = record?.aircraft_id;
-    const [cards, session, employees, aircraft, logbook, mrs, parts, locations, warehouses] = await Promise.all([
+    const wpId = record?.work_package_id;
+    const [cards, session, employees, aircraft, logbook, mrs, parts, locations, warehouses, workforce] = await Promise.all([
       softGet(`/work-orders/job-cards?work_order_id=${encodeURIComponent(id)}&limit=50`),
       softGet(`/auth/session`),
       softGet(`/personnel/employees?limit=80`),
@@ -198,6 +203,9 @@ export async function loadRelatedBundle(type, id, record) {
       softGet(`/logistics/parts?limit=80`),
       softGet(`/logistics/locations?limit=80`),
       softGet(`/logistics/warehouses`),
+      wpId
+        ? softGet(`/planning/workforce-plan-lines?work_package_id=${encodeURIComponent(wpId)}&limit=100`)
+        : Promise.resolve({ ok: true, status: 200, data: [], error: null }),
     ]);
     bundle.jobCardsLoad = { ok: cards.ok, status: cards.status, error: cards.error || "" };
     bundle.jobCards = listify(cards.data);
@@ -211,6 +219,8 @@ export async function loadRelatedBundle(type, id, record) {
     bundle.parts = listify(parts.data);
     bundle.locations = listify(locations.data);
     bundle.warehouses = listify(warehouses.data);
+    bundle.workforcePlanLinesLoad = { ok: workforce.ok, status: workforce.status, error: workforce.error || "" };
+    bundle.workforcePlanLines = listify(workforce.data);
     bundle.timeline = bundle.jobCards.slice(0, 12).map((card) => ({
       title: `${card.job_card_number || card.id} · ${card.status || ""}`,
       at: card.updated_at || card.created_at || "",
@@ -457,6 +467,28 @@ export async function loadRelatedBundle(type, id, record) {
     bundle.authorizations = listify(auths.data);
     bundle.stampsLoad = { ok: stamps.ok, status: stamps.status, error: stamps.error || "" };
     bundle.stamps = listify(stamps.data);
+  }
+
+  if (type === "workforcePlanLine") {
+    const employeeId = record?.employee_id;
+    const wpId = record?.work_package_id;
+    const [session, employee, pkgOrders] = await Promise.all([
+      softGet(`/auth/session`),
+      employeeId ? softGet(`/personnel/employees/${encodeURIComponent(employeeId)}`) : Promise.resolve({ ok: false, data: null }),
+      wpId
+        ? softGet(`/work-orders/orders?work_package_id=${encodeURIComponent(wpId)}&limit=20`)
+        : Promise.resolve({ ok: true, status: 200, data: [], error: null }),
+    ]);
+    bundle.sessionRole = session.ok ? session.data?.role || "" : "";
+    bundle.employee = employee.ok ? employee.data : null;
+    bundle.workOrders = listify(pkgOrders.data);
+    bundle.timeline = [
+      {
+        title: `${record?.role_code || "Workforce"} · ${record?.status || ""}`,
+        at: record?.created_at || "",
+        detail: "Planner-entered assignment flags — not a certification determination",
+      },
+    ];
   }
 
   // Synthetic timeline seed from record

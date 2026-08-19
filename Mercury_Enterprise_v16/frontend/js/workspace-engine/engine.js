@@ -208,6 +208,7 @@ async function refreshActiveObject(mutation = {}) {
   [...planKeys.sbs, ...pubKeys.sbs].forEach((sbId) => cache.delete(sessionKey("serviceBulletin", sbId)));
   [...planKeys.eos, ...pubKeys.eos].forEach((eoId) => cache.delete(sessionKey("engineeringOrder", eoId)));
   planKeys.mels.forEach((melId) => cache.delete(sessionKey("melItem", melId)));
+  (planKeys.workforcePlanLines || []).forEach((lineId) => cache.delete(sessionKey("workforcePlanLine", lineId)));
   pubKeys.publications.forEach((publicationId) => cache.delete(sessionKey("publication", publicationId)));
   [...pubKeys.components, ...twinKeys.components].forEach((componentId) => cache.delete(sessionKey("component", componentId)));
   persKeys.employees.forEach((employeeId) => cache.delete(sessionKey("employee", employeeId)));

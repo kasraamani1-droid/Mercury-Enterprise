@@ -28,6 +28,20 @@ if [ -z "$DATABASE_URL" ]; then
   exit 1
 fi
 
+compose_file() {
+  if [ -f "$ROOT/docker-compose.yml" ]; then
+    printf '%s' "$ROOT/docker-compose.yml"
+  else
+    printf '%s' "$ROOT/docker-compose.yaml"
+  fi
+}
+
+use_compose_postgres() {
+  [ "${MERCURY_BACKUP_VIA_COMPOSE:-}" = "1" ] && return 0
+  printf '%s' "$DATABASE_URL" | grep -Eq '@postgres(:|[/?])|://postgres(:|[/?])' && return 0
+  return 1
+}
+
 case "$BACKUP_FILE" in
   *.db)
     DB_PATH="$(printf '%s' "$DATABASE_URL" | sed -E 's#^sqlite([0-9])?:///##; s#^\./##')"
@@ -39,13 +53,23 @@ case "$BACKUP_FILE" in
     echo "Restored SQLite database to $DB_PATH"
     ;;
   *.dump)
-    if ! command -v pg_restore >/dev/null 2>&1; then
-      echo "pg_restore is required for PostgreSQL restores" >&2
-      exit 1
+    if use_compose_postgres; then
+      if ! command -v docker >/dev/null 2>&1; then
+        echo "docker is required for Compose PostgreSQL restores" >&2
+        exit 1
+      fi
+      docker compose -f "$(compose_file)" cp "$BACKUP_FILE" postgres:/tmp/mercury-restore.dump
+      docker compose -f "$(compose_file)" exec -T postgres pg_restore --clean --if-exists --no-owner -U mercury -d mercury /tmp/mercury-restore.dump
+      echo "Restored Compose PostgreSQL database from $BACKUP_FILE"
+    else
+      if ! command -v pg_restore >/dev/null 2>&1; then
+        echo "pg_restore is required for PostgreSQL restores" >&2
+        exit 1
+      fi
+      CLEAN="$(printf '%s' "$DATABASE_URL" | sed -E 's#^postgresql\+psycopg#postgresql#; s#^postgres\+psycopg#postgres#')"
+      pg_restore --clean --if-exists --no-owner --dbname="$CLEAN" "$BACKUP_FILE"
+      echo "Restored PostgreSQL database from $BACKUP_FILE"
     fi
-    CLEAN="$(printf '%s' "$DATABASE_URL" | sed -E 's#^postgresql\+psycopg#postgresql#; s#^postgres\+psycopg#postgres#')"
-    pg_restore --clean --if-exists --no-owner --dbname="$CLEAN" "$BACKUP_FILE"
-    echo "Restored PostgreSQL database from $BACKUP_FILE"
     ;;
   *)
     echo "Unrecognized backup format: $BACKUP_FILE" >&2

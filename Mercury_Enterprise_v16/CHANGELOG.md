@@ -2,6 +2,20 @@
 
 All notable changes to Mercury Enterprise are summarized here. Package/API version remains `16.0.0` unless noted; sprint tags mark security/ops increments.
 
+## Pilot readiness (workforce API, demo loop, backup)
+
+### Added
+- Workforce plan-line HTTP API on existing `workforce_plan_lines`: list/create/GET-by-id/PATCH (status and planner flags) with RBAC and tenant isolation
+- Planning desk + Workspace Engine assignment object; work-order overview and aircraft Maintenance tab show package workforce lines
+- Idempotent demo assignments on `WP-DEMO-001` (E-1001 technician, E-2001 ACA, E-3001 II) and on check → WP generation
+- Closed-loop C-GMEA API walk and sqlite backup/restore tests; compose-aware `pg_dump` via `docker compose exec` when the DB host is `postgres`
+- Pilot runbooks under `docs/pilot/` (deploy, demo script, security/network exposure)
+
+### Notes
+- Workforce `license_ok` / `authorization_ok` / `available` are planner-entered flags, not a certification determination. No MTBUR/MTBF or invented regulatory rules.
+- Default Compose remains LAN/local HTTP on `:3000`. Postgres and Redis are not published. OIDC/SSO is a production blocker for internet-facing paid use — not implemented in this cycle.
+- Command/Radar/3D airport twin stay labeled SIM. Demo users live in local `.env` only.
+
 ## Publications and personnel operator integration
 
 ### Added

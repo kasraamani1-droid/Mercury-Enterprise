@@ -238,6 +238,18 @@ export const OBJECT_TYPES = {
     quickActions: [{ id: "pin", label: "Pin object" }],
     resolveLabel: (o) => o.item_number || o.title || o.id,
   },
+  workforcePlanLine: {
+    type: "workforcePlanLine",
+    label: "Workforce plan line",
+    icon: "⚒",
+    tabs: [
+      { id: "overview", label: "Assignment" },
+      { id: "history", label: "History" },
+      { id: "aiAssistant", label: "AI Assistant" },
+    ],
+    quickActions: [{ id: "pin", label: "Pin object" }],
+    resolveLabel: (o) => o.role_code || o.employee_id || o.id,
+  },
   publication: {
     type: "publication",
     label: "Publication",
