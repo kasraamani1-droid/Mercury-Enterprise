@@ -35,9 +35,9 @@ Never commit `.env`, `config.local.js`, `*.db`, dumps, JWT, or cookie secrets. `
 
 | Item | Class |
 | --- | --- |
-| Real IdP client credentials (issuer, client id/secret, redirect URI) | **P0** — JWKS/PKCE code is implemented; activation needs the customer IdP |
+| Real IdP client credentials (issuer, client id/secret, redirect URI, jwks_uri) | **P0** — JWKS/PKCE/validation code is implemented; activation needs the customer IdP |
 | Public DNS + Let's Encrypt issued certs for `$DOMAIN` | **P0** — nginx/TLS path exists; certs are not in git |
 | Encrypted off-box backup copies + unique `POSTGRES_PASSWORD` | **P1** |
-| Named (non-shared) operator identities for paid accountability | **P1** until OIDC directory is populated |
+| Named (non-shared) operator identities for paid accountability | **P1** until the IdP directory is populated |
 
-OIDC authorization-code + PKCE is implemented (`GET /api/v1/auth/oidc/login` and `/callback`). ID tokens are JWKS-verified. PKCE state is Redis-backed in production. Password demo auth is disabled when HTTPS/OIDC is required. Do not treat `:3000` as the production public endpoint — use `docker-compose.production.yml` so only `:443` is published. See [PRODUCTION.md](PRODUCTION.md).
+See [ACTIVATION.md](ACTIVATION.md) for the full A/B/C list. OIDC authorization-code + PKCE is implemented (`GET /api/v1/auth/oidc/login` and `/callback`). ID tokens are JWKS-verified. PKCE state and application rate limits are Redis-backed in the production overlay. Password demo auth is disabled when HTTPS/OIDC is required. Do not treat `:3000` as the production public endpoint — use `docker-compose.production.yml` so only `:443` is published. See [PRODUCTION.md](PRODUCTION.md).

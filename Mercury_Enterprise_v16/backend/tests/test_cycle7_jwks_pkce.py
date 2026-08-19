@@ -373,6 +373,10 @@ def test_production_oidc_startup_requires_redis_url():
     object.__setattr__(probe, "require_oidc", True)
     object.__setattr__(probe, "auth_mode", "oidc")
     object.__setattr__(probe, "oidc_is_configured", True)
+    object.__setattr__(probe, "oidc_issuer", "https://idp.example.test/realms/mercury")
+    object.__setattr__(probe, "oidc_client_id", "mercury-confidential")
+    object.__setattr__(probe, "oidc_redirect_uri", "https://mercury.example.com/api/v1/auth/oidc/callback")
+    object.__setattr__(probe, "oidc_jwks_uri", "https://idp.example.test/realms/mercury/protocol/openid-connect/certs")
     object.__setattr__(probe, "seed_demo_data", False)
     object.__setattr__(probe, "cors_origins", ["https://mercury.example.com"])
     object.__setattr__(probe, "redis_required", False)
@@ -415,6 +419,7 @@ def test_production_overlay_requires_redis_and_unpublishes_port_3000():
     assert "ports: !reset []" in overlay
     assert 'REDIS_REQUIRED: "true"' in overlay
     assert '"--workers", "2"' in overlay
+    assert "noeviction" in overlay
     dockerfile = (PACKAGE_ROOT / "backend" / "Dockerfile").read_text(encoding="utf-8")
     assert '"--workers", "1"' in dockerfile
     env_example = (PACKAGE_ROOT / ".env.example").read_text(encoding="utf-8")

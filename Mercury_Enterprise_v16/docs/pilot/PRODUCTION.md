@@ -1,14 +1,17 @@
-# Commercial production runbook (Cycle 6–7)
+# Commercial production runbook (Cycle 6–8)
 
 This is **not** a TC / FAA / EASA certification claim. Mercury remains an MRO/AMO operations platform. Workforce flags, Command/Radar/3D airport twin, and SIM labels are not operational authorities.
+
+Activation A/B/C checklist and **OWNER ACTION REQUIRED** details: [ACTIVATION.md](ACTIVATION.md). Named operators: [OPERATORS.md](OPERATORS.md). Rollback: [ROLLBACK.md](ROLLBACK.md).
 
 ## What is actually enabled
 
 | Gate | Status |
 | --- | --- |
 | Controlled LAN / localhost customer pilot | Yes, with named operators and `MERCURY_ENV=development` on `:3000` |
-| OIDC code path (PKCE, JWKS ID-token verify, Redis state) | **Code-complete** (Cycle 7). Not activated without a real IdP |
-| Internet-facing beta | Only after you complete the **external** steps below (DNS, real TLS certs, real IdP) |
+| OIDC code path (PKCE, JWKS ID-token verify, Redis state, production URL validation) | **Code-complete** (Cycles 7–8). Not activated without a real IdP |
+| Redis-backed rate limits with `--workers 2` | **Code-complete** (Cycle 8). Requires Compose Redis |
+| Internet-facing beta | Only after you complete the **external** steps in [ACTIVATION.md](ACTIVATION.md) (DNS, real TLS certs, real IdP) |
 | Paid internet production | Blocked until a real IdP is configured, DNS/certs are issued, backups are encrypted/off-box, and named identities replace shared demo users |
 
 `:3000` is the LAN UI. It is **not** the production public endpoint. Production public traffic must terminate on nginx `:443` using `docker-compose.production.yml` (frontend `:3000` unpublished).
@@ -43,6 +46,7 @@ HTTPS enables `MERCURY_REQUIRE_OIDC` by default. Startup **fails closed** unless
 - `MERCURY_OIDC_CLIENT_ID`
 - `MERCURY_OIDC_CLIENT_SECRET`
 - `MERCURY_OIDC_REDIRECT_URI` (must be `https://$DOMAIN/api/v1/auth/oidc/callback`)
+- `MERCURY_OIDC_JWKS_URI` (https `jwks_uri` copied from IdP discovery; startup does not call the IdP)
 
 Do **not** paste placeholder client secrets into `.env` “just to boot.”
 
@@ -115,6 +119,8 @@ curl.exe https://YOUR_DOMAIN/health
 Probes do not return passwords, tokens, or secrets. `/metrics` should stay on the Compose network.
 
 ## Rollback
+
+See [ROLLBACK.md](ROLLBACK.md).
 
 1. `MERCURY_RESTORE_CONFIRM=YES` restore of the last verified dump
 2. `docker compose stop` (do not `down -v` unless you intend to destroy Postgres)

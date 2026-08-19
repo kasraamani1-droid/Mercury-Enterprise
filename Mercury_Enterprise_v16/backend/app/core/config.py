@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from urllib.parse import urlparse
 
 
 def _csv(name: str, default: str) -> list[str]:
@@ -27,6 +28,44 @@ def _int(name: str, default: int) -> int:
 
 def _is_production(environment: str) -> bool:
     return environment.strip().lower() in {"production", "prod"}
+
+
+OIDC_CALLBACK_PATH = "/api/v1/auth/oidc/callback"
+
+
+def normalize_public_domain(domain: str) -> str:
+    """Hostname only — strip accidental scheme/path from DOMAIN."""
+    raw = (domain or "").strip()
+    if not raw:
+        return ""
+    if "://" not in raw:
+        raw = f"https://{raw}"
+    parsed = urlparse(raw)
+    host = (parsed.netloc or parsed.path.split("/")[0]).strip().lower()
+    if "@" in host:
+        host = host.rsplit("@", 1)[-1]
+    return host.strip(".")
+
+
+def expected_oidc_redirect_uri(domain: str) -> str:
+    host = normalize_public_domain(domain)
+    if not host:
+        return ""
+    return f"https://{host}{OIDC_CALLBACK_PATH}"
+
+
+def _require_https_absolute_url(name: str, value: str) -> str:
+    raw = (value or "").strip()
+    if not raw:
+        raise RuntimeError(f"{name} must be set for production/HTTPS OIDC (no placeholder).")
+    parsed = urlparse(raw)
+    if parsed.scheme != "https" or not parsed.netloc:
+        raise RuntimeError(f"{name} must be an https:// URL (no http://, no relative path).")
+    if parsed.username or parsed.password:
+        raise RuntimeError(f"{name} must not embed credentials.")
+    if parsed.hostname in {"localhost", "127.0.0.1", "::1"}:
+        raise RuntimeError(f"{name} must not use a loopback host for production OIDC.")
+    return raw.rstrip("/")
 
 
 FORBIDDEN_PASSWORDS = frozenset({"mercury-demo", "password", "admin", "changeme"})
@@ -73,6 +112,7 @@ class Settings:
     oidc_scopes: str = "openid profile email"
     oidc_username_claim: str = "preferred_username"
     oidc_discovery_url: str = ""
+    oidc_jwks_uri: str = ""
     oidc_auto_provision: bool = False
     oidc_is_configured: bool = False
     oidc_jwks_cache_seconds: int = 300
@@ -148,6 +188,7 @@ class Settings:
             (os.getenv("MERCURY_OIDC_USERNAME_CLAIM") or "preferred_username").strip() or "preferred_username",
         )
         object.__setattr__(self, "oidc_discovery_url", (os.getenv("MERCURY_OIDC_DISCOVERY_URL") or "").strip())
+        object.__setattr__(self, "oidc_jwks_uri", (os.getenv("MERCURY_OIDC_JWKS_URI") or "").strip())
         object.__setattr__(self, "oidc_auto_provision", _bool("MERCURY_OIDC_AUTO_PROVISION", False))
         object.__setattr__(
             self,
@@ -242,6 +283,14 @@ class Settings:
                         "HTTPS deployments must not list :3000 in MERCURY_CORS_ORIGINS; "
                         "the production public endpoint is the TLS edge on :443."
                     )
+            domain_host = normalize_public_domain(str(getattr(self, "domain", "") or ""))
+            if domain_host:
+                expected_origin = f"https://{domain_host}"
+                origins_normalized = [item.strip().rstrip("/") for item in cors_origins]
+                if expected_origin not in origins_normalized:
+                    raise RuntimeError(
+                        "MERCURY_CORS_ORIGINS must include https://$DOMAIN when HTTPS_ENABLED=true."
+                    )
         if https_enabled and not (getattr(self, "domain", "") or "").strip():
             raise RuntimeError("DOMAIN must be set when HTTPS_ENABLED=true.")
         if https_enabled and not (getattr(self, "letsencrypt_email", "") or "").strip():
@@ -263,6 +312,8 @@ class Settings:
                 "MERCURY_OIDC_CLIENT_SECRET, and MERCURY_OIDC_REDIRECT_URI."
             )
         production_oidc = oidc_configured and (production or https_enabled or require_oidc)
+        if production_oidc:
+            self._validate_production_oidc()
         if getattr(self, "redis_required", False) or production_oidc:
             redis_url = (getattr(self, "redis_url", "") or "").strip()
             reason = (
@@ -284,6 +335,38 @@ class Settings:
                 raise
             except Exception as exc:
                 raise RuntimeError(f"Redis is required ({reason}) but unreachable at {redis_url}: {exc}") from exc
+
+    def _validate_production_oidc(self) -> None:
+        """Fail closed on production OIDC shape. Does not contact a live IdP."""
+        domain = normalize_public_domain(str(getattr(self, "domain", "") or ""))
+        if not domain:
+            raise RuntimeError("DOMAIN must be set when production/HTTPS OIDC is configured.")
+        issuer = _require_https_absolute_url(
+            "MERCURY_OIDC_ISSUER", str(getattr(self, "oidc_issuer", "") or "")
+        )
+        client_id = str(getattr(self, "oidc_client_id", "") or "").strip()
+        if not client_id:
+            raise RuntimeError("MERCURY_OIDC_CLIENT_ID must be set for production OIDC.")
+        redirect = str(getattr(self, "oidc_redirect_uri", "") or "").strip().rstrip("/")
+        expected = expected_oidc_redirect_uri(domain)
+        if redirect != expected.rstrip("/"):
+            raise RuntimeError(
+                "MERCURY_OIDC_REDIRECT_URI must match https://$DOMAIN/api/v1/auth/oidc/callback "
+                "(no :3000, no http://, no invented path)."
+            )
+        _require_https_absolute_url(
+            "MERCURY_OIDC_JWKS_URI", str(getattr(self, "oidc_jwks_uri", "") or "")
+        )
+        discovery = str(getattr(self, "oidc_discovery_url", "") or "").strip()
+        if discovery:
+            _require_https_absolute_url("MERCURY_OIDC_DISCOVERY_URL", discovery)
+        issuer_host = (urlparse(issuer).hostname or "").lower()
+        if issuer_host == domain:
+            issuer_path = (urlparse(issuer).path or "").strip("/")
+            if not issuer_path:
+                raise RuntimeError(
+                    "MERCURY_OIDC_ISSUER must be the IdP issuer URL, not the Mercury DOMAIN."
+                )
 
     @staticmethod
     def _validate_secret(name: str, value: str, *, minimum: int) -> None:

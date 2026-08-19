@@ -2,6 +2,23 @@
 
 All notable changes to Mercury Enterprise are summarized here. Package/API version remains `16.0.0` unless noted; sprint tags mark security/ops increments.
 
+## Internet pilot activation pack (Cycle 8)
+
+### Added
+- Production OIDC startup validation: https issuer, client id, redirect URI matching `https://$DOMAIN/api/v1/auth/oidc/callback`, required `MERCURY_OIDC_JWKS_URI` (URL shape only — does not contact an IdP)
+- Redis-backed application rate limits for multi-worker production (`REDIS_REQUIRED`); fakeredis tests; fail-closed `503` when Redis is required and down
+- Named operator OIDC bind: optional `oidc_issuer`/`oidc_subject` on `POST /api/v1/org/users` and `POST /api/v1/org/users/{username}/oidc`
+- Activation checklist `docs/pilot/ACTIVATION.md` (A/B/C + OWNER ACTION REQUIRED), `OPERATORS.md`, `ROLLBACK.md`
+- `scripts/verify_activation.py` (and PowerShell wrapper) — compose/docs/env **names**, never prints secret values
+
+### Changed
+- Production overlay Redis `maxmemory-policy noeviction`; audit `details` redacted
+- HTTPS CORS must include `https://$DOMAIN`; runtime JWKS URI must match configured `MERCURY_OIDC_JWKS_URI` when set
+
+### Notes
+- **Repository-side** activation pack. **Not** an internet-facing pilot. No domain, IdP tenant, or issued certificate is in this repository.
+- Do not merge this cycle as “production is live.”
+
 ## Production OIDC / JWKS (Cycle 7)
 
 ### Added

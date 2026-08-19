@@ -55,7 +55,7 @@ Produces `*.dump.enc` or `*.db.enc` plus checksum. Restore uses the same `MERCUR
 
 Retention (optional): `MERCURY_BACKUP_RETAIN_DAYS=14`.
 
-**Off-box / provider boundary:** copy encrypted archives to object storage, offline media, or the cloud provider’s backup product. Compose volume `mercury_postgres` is not encrypted by Mercury itself — use host BitLocker/LUKS or encrypted cloud disks.
+**Off-box / provider boundary:** copy encrypted archives to object storage, offline media, or the cloud provider’s backup product **that you already operate**. This repository does not create a bucket or invent a cloud account. Compose volume `mercury_postgres` is not encrypted by Mercury itself — use host BitLocker/LUKS or encrypted cloud disks.
 
 ## Compose (pilot)
 

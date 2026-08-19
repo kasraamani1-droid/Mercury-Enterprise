@@ -20,6 +20,7 @@ from .schemas import (
     DepartmentOut,
     MembershipCreate,
     MembershipOut,
+    OidcBind,
     OrganizationCreate,
     OrganizationOut,
     SiteCreate,
@@ -341,6 +342,26 @@ def create_org_user(
         logger.exception("operator_store sync failed for %s", out.username)
         raise HTTPException(status_code=500, detail="User directory sync failed") from exc
     _audit_org(db, session, action="org.user.create", target_type="user", target_id=out.username)
+    return out
+
+
+@router.post("/org/users/{username}/oidc", response_model=UserOut)
+def bind_org_user_oidc(
+    username: str,
+    payload: OidcBind,
+    db: Session = Depends(get_db),
+    session: dict[str, datetime | str] = Depends(require_org_manage),
+) -> UserOut:
+    svc = _svc(db)
+    out = svc.bind_oidc(username, payload)
+    _audit_org(
+        db,
+        session,
+        action="org.user.oidc_bind",
+        target_type="user",
+        target_id=out.username,
+        details=f"oidc_bound issuer={out.oidc_issuer}",
+    )
     return out
 
 
