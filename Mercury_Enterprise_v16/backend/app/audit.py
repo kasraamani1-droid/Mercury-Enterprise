@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from .core.config import settings
 from .models import AuditEvent
+from .security.redact import redact_text
 
 
 PROVENANCE_SIMULATED = "simulated"
@@ -58,7 +59,7 @@ def record_audit(
         source=source,
         outcome=outcome,
         origin=origin,
-        details=details or "",
+        details=redact_text(details or ""),
     )
     db.add(event)
     return event
@@ -76,6 +77,7 @@ ACTION_API_ACCESS = "api.access"
 ACTION_SECURITY_EVENT = "security.event"
 ACTION_AUTHZ_DENIED = "security.authz_denied"
 ACTION_OIDC_LOGIN = "auth.oidc_login"
+ACTION_OIDC_BIND = "org.user.oidc_bind"
 
 
 def list_audit_events(

@@ -87,6 +87,8 @@ class UserCreate(BaseModel):
     password: str = Field(min_length=12, max_length=200)
     display_name: str = ""
     email: str = ""
+    oidc_issuer: str = ""
+    oidc_subject: str = ""
 
 
 class UserOut(BaseModel):
@@ -95,6 +97,14 @@ class UserOut(BaseModel):
     display_name: str
     email: str
     status: str
+    oidc_issuer: str = ""
+    oidc_subject: str = ""
+    oidc_bound: bool = False
+
+
+class OidcBind(BaseModel):
+    oidc_issuer: str = Field(min_length=8, max_length=400)
+    oidc_subject: str = Field(min_length=1, max_length=255)
 
 
 class MembershipCreate(BaseModel):

@@ -1,13 +1,15 @@
 # Internet-facing production overlay.
-# Usage (from this package directory, after filling .env with real secrets + OIDC):
+# Usage (from this package directory, after filling .env with REAL secrets + OIDC):
 #   docker compose --profile production -f docker-compose.yml -f docker-compose.production.yml up --build
 #
 # This file:
 #   - unpublishes frontend :3000 (TLS edge is nginx :80/:443)
 #   - requires POSTGRES_PASSWORD (no silent "mercury" default)
+#   - requires Redis (PKCE, sessions, multi-worker rate limits)
+#
 # Compose concatenates `ports` across files, so `ports: []` would NOT remove :3000.
 # `!reset` clears the LAN mapping. Keep DATABASE_URL in .env in sync with POSTGRES_PASSWORD.
-# Postgres and Redis remain unpublished.
+# Postgres and Redis remain unpublished. Do not invent a public hostname here.
 
 services:
   postgres:
@@ -16,11 +18,17 @@ services:
       POSTGRES_USER: mercury
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env for production}
 
+  redis:
+    # noeviction: session / PKCE / rate-limit keys must not be silently dropped.
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+
   backend:
     environment:
-      # PKCE/state and sessions are Redis-backed; fail closed if Redis is down.
+      # PKCE/state, sessions, and application rate limits are Redis-backed; fail closed if Redis is down.
       REDIS_REQUIRED: "true"
-    # Safe with Redis sessions + Redis OIDC PKCE (Cycle 7). LAN image default remains 1 worker.
+      MERCURY_LOG_JSON: ${MERCURY_LOG_JSON:-true}
+    # Safe with Redis sessions + Redis OIDC PKCE + Redis rate limits (Cycle 7–8).
+    # LAN image default remains 1 worker.
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
 
   frontend:

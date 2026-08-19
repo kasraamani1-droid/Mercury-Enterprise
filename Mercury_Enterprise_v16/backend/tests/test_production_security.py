@@ -188,7 +188,7 @@ def test_nginx_http_redirects_to_https():
 
 def test_env_example_documents_required_secrets():
     env_example = (PACKAGE_ROOT / ".env.example").read_text(encoding="utf-8")
-    for key in ("JWT_SECRET", "COOKIE_SECRET", "DOMAIN", "HTTPS_ENABLED", "LETSENCRYPT_EMAIL", "MERCURY_OIDC_ISSUER", "MERCURY_OIDC_CLIENT_SECRET"):
+    for key in ("JWT_SECRET", "COOKIE_SECRET", "DOMAIN", "HTTPS_ENABLED", "LETSENCRYPT_EMAIL", "MERCURY_OIDC_ISSUER", "MERCURY_OIDC_CLIENT_SECRET", "MERCURY_OIDC_JWKS_URI", "POSTGRES_PASSWORD"):
         assert key in env_example
     # No insecure filled-in secrets
     assert not re.search(r"^JWT_SECRET=\S+", env_example, re.M) or re.search(

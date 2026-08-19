@@ -21,6 +21,8 @@ jobs:
       - name: Frontend JavaScript syntax
         run: |
           find frontend/js -name '*.js' ! -name 'config.local.js' -print0 | xargs -0 -n1 node --check
+      - name: Activation pack verify
+        run: python scripts/verify_activation.py --skip-docker
       - name: Validate compose config
         working-directory: Mercury_Enterprise_v16
         run: docker compose config

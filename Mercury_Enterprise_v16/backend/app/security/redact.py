@@ -12,6 +12,8 @@ _REDACT_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"(?i)(mercury_session)=([^\s;]+)"),
     re.compile(r"(?i)(jwt_secret|cookie_secret|client_secret|api_key|token)\s*[=:]\s*([^\s&\"']+)"),
     re.compile(r"(?i)(code_verifier|refresh_token|id_token|access_token)\s*[=:]\s*([^\s&\"']+)"),
+    re.compile(r"(?i)([?&](?:code|client_secret|access_token|id_token|refresh_token))=([^&\s]+)"),
+    re.compile(r"(?i)(postgres_password|database_url)\s*[=:]\s*([^\s&\"']+)"),
 )
 
 

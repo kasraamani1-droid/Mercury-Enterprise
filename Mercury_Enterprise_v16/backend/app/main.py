@@ -59,7 +59,7 @@ from .schemas import (
 from .security.authorization import Role
 from .security.runtime_authz import require_allowed
 from .security.operators import authenticate_credentials, hash_password, operator_store
-from .security.rate_limit import classify_rate_limit_path, client_key, rate_limiter
+from .security.rate_limit import RateLimitStoreUnavailable, classify_rate_limit_path, client_key, rate_limiter
 from .security.oidc import oidc_service, public_auth_config
 from .security.csrf import csrf_blocked
 from .shared import clamp_page
@@ -849,7 +849,15 @@ async def rate_limit_requests(request: Request, call_next):
             else settings.rate_limit_api_per_minute
         )
         key = f"{bucket}:{client_key(request.client.host if request.client else None, request.headers.get('x-forwarded-for'))}"
-        if not rate_limiter.allow(key, limit=limit, window_seconds=60.0):
+        try:
+            allowed = rate_limiter.allow(key, limit=limit, window_seconds=60.0)
+        except RateLimitStoreUnavailable:
+            metrics_mod.observe_rate_limit_block(bucket)
+            return JSONResponse(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                content={"detail": "Rate limit store unavailable"},
+            )
+        if not allowed:
             metrics_mod.observe_rate_limit_block(bucket)
             if bucket == "login":
                 _record_login_rate_limit_audit()

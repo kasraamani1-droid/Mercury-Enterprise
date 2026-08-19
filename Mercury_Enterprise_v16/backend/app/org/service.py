@@ -34,6 +34,7 @@ from .schemas import (
     TeamOut,
     UserCreate,
     UserOut,
+    OidcBind,
 )
 
 logger = logging.getLogger("mercury.org")
@@ -287,12 +288,17 @@ class OrganizationService:
 
     @staticmethod
     def user_out(row: OrgUser) -> UserOut:
+        issuer = (row.oidc_issuer or "").strip()
+        subject = (row.oidc_subject or "").strip()
         return UserOut(
             id=row.id,
             username=row.username,
             display_name=row.display_name,
             email=row.email,
             status=row.status,
+            oidc_issuer=issuer,
+            oidc_subject=subject,
+            oidc_bound=bool(issuer and subject),
         )
 
     @staticmethod
@@ -526,12 +532,17 @@ class OrganizationService:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         if self.repo.get_user_by_username(username):
             raise HTTPException(status_code=409, detail="User already exists")
+        issuer, subject = self._optional_oidc_bind(payload.oidc_issuer, payload.oidc_subject)
+        if issuer and subject and self.repo.get_user_by_oidc(issuer, subject):
+            raise HTTPException(status_code=409, detail="OIDC identity is already bound")
         row = OrgUser(
             username=username,
             display_name=(payload.display_name or username).strip(),
             email=(payload.email or "").strip(),
             password_hash=hash_password(password),
             platform_role=Role.VIEWER.value,
+            oidc_issuer=issuer or None,
+            oidc_subject=subject or None,
             created_at=_utcnow(),
             updated_at=_utcnow(),
         )
@@ -539,6 +550,43 @@ class OrganizationService:
         self._commit_or_conflict(conflict_detail="User already exists")
         self.repo.refresh(row)
         return self.user_out(row)
+
+    def bind_oidc(self, username: str, payload: OidcBind) -> UserOut:
+        user = self.repo.get_user_by_username(username)
+        if user is None or user.status != "active":
+            raise HTTPException(status_code=404, detail="User not found")
+        issuer, subject = self._required_oidc_bind(payload.oidc_issuer, payload.oidc_subject)
+        existing = self.repo.get_user_by_oidc(issuer, subject)
+        if existing is not None and existing.id != user.id:
+            raise HTTPException(status_code=409, detail="OIDC identity is already bound")
+        user.oidc_issuer = issuer
+        user.oidc_subject = subject
+        user.updated_at = _utcnow()
+        self.repo.add_user(user)
+        self._commit_or_conflict(conflict_detail="OIDC identity is already bound")
+        self.repo.refresh(user)
+        return self.user_out(user)
+
+    def _optional_oidc_bind(self, issuer: str, subject: str) -> tuple[str, str]:
+        issuer_raw = (issuer or "").strip()
+        subject_raw = (subject or "").strip()
+        if not issuer_raw and not subject_raw:
+            return "", ""
+        if not issuer_raw or not subject_raw:
+            raise HTTPException(
+                status_code=400,
+                detail="oidc_issuer and oidc_subject must be set together",
+            )
+        return self._required_oidc_bind(issuer_raw, subject_raw)
+
+    def _required_oidc_bind(self, issuer: str, subject: str) -> tuple[str, str]:
+        issuer_value = (issuer or "").strip().rstrip("/")
+        subject_value = (subject or "").strip()
+        if not issuer_value.lower().startswith("https://") or "://" not in issuer_value:
+            raise HTTPException(status_code=400, detail="oidc_issuer must be an https:// URL")
+        if not subject_value:
+            raise HTTPException(status_code=400, detail="oidc_subject is required")
+        return issuer_value, subject_value
 
     def create_membership(self, payload: MembershipCreate) -> MembershipOut:
         user = self.repo.get_user_by_username(payload.username)

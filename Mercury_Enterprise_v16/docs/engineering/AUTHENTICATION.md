@@ -24,7 +24,7 @@ There is **no** `/api/v1/auth/refresh` endpoint. Session lifetime is `MERCURY_SE
 
 ## OIDC / SSO
 
-HTTPS (`HTTPS_ENABLED=true`) requires OIDC at startup. Configure `MERCURY_OIDC_ISSUER`, `MERCURY_OIDC_CLIENT_ID`, `MERCURY_OIDC_CLIENT_SECRET`, and `MERCURY_OIDC_REDIRECT_URI`. The integration is authorization-code + PKCE; identities must already exist in `org_users` unless `MERCURY_OIDC_AUTO_PROVISION=true` (off by default). Session cookies remain opaque — OIDC does not mint Mercury JWTs.
+HTTPS (`HTTPS_ENABLED=true`) requires OIDC at startup. Configure `MERCURY_OIDC_ISSUER`, `MERCURY_OIDC_CLIENT_ID`, `MERCURY_OIDC_CLIENT_SECRET`, `MERCURY_OIDC_REDIRECT_URI` (must equal `https://$DOMAIN/api/v1/auth/oidc/callback`), and `MERCURY_OIDC_JWKS_URI` (https URL copied from IdP discovery). Startup validates that shape and does **not** contact the IdP. The integration is authorization-code + PKCE; identities must already exist in `org_users` unless `MERCURY_OIDC_AUTO_PROVISION=true` (off by default). Bind IdP `sub` with `POST /api/v1/org/users/{username}/oidc`. Session cookies remain opaque — OIDC does not mint Mercury JWTs.
 
 ID tokens are signature-verified from the discovery `jwks_uri` (RS256/ES256 only). Verification covers `iss`, `aud`, `exp`, `nbf`/`iat` (clock skew), `kid`, and `nonce` when nonce was sent. `alg=none`, HMAC, missing kid, and unknown keys are rejected. JWKS fetch failure fails closed (HTTP 503) when OIDC is in use. Userinfo `sub` must match the ID-token `sub`.
 
@@ -53,7 +53,7 @@ Do not insert placeholder IdP credentials. There is still **no** hosted Okta/Aut
 
 ## Middleware and RBAC
 
-- Login bucket is separate from the general `/api` rate-limit bucket (`429` + `Retry-After`)
+- Login bucket is separate from the general `/api` rate-limit bucket (`429` + `Retry-After`). Production overlay uses Redis-backed counters so `--workers 2` share limits; in-process sliding windows remain the LAN fallback. Redis required and down → `503` on limited paths (probes are not limited).
 - `require_session` → cookie session or (optional) API key; else `401 Authentication required`
 - `require_permissions` → runtime RBAC (role + temporary access + custom roles) → `403 Insufficient permissions`
 - Tenant: login stamps org/site; `assert_org_access` on domain reads/writes. Incident Command and WebSocket isolation: [TENANT_ISOLATION.md](TENANT_ISOLATION.md)

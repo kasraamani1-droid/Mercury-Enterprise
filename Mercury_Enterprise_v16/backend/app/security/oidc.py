@@ -216,6 +216,12 @@ class OidcService:
         if not id_token:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="OIDC id_token missing")
         jwks_uri = str(document.get("jwks_uri") or "").strip()
+        configured_jwks = str(getattr(settings, "oidc_jwks_uri", "") or "").strip()
+        if configured_jwks and configured_jwks.rstrip("/") != jwks_uri.rstrip("/"):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="OIDC JWKS URI mismatch",
+            )
         if not jwks_uri:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
