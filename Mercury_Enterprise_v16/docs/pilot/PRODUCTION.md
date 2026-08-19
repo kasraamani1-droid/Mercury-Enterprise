@@ -1,14 +1,15 @@
-# Commercial production runbook (Cycle 6)
+# Commercial production runbook (Cycle 6–7)
 
 This is **not** a TC / FAA / EASA certification claim. Mercury remains an MRO/AMO operations platform. Workforce flags, Command/Radar/3D airport twin, and SIM labels are not operational authorities.
 
-## What Cycle 6 actually enables
+## What is actually enabled
 
-| Gate | Status after this cycle |
+| Gate | Status |
 | --- | --- |
 | Controlled LAN / localhost customer pilot | Yes, with named operators and `MERCURY_ENV=development` on `:3000` |
+| OIDC code path (PKCE, JWKS ID-token verify, Redis state) | **Code-complete** (Cycle 7). Not activated without a real IdP |
 | Internet-facing beta | Only after you complete the **external** steps below (DNS, real TLS certs, real IdP) |
-| Paid internet production | Blocked until a real IdP is configured, backups are encrypted/off-box, and named identities replace shared demo users |
+| Paid internet production | Blocked until a real IdP is configured, DNS/certs are issued, backups are encrypted/off-box, and named identities replace shared demo users |
 
 `:3000` is the LAN UI. It is **not** the production public endpoint. Production public traffic must terminate on nginx `:443` using `docker-compose.production.yml` (frontend `:3000` unpublished).
 
@@ -49,14 +50,18 @@ Password login is disabled when OIDC is required unless you explicitly set `MERC
 
 Directory mapping: OIDC `sub` + issuer, then email, then `preferred_username`. Unknown identities are **rejected** (`MERCURY_OIDC_AUTO_PROVISION` defaults false). Provision users in Mercury (admin directory) before first SSO login.
 
-Remaining IdP work you must do outside this repository:
+ID-token JWT is **signature-verified** from the IdP JWKS (`jwks_uri` in discovery): RS256/ES256, `iss`, `aud`, `exp`, `nbf`/`iat` skew, `kid`, and `nonce`. `alg=none` and unknown keys fail closed. Userinfo `sub` must match the ID token. JWKS unreachable → HTTP 503.
 
-1. Create a confidential OIDC client
+PKCE `state` / `code_verifier` / nonce live in **Redis** (TTL 10 minutes, single-use). Production OIDC has **no memory fallback**. `docker-compose.production.yml` sets `REDIS_REQUIRED=true` and `--workers 2`.
+
+Remaining IdP work you must do **outside this repository** (not done in Cycle 7 — no live IdP was used):
+
+1. Create a confidential OIDC client at your IdP (Okta / Entra / Auth0 / other)
 2. Allow redirect `https://YOUR_DOMAIN/api/v1/auth/oidc/callback`
-3. Issue client id/secret into the server `.env` only
+3. Issue client id/secret into the server `.env` only — never commit them
 4. Optionally enable MFA on the IdP — Mercury does not implement MFA itself
-5. Keep the backend at **one uvicorn worker** (Compose default). PKCE `state` is in-process memory, not Redis
-6. ID-token JWT signature verification via JWKS is **not** implemented — identity is taken from TLS userinfo to the configured issuer
+5. Confirm discovery returns `jwks_uri` and ID tokens are RS256 or ES256
+6. Point DNS at the host and issue Let's Encrypt (or equivalent) certificates
 
 ## TLS / internet exposure
 
@@ -67,6 +72,7 @@ docker compose --profile production -f docker-compose.yml -f docker-compose.prod
 
 - HTTP on :80 redirects to HTTPS except ACME and `/live`/`/ready`/`/health`
 - Session cookies are `HttpOnly`, `SameSite=Lax`, `Secure`
+- Logout clears the cookie and server session. Expired/forged cookies return 401. There is **no** refresh-token store; operators re-authenticate (password or OIDC) after `MERCURY_SESSION_TTL_SECONDS`
 - Postgres and Redis stay unpublished
 - Set `POSTGRES_PASSWORD` to a unique value and keep `DATABASE_URL` in sync
 - CORS must be `https://YOUR_DOMAIN` — wildcards and `:3000` are refused for HTTPS

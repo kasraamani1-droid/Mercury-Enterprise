@@ -16,5 +16,12 @@ services:
       POSTGRES_USER: mercury
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env for production}
 
+  backend:
+    environment:
+      # PKCE/state and sessions are Redis-backed; fail closed if Redis is down.
+      REDIS_REQUIRED: "true"
+    # Safe with Redis sessions + Redis OIDC PKCE (Cycle 7). LAN image default remains 1 worker.
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+
   frontend:
     ports: !reset []

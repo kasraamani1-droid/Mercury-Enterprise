@@ -13,9 +13,10 @@
 2. Set `MERCURY_ENV=production`, `HTTPS_ENABLED=true`, `DOMAIN`, `LETSENCRYPT_EMAIL`.
 3. Set `JWT_SECRET` and `COOKIE_SECRET` (≥32 unique characters).
 4. Set `MERCURY_AUTH_MODE=oidc` and real `MERCURY_OIDC_ISSUER` / `CLIENT_ID` / `CLIENT_SECRET` / `REDIRECT_URI` (no placeholders).
-5. Set `POSTGRES_PASSWORD` (unique) and keep `DATABASE_URL` in sync. Set `MERCURY_CORS_ORIGINS=https://YOUR_DOMAIN`.
-6. Point DNS A/AAAA for `DOMAIN` at the host; open ports **80** and **443**.
-7. Bootstrap certificates:
+5. Set `REDIS_URL` (Compose default `redis://redis:6379/0`). Production overlay forces `REDIS_REQUIRED=true`.
+6. Set `POSTGRES_PASSWORD` (unique) and keep `DATABASE_URL` in sync. Set `MERCURY_CORS_ORIGINS=https://YOUR_DOMAIN`.
+7. Point DNS A/AAAA for `DOMAIN` at the host; open ports **80** and **443**.
+8. Bootstrap certificates:
 
 ```bash
 export DOMAIN=mercury.example.com
@@ -23,13 +24,13 @@ export LETSENCRYPT_EMAIL=ops@example.com
 sh deploy/init-letsencrypt.sh
 ```
 
-8. Start stack:
+9. Start stack:
 
 ```bash
 docker compose --profile production -f docker-compose.yml -f docker-compose.production.yml up --build -d
 ```
 
-9. Verify:
+10. Verify:
 
 ```bash
 curl -fsS https://$DOMAIN/live

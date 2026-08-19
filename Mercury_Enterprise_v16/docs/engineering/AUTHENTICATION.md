@@ -16,7 +16,7 @@ Operator authentication is a **server-side session** referenced by an opaque `Ht
 | GET | `/api/v1/auth/session` | Public | `authenticated: true/false` (HTTP 200 either way) |
 | GET | `/api/v1/auth/public-config` | Public | Auth mode, SSO availability, SIM visibility — no secrets |
 | GET | `/api/v1/auth/oidc/login` | Public | 302 to the IdP (PKCE). Fails closed if OIDC is not configured |
-| GET | `/api/v1/auth/oidc/callback` | Public | Code exchange + userinfo mapping onto `org_users`; set session cookie |
+| GET | `/api/v1/auth/oidc/callback` | Public | Code exchange, JWKS ID-token verify, userinfo mapping onto `org_users`; set session cookie |
 | GET | `/api/v1/auth/context` | Session | Active org/site + switchable tenants |
 | POST | `/api/v1/auth/context` | Session | Switch org/site (denied without membership; API-key principals cannot switch) |
 
@@ -24,7 +24,13 @@ There is **no** `/api/v1/auth/refresh` endpoint. Session lifetime is `MERCURY_SE
 
 ## OIDC / SSO
 
-HTTPS (`HTTPS_ENABLED=true`) requires OIDC at startup. Configure `MERCURY_OIDC_ISSUER`, `MERCURY_OIDC_CLIENT_ID`, `MERCURY_OIDC_CLIENT_SECRET`, and `MERCURY_OIDC_REDIRECT_URI`. The integration is authorization-code + PKCE; identities must already exist in `org_users` unless `MERCURY_OIDC_AUTO_PROVISION=true` (off by default). Session cookies remain opaque — OIDC does not mint Mercury JWTs. ID-token JWT signature verification via JWKS is **not** implemented; identity is taken from TLS userinfo against the configured issuer. Do not insert placeholder IdP credentials.
+HTTPS (`HTTPS_ENABLED=true`) requires OIDC at startup. Configure `MERCURY_OIDC_ISSUER`, `MERCURY_OIDC_CLIENT_ID`, `MERCURY_OIDC_CLIENT_SECRET`, and `MERCURY_OIDC_REDIRECT_URI`. The integration is authorization-code + PKCE; identities must already exist in `org_users` unless `MERCURY_OIDC_AUTO_PROVISION=true` (off by default). Session cookies remain opaque — OIDC does not mint Mercury JWTs.
+
+ID tokens are signature-verified from the discovery `jwks_uri` (RS256/ES256 only). Verification covers `iss`, `aud`, `exp`, `nbf`/`iat` (clock skew), `kid`, and `nonce` when nonce was sent. `alg=none`, HMAC, missing kid, and unknown keys are rejected. JWKS fetch failure fails closed (HTTP 503) when OIDC is in use. Userinfo `sub` must match the ID-token `sub`.
+
+PKCE `state` + `code_verifier` (+ nonce) are stored in Redis with a short TTL and consumed once. Production / HTTPS OIDC has **no** in-memory PKCE fallback: Redis down → 503. Local development without `REDIS_URL` may use process memory. The production Compose overlay runs `--workers 2` because sessions and PKCE state are Redis-backed.
+
+Do not insert placeholder IdP credentials. There is still **no** hosted Okta/Auth0/Entra client in this repository; operators must issue a real confidential client.
 
 ## JWT and `JWT_SECRET`
 
@@ -41,7 +47,7 @@ HTTPS (`HTTPS_ENABLED=true`) requires OIDC at startup. Configure `MERCURY_OIDC_I
 - Cookie: `HttpOnly`, `SameSite=Lax` (configurable), `Secure` forced in production/HTTPS
 - Successful login/OIDC callback invalidates any existing session cookie (session-fixation protection)
 - Mutating requests with a foreign `Origin`/`Referer` are rejected (CSRF origin check; SameSite=Lax remains primary)
-- Store: in-memory default; Redis when `REDIS_URL` is set
+- Store: in-memory default; Redis when `REDIS_URL` is set. Production OIDC PKCE/state is Redis-only.
 - Expired records are rejected on read, not persisted with a synthetic TTL, and swept on the process heartbeat
 - Password reset revokes all sessions for that operator (`session_store.delete_for_operator`)
 
@@ -73,4 +79,4 @@ HTTPS (`HTTPS_ENABLED=true`) requires OIDC at startup. Configure `MERCURY_OIDC_I
 
 ## Regression tests
 
-`backend/tests/test_rc1_authentication.py`, `test_cycle6_production_iam.py`, `test_cycle6_idor.py`, plus existing suites: `test_auth_directory.py`, `test_password_security.py`, `test_epic009_security.py`, `test_hardening_security.py`, `test_production_security.py`, `test_api.py`.
+`backend/tests/test_rc1_authentication.py`, `test_cycle6_production_iam.py`, `test_cycle6_idor.py`, `test_cycle7_jwks_pkce.py`, plus existing suites: `test_auth_directory.py`, `test_password_security.py`, `test_epic009_security.py`, `test_hardening_security.py`, `test_production_security.py`, `test_api.py`.

@@ -68,7 +68,7 @@ curl -fsSI http://$DOMAIN/ | findstr /I Location
 # Expect: Location: https://...
 ```
 
-Sign in at `https://$DOMAIN` with the configured operator password.
+Sign in at `https://$DOMAIN` via OIDC SSO when `HTTPS_ENABLED=true` (password login is disabled unless break-glass `MERCURY_ALLOW_PASSWORD_AUTH=true`). `:3000` is not the production public endpoint.
 
 ## Manual certificate renewal
 

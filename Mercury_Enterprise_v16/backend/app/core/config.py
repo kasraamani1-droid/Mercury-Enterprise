@@ -75,6 +75,9 @@ class Settings:
     oidc_discovery_url: str = ""
     oidc_auto_provision: bool = False
     oidc_is_configured: bool = False
+    oidc_jwks_cache_seconds: int = 300
+    oidc_clock_skew_seconds: int = 60
+    oidc_pkce_require_redis: bool = False
     sim_workspaces_visible: bool = True
     trusted_hosts: list[str] = None  # type: ignore[assignment]
     session_cookie_name: str = os.getenv("MERCURY_SESSION_COOKIE", "mercury_session")
@@ -150,6 +153,19 @@ class Settings:
             self,
             "oidc_is_configured",
             bool(self.oidc_issuer and self.oidc_client_id and self.oidc_client_secret and self.oidc_redirect_uri),
+        )
+        object.__setattr__(self, "oidc_jwks_cache_seconds", max(1, _int("MERCURY_OIDC_JWKS_CACHE_SECONDS", 300)))
+        object.__setattr__(self, "oidc_clock_skew_seconds", max(0, _int("MERCURY_OIDC_CLOCK_SKEW_SECONDS", 60)))
+        object.__setattr__(
+            self,
+            "oidc_pkce_require_redis",
+            bool(
+                self.redis_required
+                or (
+                    self.oidc_is_configured
+                    and (production or self.https_enabled or self.require_oidc)
+                )
+            ),
         )
         if os.getenv("MERCURY_SIM_WORKSPACES") is None:
             object.__setattr__(self, "sim_workspaces_visible", not production)
@@ -246,10 +262,16 @@ class Settings:
                 "MERCURY_AUTH_MODE=oidc requires MERCURY_OIDC_ISSUER, MERCURY_OIDC_CLIENT_ID, "
                 "MERCURY_OIDC_CLIENT_SECRET, and MERCURY_OIDC_REDIRECT_URI."
             )
-        if getattr(self, "redis_required", False):
+        production_oidc = oidc_configured and (production or https_enabled or require_oidc)
+        if getattr(self, "redis_required", False) or production_oidc:
             redis_url = (getattr(self, "redis_url", "") or "").strip()
+            reason = (
+                "production OIDC PKCE/state is Redis-backed with no in-memory fallback"
+                if production_oidc
+                else "REDIS_REQUIRED=true"
+            )
             if not redis_url:
-                raise RuntimeError("REDIS_URL must be set when REDIS_REQUIRED=true.")
+                raise RuntimeError(f"REDIS_URL must be set ({reason}).")
             try:
                 import redis  # type: ignore
 
@@ -258,10 +280,10 @@ class Settings:
                     client.ping()
                 finally:
                     client.close()
+            except RuntimeError:
+                raise
             except Exception as exc:
-                raise RuntimeError(
-                    f"Redis is required (REDIS_REQUIRED=true) but unreachable at {redis_url}: {exc}"
-                ) from exc
+                raise RuntimeError(f"Redis is required ({reason}) but unreachable at {redis_url}: {exc}") from exc
 
     @staticmethod
     def _validate_secret(name: str, value: str, *, minimum: int) -> None:
