@@ -113,11 +113,12 @@ Postgres migrations: Compose backend entrypoint runs `alembic upgrade head` auto
 
 ```bash
 # Set DOMAIN, HTTPS_ENABLED, LETSENCRYPT_EMAIL, JWT_SECRET, COOKIE_SECRET, MERCURY_AUTH_PASSWORD
+# Internet-facing owner checklist: docs/pilot/OWNER_HANDOFF.md
 sh deploy/init-letsencrypt.sh
-docker compose --profile production up --build -d
+docker compose --profile production -f docker-compose.yml -f docker-compose.production.yml up --build -d
 ```
 
-See [DEPLOYMENT.md](DEPLOYMENT.md) and [docs/security/HTTPS.md](docs/security/HTTPS.md).
+See [docs/pilot/OWNER_HANDOFF.md](docs/pilot/OWNER_HANDOFF.md), [DEPLOYMENT.md](DEPLOYMENT.md), and [docs/security/HTTPS.md](docs/security/HTTPS.md).
 
 ## Version identity
 

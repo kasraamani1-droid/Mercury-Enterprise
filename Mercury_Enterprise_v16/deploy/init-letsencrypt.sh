@@ -4,12 +4,16 @@
 # Usage (from package root):
 #   export DOMAIN=mercury.example.com LETSENCRYPT_EMAIL=ops@example.com
 #   sh deploy/init-letsencrypt.sh
+#
+# Always include docker-compose.production.yml so host :3000 stays unpublished
+# during ACME bootstrap. Override COMPOSE only if you know you need another file set.
+# POSTGRES_PASSWORD must already be in .env (the overlay refuses the LAN default).
 
 set -eu
 
 DOMAIN="${DOMAIN:?DOMAIN is required}"
 LETSENCRYPT_EMAIL="${LETSENCRYPT_EMAIL:?LETSENCRYPT_EMAIL is required}"
-COMPOSE="${COMPOSE:-docker compose}"
+COMPOSE="${COMPOSE:-docker compose -f docker-compose.yml -f docker-compose.production.yml}"
 STAGING="${STAGING:-0}"
 
 STAGING_ARG=""

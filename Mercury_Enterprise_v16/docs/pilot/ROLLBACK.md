@@ -1,6 +1,6 @@
 # Rollback (repository-side runbook)
 
-This is a **host operator** procedure. It does not claim a remote registry or orchestrator exists.
+This is a **host operator** procedure. It does not claim a remote registry or orchestrator exists. Sequential activation: [OWNER_HANDOFF.md](OWNER_HANDOFF.md) §14.
 
 Internet Compose:
 

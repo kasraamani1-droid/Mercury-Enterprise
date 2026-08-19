@@ -38,7 +38,7 @@ Mercury ships as an incremental FastAPI + vanilla JS foundation. Items below are
 
 1. **Runtime merge of custom roles / temporary access** into `has_permissions`
 2. **Migrate domain status machines** (work orders, logistics approvals) onto the generic workflow engine incrementally
-3. **OIDC / SSO adapters** on MFA/SSO-ready identity surfaces — **Cycles 6–8 shipped the OIDC code-flow, JWKS verify, Redis PKCE, production URL validation, and Redis rate limits**; remaining work is **owner** IdP credentials, public DNS, and issued TLS certs ([docs/pilot/ACTIVATION.md](docs/pilot/ACTIVATION.md))
+3. **OIDC / SSO adapters** on MFA/SSO-ready identity surfaces — **Cycles 6–8 shipped the OIDC code-flow, JWKS verify, Redis PKCE, production URL validation, and Redis rate limits**; this handoff adds the sequential owner checklist. Remaining work is **owner** IdP credentials, public DNS, issued TLS certs, and a VPS ([docs/pilot/OWNER_HANDOFF.md](docs/pilot/OWNER_HANDOFF.md)). The next *code* cycle waits on those owner actions.
 4. **Object store + virus-scan workers** bound to file metadata
 5. **Search indexer workers** / future OpenSearch bridge
 6. **Runtime persona RBAC** — enforce Technician/Inspector/ACA/Planner/Supervisor overlays

@@ -1,5 +1,7 @@
 # Deployment
 
+Internet-facing **owner** procedure (VPS specs, firewall, secrets, env names, health): [docs/pilot/OWNER_HANDOFF.md](docs/pilot/OWNER_HANDOFF.md). This page is the Compose/TLS command reference.
+
 ## Profiles
 
 | Profile | Command | Exposure |

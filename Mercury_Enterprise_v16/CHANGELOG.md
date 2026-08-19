@@ -2,6 +2,20 @@
 
 All notable changes to Mercury Enterprise are summarized here. Package/API version remains `16.0.0` unless noted; sprint tags mark security/ops increments.
 
+## Owner activation handoff (external-activation preparation)
+
+### Added
+- Sequential owner checklist `docs/pilot/OWNER_HANDOFF.md` (the one place to start): VPS minimum specs, `ufw`/nftables examples, owner-local secret generation commands, exact env **names**, compose/health/rollback commands, A/B/C on every item
+
+### Changed
+- `deploy/init-letsencrypt.sh` defaults to `docker-compose.yml` + `docker-compose.production.yml` so ACME bootstrap does not publish host `:3000`
+- HTTPS / README / DEPLOYMENT compose commands consistently include the production overlay
+- `.env.example` comments point at the owner checklist and secret-generation one-liners (values stay empty)
+
+### Notes
+- Repository-side handoff only. **Not** an internet-facing pilot. No domain, IdP tenant, issued certificate, or production secret is in this repository.
+- Next action is owner infrastructure, not a feature-expansion cycle.
+
 ## Internet pilot activation pack (Cycle 8)
 
 ### Added

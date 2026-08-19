@@ -2,7 +2,7 @@
 
 This is **not** a TC / FAA / EASA certification claim. Mercury remains an MRO/AMO operations platform. Workforce flags, Command/Radar/3D airport twin, and SIM labels are not operational authorities.
 
-Activation A/B/C checklist and **OWNER ACTION REQUIRED** details: [ACTIVATION.md](ACTIVATION.md). Named operators: [OPERATORS.md](OPERATORS.md). Rollback: [ROLLBACK.md](ROLLBACK.md).
+**Start here:** [OWNER_HANDOFF.md](OWNER_HANDOFF.md). A/B/C audit: [ACTIVATION.md](ACTIVATION.md). Named operators: [OPERATORS.md](OPERATORS.md). Rollback: [ROLLBACK.md](ROLLBACK.md).
 
 ## What is actually enabled
 
